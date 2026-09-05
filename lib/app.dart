@@ -13,6 +13,7 @@ class GrowthTrackApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       title: 'ECCD GrowthTrack',
       theme: ThemeData(
         useMaterial3: true,
