@@ -36,12 +36,38 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE users (
         id $idType,
+        uid $textType,
         name $textType,
         email $textType UNIQUE,
         password $textType,
         role $textType
       )
     ''');
+
+    // Add a default admin for testing purposes
+    await db.insert('users', {
+      'uid': 'admin-001',
+      'name': 'System Admin',
+      'email': 'admin@eccd.com',
+      'password': 'password123',
+      'role': 'admin'
+    });
+    
+    await db.insert('users', {
+      'uid': 'teacher-001',
+      'name': 'Teacher Jane',
+      'email': 'teacher@eccd.com',
+      'password': 'password123',
+      'role': 'teacher'
+    });
+
+    await db.insert('users', {
+      'uid': 'parent-001',
+      'name': 'Parent John',
+      'email': 'parent@eccd.com',
+      'password': 'password123',
+      'role': 'parent'
+    });
 
     // Children Table
     await db.execute('''

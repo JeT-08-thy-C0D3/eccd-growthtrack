@@ -2,6 +2,7 @@ enum UserRole { admin, teacher, parent }
 
 class UserModel {
   final int? id;
+  final String uid; // Added for unique identification
   final String name;
   final String email;
   final String password;
@@ -9,6 +10,7 @@ class UserModel {
 
   UserModel({
     this.id,
+    required this.uid,
     required this.name,
     required this.email,
     required this.password,
@@ -18,6 +20,7 @@ class UserModel {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'uid': uid,
       'name': name,
       'email': email,
       'password': password,
@@ -28,10 +31,14 @@ class UserModel {
   factory UserModel.fromMap(Map<String, dynamic> map) {
     return UserModel(
       id: map['id'],
-      name: map['name'],
-      email: map['email'],
-      password: map['password'],
-      role: UserRole.values.firstWhere((e) => e.name == map['role']),
+      uid: map['uid'] ?? '',
+      name: map['name'] ?? '',
+      email: map['email'] ?? '',
+      password: map['password'] ?? '',
+      role: UserRole.values.firstWhere(
+        (e) => e.name == map['role'],
+        orElse: () => UserRole.parent,
+      ),
     );
   }
 }
