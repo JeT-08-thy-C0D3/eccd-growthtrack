@@ -3,6 +3,12 @@ import 'features/auth/presentation/login_page.dart';
 import 'features/admin/presentation/admin_dashboard.dart';
 import 'features/teacher/presentation/teacher_dashboard.dart';
 import 'features/parent/presentation/parent_dashboard.dart';
+import 'features/child_profile/presentation/register_child_page.dart';
+import 'features/attendance/presentation/attendance_page.dart';
+import 'features/eccd_evaluation/presentation/eccd_evaluation_page.dart';
+import 'features/home_activities/presentation/home_activities_page.dart';
+import 'features/referral/presentation/referral_page.dart';
+import 'features/reports/presentation/reports_page.dart';
 import 'features/auth/data/auth_repository_impl.dart';
 import 'shared/models/user_model.dart';
 
@@ -25,6 +31,14 @@ class GrowthTrackApp extends StatelessWidget {
         '/admin': (context) => const AdminDashboard(),
         '/teacher': (context) => const TeacherDashboard(),
         '/parent': (context) => const ParentDashboard(),
+        
+        // Teacher Feature Routes
+        '/register-child': (context) => const RegisterChildPage(),
+        '/attendance': (context) => const AttendancePage(),
+        '/eccd-evaluation': (context) => const EccdEvaluationPage(),
+        '/home-activities': (context) => const HomeActivitiesPage(),
+        '/referrals': (context) => const ReferralPage(),
+        '/reports': (context) => const ReportsPage(),
       },
     );
   }
@@ -35,5 +49,18 @@ class GrowthTrackApp extends StatelessWidget {
       case UserRole.teacher: return '/teacher';
       case UserRole.parent: return '/parent';
     }
+  }
+}
+
+class PlaceholderPage extends StatelessWidget {
+  final String title;
+  const PlaceholderPage({super.key, required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: Center(child: Text('$title Page - Coming Soon')),
+    );
   }
 }
