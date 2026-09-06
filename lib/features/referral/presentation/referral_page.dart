@@ -96,7 +96,7 @@ class _ReferralPageState extends State<ReferralPage> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
-                                color: Colors.blue.withOpacity(0.1),
+                                color: Colors.blue.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
@@ -177,14 +177,14 @@ class _AddReferralSheetState extends State<_AddReferralSheet> {
           const Text('Create Referral', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
           DropdownButtonFormField<ChildModel>(
-            value: _selectedChild,
+            initialValue: _selectedChild,
             decoration: const InputDecoration(labelText: 'Select Child', border: OutlineInputBorder()),
             items: widget.children.map((c) => DropdownMenuItem(value: c, child: Text(c.name))).toList(),
             onChanged: (val) => setState(() => _selectedChild = val),
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
-            value: _selectedCategory,
+            initialValue: _selectedCategory,
             decoration: const InputDecoration(labelText: 'Referral Category', border: OutlineInputBorder()),
             items: _categories.map((cat) => DropdownMenuItem(value: cat, child: Text(cat))).toList(),
             onChanged: (val) => setState(() => _selectedCategory = val!),

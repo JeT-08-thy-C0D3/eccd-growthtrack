@@ -161,7 +161,7 @@ class _AssignActivitySheetState extends State<_AssignActivitySheet> {
           const Text('Assign Activity to Parent', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
           DropdownButtonFormField<ChildModel>(
-            value: _selectedChild,
+            initialValue: _selectedChild,
             decoration: const InputDecoration(labelText: 'Select Child', border: OutlineInputBorder()),
             items: widget.children.map((c) => DropdownMenuItem(value: c, child: Text(c.name))).toList(),
             onChanged: (val) => setState(() => _selectedChild = val),

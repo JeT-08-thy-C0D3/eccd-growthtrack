@@ -113,7 +113,7 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    value: _selectedGender,
+                    initialValue: _selectedGender,
                     decoration: const InputDecoration(
                       labelText: 'Gender',
                       border: OutlineInputBorder(),
@@ -124,7 +124,7 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<UserModel>(
-                    value: _selectedParent,
+                    initialValue: _selectedParent,
                     hint: const Text('Assign to Parent'),
                     decoration: const InputDecoration(
                       labelText: 'Parent/Guardian',

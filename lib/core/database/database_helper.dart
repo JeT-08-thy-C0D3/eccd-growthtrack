@@ -207,6 +207,37 @@ class DatabaseHelper {
     };
   }
 
+  // --- Parent Specific Queries ---
+
+  Future<List<ChildModel>> readChildrenByParent(int parentId) async {
+    final db = await instance.database;
+    final result = await db.query(
+      'children',
+      where: 'parent_id = ?',
+      whereArgs: [parentId],
+    );
+    return result.map((json) => ChildModel.fromMap(json)).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> getHomeActivitiesByChild(int childId) async {
+    final db = await instance.database;
+    return await db.query(
+      'home_activities',
+      where: 'child_id = ?',
+      orderBy: 'date_assigned DESC',
+    );
+  }
+
+  Future<int> updateHomeActivityStatus(int activityId, String status) async {
+    final db = await instance.database;
+    return await db.update(
+      'home_activities',
+      {'status': status},
+      where: 'id = ?',
+      whereArgs: [activityId],
+    );
+  }
+
   // --- CRUD Operations for Home Activities ---
 
   Future<int> createHomeActivity(int teacherId, int childId, String title, String description) async {

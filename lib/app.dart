@@ -9,8 +9,10 @@ import 'features/eccd_evaluation/presentation/eccd_evaluation_page.dart';
 import 'features/home_activities/presentation/home_activities_page.dart';
 import 'features/referral/presentation/referral_page.dart';
 import 'features/reports/presentation/reports_page.dart';
-import 'features/auth/data/auth_repository_impl.dart';
+import 'features/parent/presentation/parent_home_activities_page.dart';
+import 'features/parent/presentation/feedback_page.dart';
 import 'shared/models/user_model.dart';
+import 'shared/models/child_model.dart';
 
 class GrowthTrackApp extends StatelessWidget {
   final UserModel? initialUser;
@@ -39,6 +41,18 @@ class GrowthTrackApp extends StatelessWidget {
         '/home-activities': (context) => const HomeActivitiesPage(),
         '/referrals': (context) => const ReferralPage(),
         '/reports': (context) => const ReportsPage(),
+
+        // Parent Feature Routes
+        '/feedback': (context) => const FeedbackPage(),
+      },
+      onGenerateRoute: (settings) {
+        if (settings.name == '/parent-activities') {
+          final child = settings.arguments as ChildModel;
+          return MaterialPageRoute(
+            builder: (context) => ParentHomeActivitiesPage(child: child),
+          );
+        }
+        return null;
       },
     );
   }

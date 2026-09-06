@@ -31,7 +31,7 @@ class ChildSummaryReport extends StatelessWidget {
               children: [
                 _SectionHeader(title: 'Attendance Overview', icon: Icons.calendar_month),
                 Card(
-                  color: Colors.blue.withOpacity(0.05),
+                  color: Colors.blue.withValues(alpha: 0.05),
                   child: Padding(
                     padding: const EdgeInsets.all(20),
                     child: Row(
@@ -74,7 +74,7 @@ class ChildSummaryReport extends StatelessWidget {
                           const SizedBox(height: 4),
                           LinearProgressIndicator(
                             value: (item['avg_score'] as double) / 4, // Max score per domain in mock is 4
-                            backgroundColor: Colors.grey.withOpacity(0.2),
+                            backgroundColor: Colors.grey.withValues(alpha: 0.2),
                             color: Colors.blue,
                             borderRadius: BorderRadius.circular(10),
                             minHeight: 8,

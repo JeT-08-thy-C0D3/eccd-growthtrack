@@ -20,6 +20,7 @@ class TeacherDashboard extends StatelessWidget {
             tooltip: 'Logout',
             onPressed: () async {
               await AuthRepositoryImpl().logout();
+              if (!context.mounted) return;
               Navigator.pushReplacementNamed(context, '/login');
             },
           )
@@ -102,7 +103,7 @@ class _DashboardCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       elevation: 4,
-      shadowColor: color.withOpacity(0.2),
+      shadowColor: color.withValues(alpha: 0.2),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: InkWell(
         onTap: onTap,
@@ -113,7 +114,7 @@ class _DashboardCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, size: 40, color: color),
