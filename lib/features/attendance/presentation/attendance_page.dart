@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../../core/database/database_helper.dart';
-import '../../auth/data/auth_repository_impl.dart';
+import '../../../shared/models/child_model.dart';
+import '../data/attendance_repository.dart';
+import '../domain/attendance_model.dart';
+import 'attendance_history_page.dart';
 
 class AttendancePage extends StatefulWidget {
   const AttendancePage({super.key});
@@ -10,161 +14,148 @@ class AttendancePage extends StatefulWidget {
 }
 
 class _AttendancePageState extends State<AttendancePage> {
-  DateTime _selectedDate = DateTime.now();
-  List<Map<String, dynamic>> _childrenAttendance = [];
+  final AttendanceRepository _repository = AttendanceRepositoryImpl();
+  List<ChildModel> _children = [];
+  ChildModel? _selectedChild;
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _loadChildren();
   }
 
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-    final teacher = await AuthRepositoryImpl().getCurrentUser();
-    if (teacher != null) {
-      final dateStr = "${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}";
-      final data = await DatabaseHelper.instance.getAttendanceForDate(teacher.id!, dateStr);
-      setState(() {
-        _childrenAttendance = data;
-        _isLoading = false;
-      });
+  Future<void> _loadChildren() async {
+    final data = await DatabaseHelper.instance.getAllChildren();
+    setState(() {
+      _children = data;
+      _isLoading = false;
+      if (_children.isNotEmpty) {
+        _selectedChild = _children.first;
+      }
+    });
+  }
+
+  void _markAttendance(String status) async {
+    if (_selectedChild == null) return;
+
+    final now = DateTime.now();
+    final attendance = AttendanceModel(
+      childId: _selectedChild!.childId,
+      attendanceDate: DateFormat('yyyy-MM-dd').format(now),
+      attendanceTime: DateFormat('HH:mm:ss').format(now),
+      status: status,
+    );
+
+    await _repository.addAttendance(attendance);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Attendance recorded: ${_selectedChild!.firstName} is $status'),
+          backgroundColor: status == 'Present' ? Colors.green : Colors.red,
+        ),
+      );
     }
-  }
-
-  Future<void> _updateAttendance(int childId, String status) async {
-    final dateStr = "${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}";
-    await DatabaseHelper.instance.markAttendance(childId, dateStr, status);
-    _loadData();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Attendance Monitoring'),
+        title: const Text('Simulated RFID Attendance'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.calendar_month),
-            onPressed: () async {
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: _selectedDate,
-                firstDate: DateTime(2023),
-                lastDate: DateTime.now(),
-              );
-              if (picked != null) {
-                setState(() => _selectedDate = picked);
-                _loadData();
+            icon: const Icon(Icons.history),
+            onPressed: () {
+              if (_selectedChild != null) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AttendanceHistoryPage(child: _selectedChild!),
+                  ),
+                );
               }
             },
           )
         ],
       ),
-      body: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Theme.of(context).colorScheme.primaryContainer,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.today),
-                const SizedBox(width: 8),
-                Text(
-                  "Date: ${_selectedDate.year}-${_selectedDate.month}-${_selectedDate.day}",
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _childrenAttendance.isEmpty
-                    ? const Center(child: Text('No children registered yet.'))
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(8),
-                        itemCount: _childrenAttendance.length,
-                        itemBuilder: (context, index) {
-                          final child = _childrenAttendance[index];
-                          final status = child['status'];
-
-                          return Card(
-                            child: ListTile(
-                              title: Text(child['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _AttendanceButton(
-                                    label: 'P',
-                                    color: Colors.green,
-                                    isSelected: status == 'Present',
-                                    onTap: () => _updateAttendance(child['id'], 'Present'),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  _AttendanceButton(
-                                    label: 'A',
-                                    color: Colors.red,
-                                    isSelected: status == 'Absent',
-                                    onTap: () => _updateAttendance(child['id'], 'Absent'),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  _AttendanceButton(
-                                    label: 'L',
-                                    color: Colors.orange,
-                                    isSelected: status == 'Late',
-                                    onTap: () => _updateAttendance(child['id'], 'Late'),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Icon(Icons.nfc, size: 80, color: Colors.blue),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'RFID Simulation Mode',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Select a child to simulate an RFID scan.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 40),
+                  DropdownButtonFormField<ChildModel>(
+                    initialValue: _selectedChild,
+                    decoration: const InputDecoration(
+                      labelText: 'Select Child (Simulate Scan)',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.person),
+                    ),
+                    items: _children.map((c) {
+                      return DropdownMenuItem(
+                        value: c,
+                        child: Text('${c.firstName} ${c.lastName} (${c.childId})'),
+                      );
+                    }).toList(),
+                    onChanged: (val) => setState(() => _selectedChild = val),
+                  ),
+                  const SizedBox(height: 32),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _markAttendance('Present'),
+                          icon: const Icon(Icons.check_circle),
+                          label: const Text('Mark Present'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                        ),
                       ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AttendanceButton extends StatelessWidget {
-  final String label;
-  final Color color;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _AttendanceButton({
-    required this.label,
-    required this.color,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: isSelected ? color : color.withValues(alpha: 0.1),
-          shape: BoxShape.circle,
-          border: Border.all(color: color),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              color: isSelected ? Colors.white : color,
-              fontWeight: FontWeight.bold,
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _markAttendance('Absent'),
+                          icon: const Icon(Icons.cancel),
+                          label: const Text('Mark Absent'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 48),
+                  const Text(
+                    'Hardware Note: In the final production version, this manual selection will be replaced by a background service listening for RFID Serial input.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey, fontStyle: FontStyle.italic),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
             ),
-          ),
-        ),
-      ),
     );
   }
 }

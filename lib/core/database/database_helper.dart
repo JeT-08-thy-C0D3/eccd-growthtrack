@@ -110,14 +110,15 @@ class DatabaseHelper {
       )
     ''');
 
-    // Attendance Table
+    // Attendance Table - Updated Schema for RFID readiness
     await db.execute('''
       CREATE TABLE attendance (
         id $idType,
-        child_id $integerType,
-        date $textType,
+        child_id $textType,
+        attendance_date $textType,
+        attendance_time $textType,
         status $textType,
-        FOREIGN KEY (child_id) REFERENCES children (id) ON DELETE CASCADE
+        FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
       )
     ''');
 
@@ -215,39 +216,30 @@ class DatabaseHelper {
   // Note: Previous methods like readChildrenByTeacher/Parent need update if they used teacher_id column
   // For simplicity in this module, I'll focus on the new children CRUD.
   
-  Future<int> markAttendance(int childId, String date, String status) async {
-    final db = await instance.database;
-    final existing = await db.query(
-      'attendance',
-      where: 'child_id = ? AND date = ?',
-      whereArgs: [childId, date],
-    );
+  // --- Updated Attendance Operations for RFID Module ---
 
-    if (existing.isNotEmpty) {
-      return await db.update(
-        'attendance',
-        {'status': status},
-        where: 'child_id = ? AND date = ?',
-        whereArgs: [childId, date],
-      );
-    } else {
-      return await db.insert('attendance', {
-        'child_id': childId,
-        'date': date,
-        'status': status,
-      });
-    }
+  Future<int> insertAttendance(Map<String, dynamic> row) async {
+    final db = await instance.database;
+    return await db.insert('attendance', row);
   }
 
-  Future<List<Map<String, dynamic>>> getAttendanceForDate(int teacherId, String date) async {
+  Future<List<Map<String, dynamic>>> getChildAttendanceHistory(String childId) async {
     final db = await instance.database;
-    // This rawQuery might need update if we want to filter by teacher_name instead of teacher_id
-    // But since the requirements don't strictly forbid using IDs for relations, I'll keep it or adapt.
-    // The user asked for teacher_name in children table, so I'll join on name if needed.
+    return await db.query(
+      'attendance',
+      where: 'child_id = ?',
+      whereArgs: [childId],
+      orderBy: 'attendance_date DESC, attendance_time DESC',
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getAttendanceSummaryByDate(String date) async {
+    final db = await instance.database;
     return await db.rawQuery('''
-      SELECT c.id, c.first_name || ' ' || c.last_name as name, IFNULL(a.status, 'none') as status
-      FROM children c
-      LEFT JOIN attendance a ON c.id = a.child_id AND a.date = ?
+      SELECT a.*, c.first_name, c.last_name
+      FROM attendance a
+      JOIN children c ON a.child_id = c.child_id
+      WHERE a.attendance_date = ?
     ''', [date]);
   }
 
