@@ -42,7 +42,7 @@ class _ParentHomeActivitiesPageState extends State<ParentHomeActivitiesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Activities for ${widget.child.name}')),
+      appBar: AppBar(title: Text('Activities for ${widget.child.firstName} ${widget.child.lastName}')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _activities.isEmpty
@@ -80,7 +80,7 @@ class _ParentHomeActivitiesPageState extends State<ParentHomeActivitiesPage> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: isCompleted ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                                    color: isCompleted ? Colors.green.withValues(alpha: 0.1) : Colors.orange.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(

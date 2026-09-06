@@ -98,7 +98,7 @@ class _EccdAssessmentFormState extends State<EccdAssessmentForm> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Evaluation: ${widget.child.name}')),
+      appBar: AppBar(title: Text('Evaluation: ${widget.child.firstName} ${widget.child.lastName}')),
       body: _isSaving
           ? const Center(child: CircularProgressIndicator())
           : ListView(

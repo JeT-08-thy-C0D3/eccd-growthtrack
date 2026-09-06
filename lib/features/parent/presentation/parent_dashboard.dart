@@ -160,28 +160,14 @@ class _ChildSummaryCard extends StatelessWidget {
       child: ListTile(
         contentPadding: const EdgeInsets.all(16),
         leading: const CircleAvatar(radius: 28, child: Icon(Icons.child_care, size: 32)),
-        title: Text(child.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-        subtitle: Text('Age: ${_calculateAge(child.dob)} | Gender: ${child.gender}'),
+        title: Text('${child.firstName} ${child.lastName}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        subtitle: Text('Age: ${child.age} yrs old | Gender: ${child.gender}'),
         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
         onTap: () {
           // Show child details
         },
       ),
     );
-  }
-
-  String _calculateAge(String dob) {
-    try {
-      final birth = DateTime.parse(dob);
-      final now = DateTime.now();
-      int years = now.year - birth.year;
-      if (now.month < birth.month || (now.month == birth.month && now.day < birth.day)) {
-        years--;
-      }
-      return '$years yrs old';
-    } catch (e) {
-      return dob;
-    }
   }
 }
 

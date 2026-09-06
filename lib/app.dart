@@ -3,7 +3,8 @@ import 'features/auth/presentation/login_page.dart';
 import 'features/admin/presentation/admin_dashboard.dart';
 import 'features/teacher/presentation/teacher_dashboard.dart';
 import 'features/parent/presentation/parent_dashboard.dart';
-import 'features/child_profile/presentation/register_child_page.dart';
+import 'features/child_profile/presentation/child_list_page.dart';
+import 'features/child_profile/presentation/child_registration_page.dart';
 import 'features/attendance/presentation/attendance_page.dart';
 import 'features/eccd_evaluation/presentation/eccd_evaluation_page.dart';
 import 'features/home_activities/presentation/home_activities_page.dart';
@@ -35,7 +36,8 @@ class GrowthTrackApp extends StatelessWidget {
         '/parent': (context) => const ParentDashboard(),
         
         // Teacher Feature Routes
-        '/register-child': (context) => const RegisterChildPage(),
+        '/register-child': (context) => const ChildListPage(),
+        '/child-registration': (context) => const ChildRegistrationPage(),
         '/attendance': (context) => const AttendancePage(),
         '/eccd-evaluation': (context) => const EccdEvaluationPage(),
         '/home-activities': (context) => const HomeActivitiesPage(),

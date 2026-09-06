@@ -1,39 +1,81 @@
 class ChildModel {
   final int? id;
-  final String name;
-  final String dob; // Date of Birth
+  final String childId; // Unique auto-generated ID
+  final String firstName;
+  final String lastName;
+  final String birthDate;
+  final int age;
   final String gender;
-  final int teacherId;
-  final int parentId;
+  final String address;
+  final String parentName;
+  final String teacherName;
 
   ChildModel({
     this.id,
-    required this.name,
-    required this.dob,
+    required this.childId,
+    required this.firstName,
+    required this.lastName,
+    required this.birthDate,
+    required this.age,
     required this.gender,
-    required this.teacherId,
-    required this.parentId,
+    required this.address,
+    required this.parentName,
+    required this.teacherName,
   });
 
   Map<String, dynamic> toMap() {
     return {
       'id': id,
-      'name': name,
-      'dob': dob,
+      'child_id': childId,
+      'first_name': firstName,
+      'last_name': lastName,
+      'birth_date': birthDate,
+      'age': age,
       'gender': gender,
-      'teacher_id': teacherId,
-      'parent_id': parentId,
+      'address': address,
+      'parent_name': parentName,
+      'teacher_name': teacherName,
     };
   }
 
   factory ChildModel.fromMap(Map<String, dynamic> map) {
     return ChildModel(
       id: map['id'],
-      name: map['name'],
-      dob: map['dob'],
-      gender: map['gender'],
-      teacherId: map['teacher_id'],
-      parentId: map['parent_id'],
+      childId: map['child_id'] ?? '',
+      firstName: map['first_name'] ?? '',
+      lastName: map['last_name'] ?? '',
+      birthDate: map['birth_date'] ?? '',
+      age: map['age'] ?? 0,
+      gender: map['gender'] ?? '',
+      address: map['address'] ?? '',
+      parentName: map['parent_name'] ?? '',
+      teacherName: map['teacher_name'] ?? '',
+    );
+  }
+
+  ChildModel copyWith({
+    int? id,
+    String? childId,
+    String? firstName,
+    String? lastName,
+    String? birthDate,
+    int? age,
+    String? gender,
+    String? address,
+    String? parentName,
+    String? teacherName,
+  }) {
+    return ChildModel(
+      id: id ?? this.id,
+      childId: childId ?? this.childId,
+      firstName: firstName ?? this.firstName,
+      lastName: lastName ?? this.lastName,
+      birthDate: birthDate ?? this.birthDate,
+      age: age ?? this.age,
+      gender: gender ?? this.gender,
+      address: address ?? this.address,
+      parentName: parentName ?? this.parentName,
+      teacherName: teacherName ?? this.teacherName,
     );
   }
 }

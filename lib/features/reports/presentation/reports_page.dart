@@ -49,7 +49,7 @@ class _ReportsPageState extends State<ReportsPage> {
                     return Card(
                       child: ListTile(
                         leading: const CircleAvatar(child: Icon(Icons.description)),
-                        title: Text(child.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        title: Text("${child.firstName} ${child.lastName}", style: const TextStyle(fontWeight: FontWeight.bold)),
                         subtitle: const Text('View developmental summary & attendance'),
                         trailing: const Icon(Icons.analytics_outlined, color: Colors.blue),
                         onTap: () {

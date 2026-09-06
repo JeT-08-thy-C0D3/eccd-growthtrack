@@ -49,10 +49,10 @@ class _EccdEvaluationPageState extends State<EccdEvaluationPage> {
                     return Card(
                       child: ListTile(
                         leading: CircleAvatar(
-                          child: Text(child.name[0].toUpperCase()),
+                          child: Text(child.firstName[0].toUpperCase()),
                         ),
-                        title: Text(child.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('Gender: ${child.gender} | DOB: ${child.dob}'),
+                        title: Text('${child.firstName} ${child.lastName}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text('Gender: ${child.gender} | DOB: ${child.birthDate}'),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () async {
                           await Navigator.push(

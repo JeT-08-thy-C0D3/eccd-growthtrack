@@ -179,7 +179,7 @@ class _AddReferralSheetState extends State<_AddReferralSheet> {
           DropdownButtonFormField<ChildModel>(
             initialValue: _selectedChild,
             decoration: const InputDecoration(labelText: 'Select Child', border: OutlineInputBorder()),
-            items: widget.children.map((c) => DropdownMenuItem(value: c, child: Text(c.name))).toList(),
+            items: widget.children.map((c) => DropdownMenuItem(value: c, child: Text("${c.firstName} ${c.lastName}"))).toList(),
             onChanged: (val) => setState(() => _selectedChild = val),
           ),
           const SizedBox(height: 16),

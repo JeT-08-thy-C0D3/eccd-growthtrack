@@ -9,7 +9,7 @@ class ChildSummaryReport extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Report: ${child.name}')),
+      appBar: AppBar(title: Text('Report: ${child.firstName} ${child.lastName}')),
       body: FutureBuilder<Map<String, dynamic>>(
         future: DatabaseHelper.instance.getChildProgressSummary(child.id!),
         builder: (context, snapshot) {
