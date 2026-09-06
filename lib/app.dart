@@ -7,7 +7,7 @@ import 'features/child_profile/presentation/child_list_page.dart';
 import 'features/child_profile/presentation/child_registration_page.dart';
 import 'features/attendance/presentation/attendance_page.dart';
 import 'features/attendance/presentation/attendance_history_page.dart';
-import 'features/eccd_evaluation/presentation/eccd_evaluation_page.dart';
+import 'features/eccd_evaluation/presentation/evaluation_page.dart';
 import 'features/home_activities/presentation/home_activities_page.dart';
 import 'features/referral/presentation/referral_page.dart';
 import 'features/reports/presentation/reports_page.dart';
@@ -40,7 +40,7 @@ class GrowthTrackApp extends StatelessWidget {
         '/register-child': (context) => const ChildListPage(),
         '/child-registration': (context) => const ChildRegistrationPage(),
         '/attendance': (context) => const AttendancePage(),
-        '/eccd-evaluation': (context) => const EccdEvaluationPage(),
+        '/eccd-evaluation': (context) => const EvaluationPage(),
         '/home-activities': (context) => const HomeActivitiesPage(),
         '/referrals': (context) => const ReferralPage(),
         '/reports': (context) => const ReportsPage(),

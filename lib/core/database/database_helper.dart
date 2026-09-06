@@ -137,20 +137,48 @@ class DatabaseHelper {
       )
     ''');
 
-    // Referrals Table
+    // Evaluations Table - Updated for comprehensive ECCD monitoring
     await db.execute('''
-      CREATE TABLE referrals (
+      CREATE TABLE evaluations (
         id $idType,
-        child_id $integerType,
-        teacher_id $integerType,
-        category $textType,
-        reason $textType,
-        date $textType,
-        status $textType,
-        FOREIGN KEY (child_id) REFERENCES children (id) ON DELETE CASCADE,
-        FOREIGN KEY (teacher_id) REFERENCES users (id)
+        child_id $textType,
+        domain $textType,
+        score $integerType,
+        remarks $textType,
+        evaluation_date $textType,
+        FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
       )
     ''');
+  }
+
+  // --- CRUD Operations for ECCD Evaluations ---
+
+  Future<int> insertEvaluation(Map<String, dynamic> row) async {
+    final db = await instance.database;
+    return await db.insert('evaluations', row);
+  }
+
+  Future<List<Map<String, dynamic>>> getChildEvaluationHistory(String childId) async {
+    final db = await instance.database;
+    return await db.query(
+      'evaluations',
+      where: 'child_id = ?',
+      whereArgs: [childId],
+      orderBy: 'evaluation_date DESC',
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getLatestEvaluations(String childId) async {
+    final db = await instance.database;
+    return await db.rawQuery('''
+      SELECT e1.*
+      FROM evaluations e1
+      WHERE e1.child_id = ? AND e1.evaluation_date = (
+        SELECT MAX(e2.evaluation_date)
+        FROM evaluations e2
+        WHERE e2.child_id = e1.child_id AND e2.domain = e1.domain
+      )
+    ''', [childId]);
   }
 
   // --- CRUD Operations for Children ---
