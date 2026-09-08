@@ -84,6 +84,12 @@ class TeacherDashboard extends StatelessWidget {
                 color: Colors.indigo,
                 onTap: () => Navigator.pushNamed(context, '/triangulation'),
               ),
+              _DashboardCard(
+                title: 'AI Summary',
+                icon: Icons.auto_awesome,
+                color: Colors.purple,
+                onTap: () => Navigator.pushNamed(context, '/ai-summary'),
+              ),
             ],
           );
         },

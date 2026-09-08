@@ -5,6 +5,8 @@ import '../../../shared/models/child_model.dart';
 import '../../../shared/models/user_model.dart';
 import '../../reports/presentation/child_summary_report.dart';
 import '../../home_activities/presentation/home_activities_page.dart'; // Reusing or creating parent version
+import '../../reports/domain/development_summary_model.dart';
+import 'child_development_summary_view.dart';
 
 class ParentDashboard extends StatefulWidget {
   const ParentDashboard({super.key});
@@ -16,6 +18,7 @@ class ParentDashboard extends StatefulWidget {
 class _ParentDashboardState extends State<ParentDashboard> {
   UserModel? _parentUser;
   List<ChildModel> _children = [];
+  DevelopmentSummaryModel? _latestSummary;
   bool _isLoading = true;
 
   @override
@@ -29,9 +32,19 @@ class _ParentDashboardState extends State<ParentDashboard> {
     final user = await AuthRepositoryImpl().getCurrentUser();
     if (user != null) {
       final children = await DatabaseHelper.instance.readChildrenByParent(user.id!);
+      
+      DevelopmentSummaryModel? summary;
+      if (children.isNotEmpty) {
+        final summaryMap = await DatabaseHelper.instance.getLatestApprovedSummary(children.first.childId);
+        if (summaryMap != null) {
+          summary = DevelopmentSummaryModel.fromMap(summaryMap);
+        }
+      }
+
       setState(() {
         _parentUser = user;
         _children = children;
+        _latestSummary = summary;
         _isLoading = false;
       });
     }
@@ -100,6 +113,23 @@ class _ParentDashboardState extends State<ParentDashboard> {
                     crossAxisSpacing: 16,
                     childAspectRatio: 1.2,
                     children: [
+                      _ParentMenuCard(
+                        title: 'Development\nSummary',
+                        icon: Icons.auto_awesome,
+                        color: Colors.purple,
+                        onTap: () {
+                          if (_latestSummary != null) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => ChildDevelopmentSummaryView(summary: _latestSummary!)),
+                            );
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('No approved summary available yet.')),
+                            );
+                          }
+                        },
+                      ),
                       _ParentMenuCard(
                         title: 'Development\nProgress',
                         icon: Icons.auto_graph,

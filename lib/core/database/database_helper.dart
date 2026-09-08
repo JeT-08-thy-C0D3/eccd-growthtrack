@@ -192,6 +192,72 @@ class DatabaseHelper {
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
       )
     ''');
+
+    // Development Summaries Table
+    await db.execute('''
+      CREATE TABLE development_summaries (
+        id $idType,
+        child_id $textType,
+        triangulation_id $integerType,
+        development_summary $textType,
+        strength_areas $textType,
+        improvement_areas $textType,
+        suggested_home_activities $textType,
+        approval_status $textType,
+        approved_by $textType,
+        approved_date $textType,
+        created_date $textType,
+        FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE,
+        FOREIGN KEY (triangulation_id) REFERENCES triangulations (id) ON DELETE CASCADE
+      )
+    ''');
+  }
+
+  // --- CRUD Operations for Development Summaries ---
+
+  Future<int> insertDevelopmentSummary(Map<String, dynamic> row) async {
+    final db = await instance.database;
+    return await db.insert('development_summaries', row);
+  }
+
+  Future<List<Map<String, dynamic>>> getDevelopmentSummaryHistory(String childId) async {
+    final db = await instance.database;
+    return await db.query(
+      'development_summaries',
+      where: 'child_id = ?',
+      whereArgs: [childId],
+      orderBy: 'created_date DESC',
+    );
+  }
+
+  Future<int> updateDevelopmentSummaryStatus(int id, String status, String approvedBy, String approvedDate) async {
+    final db = await instance.database;
+    return await db.update(
+      'development_summaries',
+      {
+        'approval_status': status,
+        'approved_by': approvedBy,
+        'approved_date': approvedDate,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<Map<String, dynamic>?> getLatestApprovedSummary(String childId) async {
+    final db = await instance.database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'development_summaries',
+      where: 'child_id = ? AND approval_status = ?',
+      whereArgs: [childId, 'Approved'],
+      orderBy: 'approved_date DESC',
+      limit: 1,
+    );
+
+    if (maps.isNotEmpty) {
+      return maps.first;
+    }
+    return null;
   }
 
   // --- CRUD Operations for Parent Feedback ---
