@@ -11,6 +11,7 @@ import 'features/eccd_evaluation/presentation/evaluation_page.dart';
 import 'features/home_activities/presentation/home_activities_page.dart';
 import 'features/referral/presentation/referral_page.dart';
 import 'features/reports/presentation/reports_page.dart';
+import 'features/triangulation/presentation/triangulation_page.dart';
 import 'features/parent/presentation/parent_home_activities_page.dart';
 import 'features/parent/presentation/feedback_page.dart';
 import 'shared/models/user_model.dart';
@@ -44,6 +45,7 @@ class GrowthTrackApp extends StatelessWidget {
         '/home-activities': (context) => const HomeActivitiesPage(),
         '/referrals': (context) => const ReferralPage(),
         '/reports': (context) => const ReportsPage(),
+        '/triangulation': (context) => const TriangulationPage(),
 
         // Parent Feature Routes
         '/feedback': (context) => const FeedbackPage(),

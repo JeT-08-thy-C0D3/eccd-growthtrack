@@ -149,6 +149,73 @@ class DatabaseHelper {
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
       )
     ''');
+
+    // Referrals Table
+    await db.execute('''
+      CREATE TABLE referrals (
+        id $idType,
+        child_id $textType,
+        teacher_id $integerType,
+        category $textType,
+        reason $textType,
+        date $textType,
+        status $textType,
+        FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE,
+        FOREIGN KEY (teacher_id) REFERENCES users (id)
+      )
+    ''');
+
+    // Parent Feedback Table
+    await db.execute('''
+      CREATE TABLE parent_feedback (
+        id $idType,
+        child_id $textType,
+        parent_id $integerType,
+        message $textType,
+        date $textType,
+        FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE,
+        FOREIGN KEY (parent_id) REFERENCES users (id)
+      )
+    ''');
+
+    // Triangulations Table
+    await db.execute('''
+      CREATE TABLE triangulations (
+        id $idType,
+        child_id $textType,
+        teacher_assessment_summary $textType,
+        parent_feedback_summary $textType,
+        historical_record_summary $textType,
+        triangulated_summary $textType,
+        development_status $textType,
+        generated_date $textType,
+        FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
+      )
+    ''');
+  }
+
+  // --- CRUD Operations for Parent Feedback ---
+
+  Future<int> insertFeedback(Map<String, dynamic> row) async {
+    final db = await instance.database;
+    return await db.insert('parent_feedback', row);
+  }
+
+  Future<List<Map<String, dynamic>>> getFeedbackByChild(String childId) async {
+    final db = await instance.database;
+    return await db.query('parent_feedback', where: 'child_id = ?', whereArgs: [childId], orderBy: 'date DESC');
+  }
+
+  // --- CRUD Operations for Triangulations ---
+
+  Future<int> insertTriangulation(Map<String, dynamic> row) async {
+    final db = await instance.database;
+    return await db.insert('triangulations', row);
+  }
+
+  Future<List<Map<String, dynamic>>> getTriangulationHistory(String childId) async {
+    final db = await instance.database;
+    return await db.query('triangulations', where: 'child_id = ?', whereArgs: [childId], orderBy: 'generated_date DESC');
   }
 
   // --- CRUD Operations for ECCD Evaluations ---
