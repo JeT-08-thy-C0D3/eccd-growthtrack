@@ -149,7 +149,7 @@ class _ParentDashboardState extends State<ParentDashboard> {
                         color: Colors.purple,
                         onTap: () {
                            if (_children.isNotEmpty) {
-                            Navigator.pushNamed(context, '/parent-activities', arguments: _children.first);
+                            Navigator.pushNamed(context, '/home-activities');
                           }
                         },
                       ),

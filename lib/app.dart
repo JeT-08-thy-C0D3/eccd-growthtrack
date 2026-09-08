@@ -8,7 +8,7 @@ import 'features/child_profile/presentation/child_registration_page.dart';
 import 'features/attendance/presentation/attendance_page.dart';
 import 'features/attendance/presentation/attendance_history_page.dart';
 import 'features/eccd_evaluation/presentation/evaluation_page.dart';
-import 'features/home_activities/presentation/home_activities_page.dart';
+import 'features/home_activities/presentation/activity_management_page.dart';
 import 'features/referral/presentation/referral_page.dart';
 import 'features/reports/presentation/reports_page.dart';
 import 'features/reports/presentation/development_summary_page.dart';
@@ -43,7 +43,7 @@ class GrowthTrackApp extends StatelessWidget {
         '/child-registration': (context) => const ChildRegistrationPage(),
         '/attendance': (context) => const AttendancePage(),
         '/eccd-evaluation': (context) => const EvaluationPage(),
-        '/home-activities': (context) => const HomeActivitiesPage(),
+        '/home-activities': (context) => const ActivityManagementPage(),
         '/referrals': (context) => const ReferralPage(),
         '/reports': (context) => const ReportsPage(),
         '/triangulation': (context) => const TriangulationPage(),
@@ -51,15 +51,6 @@ class GrowthTrackApp extends StatelessWidget {
 
         // Parent Feature Routes
         '/feedback': (context) => const FeedbackPage(),
-      },
-      onGenerateRoute: (settings) {
-        if (settings.name == '/parent-activities') {
-          final child = settings.arguments as ChildModel;
-          return MaterialPageRoute(
-            builder: (context) => ParentHomeActivitiesPage(child: child),
-          );
-        }
-        return null;
       },
     );
   }

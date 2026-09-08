@@ -204,13 +204,108 @@ class DatabaseHelper {
         improvement_areas $textType,
         suggested_home_activities $textType,
         approval_status $textType,
-        approved_by $textType,
-        approved_date $textType,
+        approved_by TEXT,
+        approved_date TEXT,
         created_date $textType,
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE,
         FOREIGN KEY (triangulation_id) REFERENCES triangulations (id) ON DELETE CASCADE
       )
     ''');
+
+    // Activities Table
+    await db.execute('''
+      CREATE TABLE activities (
+        id $idType,
+        child_id $textType,
+        activity_title $textType,
+        instructions $textType,
+        due_date $textType,
+        assigned_by $textType,
+        created_date $textType,
+        status $textType,
+        FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
+      )
+    ''');
+
+    // Activity Submissions Table
+    await db.execute('''
+      CREATE TABLE activity_submissions (
+        id $idType,
+        activity_id $integerType,
+        child_id $textType,
+        evidence_path $textType,
+        parent_note $textType,
+        submission_date $textType,
+        teacher_review TEXT,
+        review_status $textType,
+        FOREIGN KEY (activity_id) REFERENCES activities (id) ON DELETE CASCADE,
+        FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
+      )
+    ''');
+  }
+
+  // --- CRUD Operations for Activities ---
+
+  Future<int> insertActivity(Map<String, dynamic> row) async {
+    final db = await instance.database;
+    return await db.insert('activities', row);
+  }
+
+  Future<List<Map<String, dynamic>>> getActivitiesByChild(String childId) async {
+    final db = await instance.database;
+    return await db.query('activities', where: 'child_id = ?', whereArgs: [childId], orderBy: 'due_date ASC');
+  }
+
+  Future<List<Map<String, dynamic>>> getAllActivities() async {
+    final db = await instance.database;
+    return await db.query('activities', orderBy: 'created_date DESC');
+  }
+
+  Future<int> updateActivityStatus(int id, String status) async {
+    final db = await instance.database;
+    return await db.update('activities', {'status': status}, where: 'id = ?', whereArgs: [id]);
+  }
+
+  // --- CRUD Operations for Activity Submissions ---
+
+  Future<int> insertActivitySubmission(Map<String, dynamic> row) async {
+    final db = await instance.database;
+    return await db.insert('activity_submissions', row);
+  }
+
+  Future<Map<String, dynamic>?> getSubmissionByActivity(int activityId) async {
+    final db = await instance.database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'activity_submissions',
+      where: 'activity_id = ?',
+      whereArgs: [activityId],
+    );
+    if (maps.isNotEmpty) return maps.first;
+    return null;
+  }
+
+  Future<List<Map<String, dynamic>>> getAllSubmissions() async {
+    final db = await instance.database;
+    return await db.rawQuery('''
+      SELECT s.*, a.activity_title, c.first_name, c.last_name
+      FROM activity_submissions s
+      JOIN activities a ON s.activity_id = a.id
+      JOIN children c ON s.child_id = c.child_id
+      ORDER BY s.submission_date DESC
+    ''');
+  }
+
+  Future<int> updateSubmissionReview(int id, String review, String status) async {
+    final db = await instance.database;
+    return await db.update(
+      'activity_submissions',
+      {
+        'teacher_review': review,
+        'review_status': status,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   // --- CRUD Operations for Development Summaries ---
