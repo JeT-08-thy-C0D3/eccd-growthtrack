@@ -165,14 +165,16 @@ class DatabaseHelper {
       )
     ''');
 
-    // Parent Feedback Table
+    // Parent Feedback Table - Updated for comprehensive observation tracking
     await db.execute('''
       CREATE TABLE parent_feedback (
         id $idType,
         child_id $textType,
         parent_id $integerType,
-        message $textType,
-        date $textType,
+        parent_observation $textType,
+        assistance_level $textType,
+        notes $textType,
+        submission_date $textType,
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE,
         FOREIGN KEY (parent_id) REFERENCES users (id)
       )
@@ -364,7 +366,17 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getFeedbackByChild(String childId) async {
     final db = await instance.database;
-    return await db.query('parent_feedback', where: 'child_id = ?', whereArgs: [childId], orderBy: 'date DESC');
+    return await db.query('parent_feedback', where: 'child_id = ?', whereArgs: [childId], orderBy: 'submission_date DESC');
+  }
+
+  Future<int> updateFeedback(Map<String, dynamic> row) async {
+    final db = await instance.database;
+    return await db.update('parent_feedback', row, where: 'id = ?', whereArgs: [row['id']]);
+  }
+
+  Future<int> deleteFeedback(int id) async {
+    final db = await instance.database;
+    return await db.delete('parent_feedback', where: 'id = ?', whereArgs: [id]);
   }
 
   // --- CRUD Operations for Triangulations ---

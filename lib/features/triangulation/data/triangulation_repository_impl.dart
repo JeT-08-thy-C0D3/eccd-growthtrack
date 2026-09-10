@@ -54,7 +54,7 @@ class TriangulationRepositoryImpl implements TriangulationRepository {
 
   String _generateParentSummary(List<Map<String, dynamic>> feedback) {
     if (feedback.isEmpty) return 'No parent feedback records found.';
-    return 'Parent has provided ${feedback.length} updates. Latest: "${feedback.first['message']}"';
+    return 'Parent has provided ${feedback.length} updates. Latest: "${feedback.first['parent_observation']}" (Level: ${feedback.first['assistance_level']})';
   }
 
   String _generateHistorySummary(List<Map<String, dynamic>> history) {

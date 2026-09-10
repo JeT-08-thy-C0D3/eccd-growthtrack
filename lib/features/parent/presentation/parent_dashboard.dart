@@ -154,10 +154,16 @@ class _ParentDashboardState extends State<ParentDashboard> {
                         },
                       ),
                       _ParentMenuCard(
-                        title: 'Feedback\nTeacher',
+                        title: 'Submit\nFeedback',
                         icon: Icons.message,
                         color: Colors.orange,
                         onTap: () => Navigator.pushNamed(context, '/feedback'),
+                      ),
+                      _ParentMenuCard(
+                        title: 'Feedback\nHistory',
+                        icon: Icons.history_edu,
+                        color: Colors.deepOrange,
+                        onTap: () => Navigator.pushNamed(context, '/feedback-history'),
                       ),
                       _ParentMenuCard(
                         title: 'Health &\nNutrition',

@@ -14,7 +14,8 @@ import 'features/reports/presentation/reports_page.dart';
 import 'features/reports/presentation/development_summary_page.dart';
 import 'features/triangulation/presentation/triangulation_page.dart';
 import 'features/parent/presentation/parent_home_activities_page.dart';
-import 'features/parent/presentation/feedback_page.dart';
+import 'features/parent/presentation/parent_feedback_page.dart';
+import 'features/parent/presentation/parent_feedback_history_page.dart';
 import 'shared/models/user_model.dart';
 import 'shared/models/child_model.dart';
 
@@ -50,7 +51,8 @@ class GrowthTrackApp extends StatelessWidget {
         '/ai-summary': (context) => const DevelopmentSummaryPage(),
 
         // Parent Feature Routes
-        '/feedback': (context) => const FeedbackPage(),
+        '/feedback': (context) => const ParentFeedbackPage(),
+        '/feedback-history': (context) => const ParentFeedbackHistoryPage(),
       },
     );
   }
