@@ -633,6 +633,97 @@ class DatabaseHelper {
     ''');
   }
 
+  // --- Reports & Analytics Operations ---
+
+  Future<Map<String, dynamic>> getDashboardStats(String today) async {
+    final db = await instance.database;
+    
+    final totalChildren = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM children')) ?? 0;
+    final presentToday = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM attendance WHERE attendance_date = ? AND status = ?', [today, 'Present'])) ?? 0;
+    final absentToday = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM attendance WHERE attendance_date = ? AND status = ?', [today, 'Absent'])) ?? 0;
+    final completedEvaluations = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(DISTINCT child_id) FROM evaluations')) ?? 0;
+    final pendingReferrals = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM referrals WHERE status = ?', ['Pending'])) ?? 0;
+
+    return {
+      'total_children': totalChildren,
+      'present_today': presentToday,
+      'absent_today': absentToday,
+      'completed_evaluations': completedEvaluations,
+      'pending_referrals': pendingReferrals,
+    };
+  }
+
+  Future<List<Map<String, dynamic>>> getAttendanceReport() async {
+    final db = await instance.database;
+    return await db.rawQuery('''
+      SELECT 
+        c.child_id, 
+        c.first_name || ' ' || c.last_name as child_name, 
+        COUNT(CASE WHEN a.status = 'Present' THEN 1 END) as present,
+        COUNT(CASE WHEN a.status = 'Absent' THEN 1 END) as absent
+      FROM children c
+      LEFT JOIN attendance a ON c.child_id = a.child_id
+      GROUP BY c.child_id
+    ''');
+  }
+
+  Future<List<Map<String, dynamic>>> getEvaluationReport() async {
+    final db = await instance.database;
+    return await db.rawQuery('''
+      SELECT 
+        e.child_id, 
+        c.first_name || ' ' || c.last_name as child_name, 
+        e.domain, 
+        e.score, 
+        e.evaluation_date, 
+        e.remarks
+      FROM evaluations e
+      JOIN children c ON e.child_id = c.child_id
+      ORDER BY e.evaluation_date DESC
+    ''');
+  }
+
+  Future<List<Map<String, dynamic>>> getReferralReport() async {
+    final db = await instance.database;
+    return await db.rawQuery('''
+      SELECT 
+        r.child_id, 
+        c.first_name || ' ' || c.last_name as child_name, 
+        r.concern, 
+        r.referral_date, 
+        r.follow_up_date, 
+        r.status
+      FROM referrals r
+      JOIN children c ON r.child_id = c.child_id
+      ORDER BY r.referral_date DESC
+    ''');
+  }
+
+  Future<List<Map<String, dynamic>>> getChildProgressReport() async {
+    final db = await instance.database;
+    // For progress, we compare the two latest evaluations for each domain per child
+    return await db.rawQuery('''
+      SELECT 
+        e1.child_id, 
+        c.first_name || ' ' || c.last_name as child_name, 
+        e1.domain, 
+        e1.score as current_score,
+        (SELECT e2.score FROM evaluations e2 
+         WHERE e2.child_id = e1.child_id AND e2.domain = e1.domain AND e2.evaluation_date < e1.evaluation_date 
+         ORDER BY e2.evaluation_date DESC LIMIT 1) as previous_score,
+        t.development_status,
+        t.triangulated_summary
+      FROM evaluations e1
+      JOIN children c ON e1.child_id = c.child_id
+      LEFT JOIN triangulations t ON e1.child_id = t.child_id AND t.generated_date = (
+        SELECT MAX(generated_date) FROM triangulations WHERE child_id = e1.child_id
+      )
+      WHERE e1.evaluation_date = (
+        SELECT MAX(evaluation_date) FROM evaluations WHERE child_id = e1.child_id AND domain = e1.domain
+      )
+    ''');
+  }
+
   Future close() async {
     final db = await instance.database;
     db.close();
