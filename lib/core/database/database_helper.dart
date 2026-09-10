@@ -150,18 +150,18 @@ class DatabaseHelper {
       )
     ''');
 
-    // Referrals Table
+    // Referrals Table - Updated for Case and Referral Management
     await db.execute('''
       CREATE TABLE referrals (
         id $idType,
         child_id $textType,
-        teacher_id $integerType,
-        category $textType,
-        reason $textType,
-        date $textType,
+        concern $textType,
+        description $textType,
+        referral_date $textType,
+        follow_up_date $textType,
         status $textType,
-        FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE,
-        FOREIGN KEY (teacher_id) REFERENCES users (id)
+        follow_up_notes $textType,
+        FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
       )
     ''');
 
@@ -611,27 +611,26 @@ class DatabaseHelper {
     );
   }
 
-  Future<int> createReferral(int childId, int teacherId, String category, String reason) async {
+  // --- Updated Referral Operations ---
+
+  Future<int> insertReferral(Map<String, dynamic> row) async {
     final db = await instance.database;
-    return await db.insert('referrals', {
-      'child_id': childId,
-      'teacher_id': teacherId,
-      'category': category,
-      'reason': reason,
-      'date': DateTime.now().toIso8601String().split('T')[0],
-      'status': 'Pending',
-    });
+    return await db.insert('referrals', row);
   }
 
-  Future<List<Map<String, dynamic>>> getReferralsByTeacher(int teacherId) async {
+  Future<List<Map<String, dynamic>>> getReferralsByChild(String childId) async {
+    final db = await instance.database;
+    return await db.query('referrals', where: 'child_id = ?', whereArgs: [childId], orderBy: 'referral_date DESC');
+  }
+
+  Future<List<Map<String, dynamic>>> getAllReferrals() async {
     final db = await instance.database;
     return await db.rawQuery('''
-      SELECT r.*, c.first_name || ' ' || c.last_name as child_name
+      SELECT r.*, c.first_name, c.last_name
       FROM referrals r
-      JOIN children c ON r.child_id = c.id
-      WHERE r.teacher_id = ?
-      ORDER BY r.date DESC
-    ''', [teacherId]);
+      JOIN children c ON r.child_id = c.child_id
+      ORDER BY r.referral_date DESC
+    ''');
   }
 
   Future close() async {
