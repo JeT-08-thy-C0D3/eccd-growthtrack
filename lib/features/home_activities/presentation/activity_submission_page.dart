@@ -15,9 +15,17 @@ class ActivitySubmissionPage extends StatefulWidget {
 class _ActivitySubmissionPageState extends State<ActivitySubmissionPage> {
   final ActivityRepository _repository = ActivityRepositoryImpl();
   final _noteController = TextEditingController();
-  final _evidenceController = TextEditingController(text: 'mock_evidence_path/activity_photo.jpg');
+  
+  String _selectedAssistance = 'Independent';
   bool _isSubmitting = false;
   ActivitySubmissionModel? _existingSubmission;
+
+  final List<String> _assistanceLevels = [
+    'Independent',
+    'Minimal Assistance',
+    'Moderate Assistance',
+    'Full Assistance',
+  ];
 
   @override
   void initState() {
@@ -31,6 +39,7 @@ class _ActivitySubmissionPageState extends State<ActivitySubmissionPage> {
       setState(() {
         _existingSubmission = submission;
         _noteController.text = submission.parentNote;
+        _selectedAssistance = submission.assistanceLevel;
       });
     }
   }
@@ -44,13 +53,16 @@ class _ActivitySubmissionPageState extends State<ActivitySubmissionPage> {
     setState(() => _isSubmitting = true);
 
     try {
+      final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
       final submission = ActivitySubmissionModel(
         activityId: widget.activity.id!,
         childId: widget.activity.childId,
-        evidencePath: _evidenceController.text,
         parentNote: _noteController.text,
-        submissionDate: DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now()),
+        assistanceLevel: _selectedAssistance,
+        submissionDate: now,
         reviewStatus: 'Pending',
+        updatedAt: now,
+        isSynced: false,
       );
 
       await _repository.submitActivity(submission);
@@ -100,35 +112,34 @@ class _ActivitySubmissionPageState extends State<ActivitySubmissionPage> {
               ),
               const SizedBox(height: 24),
             ],
-            const Text('Activity Evidence', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('Assistance Provided', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
-            Container(
-              height: 150,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade200,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade400),
+            DropdownButtonFormField<String>(
+              initialValue: _selectedAssistance,
+              decoration: const InputDecoration(
+                labelText: 'Level of Assistance',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.help_outline),
               ),
-              child: const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.camera_alt, size: 48, color: Colors.grey),
-                    Text('Simulated Image Upload', style: TextStyle(color: Colors.grey)),
-                  ],
-                ),
-              ),
+              items: _assistanceLevels.map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
+              onChanged: isSubmitted ? null : (val) => setState(() => _selectedAssistance = val!),
             ),
             const SizedBox(height: 24),
             TextField(
               controller: _noteController,
-              maxLines: 4,
+              maxLines: 5,
               enabled: !isSubmitted,
               decoration: const InputDecoration(
-                labelText: 'Notes to Teacher',
+                labelText: 'Activity Narrative / Parent Notes',
                 border: OutlineInputBorder(),
-                hintText: 'How did your child find this activity?',
+                hintText: 'Describe how the child performed the activity...',
+                alignLabelWithHint: true,
               ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Hardware Note: Image/Video evidence features are currently disabled for this text-only prototype.',
+              style: TextStyle(fontSize: 11, color: Colors.grey, fontStyle: FontStyle.italic),
             ),
             const SizedBox(height: 32),
             if (!isSubmitted)

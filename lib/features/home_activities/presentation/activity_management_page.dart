@@ -62,7 +62,7 @@ class _ActivityManagementPageState extends State<ActivityManagementPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<ChildModel>(
-                  value: selectedChild,
+                  initialValue: selectedChild,
                   decoration: const InputDecoration(labelText: 'Assign to Child'),
                   items: _children.map((c) => DropdownMenuItem(value: c, child: Text("${c.firstName} ${c.lastName}"))).toList(),
                   onChanged: (val) => setDialogState(() => selectedChild = val),
@@ -90,14 +90,17 @@ class _ActivityManagementPageState extends State<ActivityManagementPage> {
             ElevatedButton(
               onPressed: () async {
                 if (selectedChild == null || titleController.text.isEmpty) return;
+                final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
                 final activity = ActivityModel(
                   childId: selectedChild!.childId,
                   activityTitle: titleController.text,
                   instructions: instructionsController.text,
                   dueDate: DateFormat('yyyy-MM-dd').format(selectedDate),
                   assignedBy: _currentUser?.name ?? 'Teacher',
-                  createdDate: DateFormat('yyyy-MM-dd').format(DateTime.now()),
+                  createdDate: now,
                   status: 'Assigned',
+                  updatedAt: now,
+                  isSynced: false,
                 );
                 await _repository.createActivity(activity);
                 if (mounted) {
@@ -169,11 +172,8 @@ class _ActivityManagementPageState extends State<ActivityManagementPage> {
                         ),
                         onTap: () async {
                           if (isTeacher) {
-                             // Teachers can maybe view details or edit? 
-                             // For now just show instructions
                              _showActivityDetails(activity);
                           } else {
-                            // Parents navigate to submission page
                             final result = await Navigator.push(
                               context,
                               MaterialPageRoute(builder: (context) => ActivitySubmissionPage(activity: activity)),

@@ -1,5 +1,7 @@
 class DashboardStats {
   final int totalChildren;
+  final int totalTeachers;
+  final int totalParents;
   final int presentToday;
   final int absentToday;
   final int completedEvaluations;
@@ -7,6 +9,8 @@ class DashboardStats {
 
   DashboardStats({
     required this.totalChildren,
+    required this.totalTeachers,
+    required this.totalParents,
     required this.presentToday,
     required this.absentToday,
     required this.completedEvaluations,
@@ -16,11 +20,25 @@ class DashboardStats {
   factory DashboardStats.fromMap(Map<String, dynamic> map) {
     return DashboardStats(
       totalChildren: map['total_children'] ?? 0,
+      totalTeachers: map['total_teachers'] ?? 0,
+      totalParents: map['total_parents'] ?? 0,
       presentToday: map['present_today'] ?? 0,
       absentToday: map['absent_today'] ?? 0,
       completedEvaluations: map['completed_evaluations'] ?? 0,
       pendingReferrals: map['pending_referrals'] ?? 0,
     );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'total_children': totalChildren,
+      'total_teachers': totalTeachers,
+      'total_parents': totalParents,
+      'present_today': presentToday,
+      'absent_today': absentToday,
+      'completed_evaluations': completedEvaluations,
+      'pending_referrals': pendingReferrals,
+    };
   }
 }
 

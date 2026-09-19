@@ -83,6 +83,7 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
         address: _addressController.text,
         parentName: _parentNameController.text,
         teacherName: _teacherNameController.text,
+        updatedAt: DateTime.now().toIso8601String(),
       );
 
       if (_isEditMode) {

@@ -4,7 +4,6 @@ import '../../../core/database/database_helper.dart';
 import '../../../shared/models/child_model.dart';
 import '../../../shared/models/user_model.dart';
 import '../../reports/presentation/child_summary_report.dart';
-import '../../home_activities/presentation/home_activities_page.dart'; // Reusing or creating parent version
 import '../../reports/domain/development_summary_model.dart';
 import 'child_development_summary_view.dart';
 
@@ -56,14 +55,14 @@ class _ParentDashboardState extends State<ParentDashboard> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Parent Dashboard'),
-        backgroundColor: colorScheme.primaryContainer,
-        foregroundColor: colorScheme.onPrimaryContainer,
+        title: const Text('Parent Portal'),
+        centerTitle: false,
+        backgroundColor: colorScheme.surface,
+        elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.notifications_none),
             onPressed: () {
-              // Show mock notifications
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('No new notifications')),
               );
@@ -76,109 +75,124 @@ class _ParentDashboardState extends State<ParentDashboard> {
               if (!context.mounted) return;
               Navigator.pushReplacementNamed(context, '/login');
             },
-          )
+          ),
+          const SizedBox(width: 8),
         ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Welcome, ${_parentUser?.name}!',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 20),
-                  if (_children.isEmpty)
-                    const Center(
-                      child: Card(
-                        child: Padding(
-                          padding: EdgeInsets.all(20.0),
-                          child: Text('No children linked to your account. Please contact your child\'s teacher.'),
-                        ),
-                      ),
-                    )
-                  else
-                    ..._children.map((child) => _ChildSummaryCard(child: child)),
-                  const SizedBox(height: 24),
-                  const Text('Dashboard', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 12),
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    childAspectRatio: 1.2,
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final isWide = constraints.maxWidth > 700;
+
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _ParentMenuCard(
-                        title: 'Development\nSummary',
-                        icon: Icons.auto_awesome,
-                        color: Colors.purple,
-                        onTap: () {
-                          if (_latestSummary != null) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (context) => ChildDevelopmentSummaryView(summary: _latestSummary!)),
-                            );
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('No approved summary available yet.')),
-                            );
-                          }
-                        },
+                      Text(
+                        'Hi, ${_parentUser?.name}!',
+                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
                       ),
-                      _ParentMenuCard(
-                        title: 'Development\nProgress',
-                        icon: Icons.auto_graph,
-                        color: Colors.blue,
-                        onTap: () {
-                          if (_children.isNotEmpty) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (context) => ChildSummaryReport(child: _children.first)),
-                            );
-                          }
-                        },
+                      const SizedBox(height: 8),
+                      Text(
+                        'Stay updated with your child\'s developmental journey.',
+                        style: TextStyle(color: colorScheme.onSurfaceVariant),
                       ),
-                      _ParentMenuCard(
-                        title: 'Home\nActivities',
-                        icon: Icons.home_work,
-                        color: Colors.purple,
-                        onTap: () {
-                           if (_children.isNotEmpty) {
-                            Navigator.pushNamed(context, '/home-activities');
-                          }
-                        },
+                      const SizedBox(height: 32),
+                      if (_children.isEmpty)
+                        const Center(
+                          child: Card(
+                            child: Padding(
+                              padding: EdgeInsets.all(24.0),
+                              child: Text('No children linked to your account. Please contact the teacher.'),
+                            ),
+                          ),
+                        )
+                      else
+                        ..._children.map((child) => _ChildSummaryCard(child: child)),
+                      const SizedBox(height: 40),
+                      Text(
+                        'Learning & Feedback',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                       ),
-                      _ParentMenuCard(
-                        title: 'Submit\nFeedback',
-                        icon: Icons.message,
-                        color: Colors.orange,
-                        onTap: () => Navigator.pushNamed(context, '/feedback'),
-                      ),
-                      _ParentMenuCard(
-                        title: 'Feedback\nHistory',
-                        icon: Icons.history_edu,
-                        color: Colors.deepOrange,
-                        onTap: () => Navigator.pushNamed(context, '/feedback-history'),
-                      ),
-                      _ParentMenuCard(
-                        title: 'Health &\nNutrition',
-                        icon: Icons.favorite,
-                        color: Colors.red,
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Health logs coming soon')),
-                          );
-                        },
+                      const SizedBox(height: 16),
+                      GridView.count(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisCount: isWide ? 3 : 2,
+                        mainAxisSpacing: 16,
+                        crossAxisSpacing: 16,
+                        childAspectRatio: 1.3,
+                        children: [
+                          _ParentMenuCard(
+                            title: 'Development Summary',
+                            icon: Icons.auto_awesome,
+                            color: Colors.purple,
+                            onTap: () {
+                              if (_latestSummary != null) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => ChildDevelopmentSummaryView(summary: _latestSummary!)),
+                                );
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('No approved summary available yet.')),
+                                );
+                              }
+                            },
+                          ),
+                          _ParentMenuCard(
+                            title: 'Development Progress',
+                            icon: Icons.auto_graph,
+                            color: Colors.blue,
+                            onTap: () {
+                              if (_children.isNotEmpty) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => ChildSummaryReport(child: _children.first)),
+                                );
+                              }
+                            },
+                          ),
+                          _ParentMenuCard(
+                            title: 'Home Activities',
+                            icon: Icons.home_work,
+                            color: Colors.indigo,
+                            onTap: () {
+                               if (_children.isNotEmpty) {
+                                Navigator.pushNamed(context, '/home-activities');
+                              }
+                            },
+                          ),
+                          _ParentMenuCard(
+                            title: 'Submit Feedback',
+                            icon: Icons.chat_bubble_outline,
+                            color: Colors.orange,
+                            onTap: () => Navigator.pushNamed(context, '/feedback'),
+                          ),
+                          _ParentMenuCard(
+                            title: 'Feedback History',
+                            icon: Icons.history_edu,
+                            color: Colors.deepOrange,
+                            onTap: () => Navigator.pushNamed(context, '/feedback-history'),
+                          ),
+                          _ParentMenuCard(
+                            title: 'Health Logs',
+                            icon: Icons.favorite_border,
+                            color: Colors.red,
+                            onTap: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Health logs feature is coming soon.')),
+                              );
+                            },
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
+                );
+              }
             ),
     );
   }
@@ -191,17 +205,25 @@ class _ChildSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(16),
-        leading: const CircleAvatar(radius: 28, child: Icon(Icons.child_care, size: 32)),
-        title: Text('${child.firstName} ${child.lastName}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-        subtitle: Text('Age: ${child.age} yrs old | Gender: ${child.gender}'),
-        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-        onTap: () {
-          // Show child details
-        },
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: ListTile(
+          contentPadding: const EdgeInsets.all(12),
+          leading: CircleAvatar(
+            radius: 30, 
+            backgroundColor: Colors.blue.withOpacity(0.1),
+            child: const Icon(Icons.child_care, size: 32, color: Colors.blue)
+          ),
+          title: Text('${child.firstName} ${child.lastName}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          subtitle: Text('Age: ${child.age} yrs • ID: ${child.childId}'),
+          trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+          onTap: () {},
+        ),
       ),
     );
   }
@@ -219,11 +241,14 @@ class _ParentMenuCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       elevation: 0,
-      color: color.withValues(alpha: 0.1),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: color.withValues(alpha: 0.05),
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: color.withOpacity(0.1)),
+        borderRadius: BorderRadius.circular(20)
+      ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
@@ -234,7 +259,8 @@ class _ParentMenuCard extends StatelessWidget {
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 14),
+                maxLines: 2,
+                style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 13, height: 1.1),
               ),
             ],
           ),

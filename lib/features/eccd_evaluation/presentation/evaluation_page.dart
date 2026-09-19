@@ -59,6 +59,7 @@ class _EvaluationPageState extends State<EvaluationPage> {
         score: int.parse(_scoreController.text),
         remarks: _remarksController.text,
         evaluationDate: DateFormat('yyyy-MM-dd').format(DateTime.now()),
+        updatedAt: DateTime.now().toIso8601String(),
       );
 
       await _repository.addEvaluation(evaluation);

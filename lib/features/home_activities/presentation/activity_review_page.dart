@@ -32,20 +32,29 @@ class _ActivityReviewPageState extends State<ActivityReviewPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Review: ${submission['activity_title']}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Child: ${submission['first_name']} ${submission['last_name']}', style: const TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text('Parent Note: ${submission['parent_note']}'),
-            const Divider(height: 32),
-            TextField(
-              controller: reviewController,
-              decoration: const InputDecoration(labelText: 'Teacher Feedback', border: OutlineInputBorder()),
-              maxLines: 3,
-            ),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Child: ${submission['first_name']} ${submission['last_name']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              Text('Assistance: ${submission['assistance_level']}', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              const Text('Parent Note:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              Text(submission['parent_note']),
+              const Divider(height: 32),
+              TextField(
+                controller: reviewController,
+                decoration: const InputDecoration(
+                  labelText: 'Teacher Feedback / Review',
+                  border: OutlineInputBorder(),
+                  alignLabelWithHint: true,
+                ),
+                maxLines: 3,
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -92,7 +101,7 @@ class _ActivityReviewPageState extends State<ActivityReviewPage> {
                     return Card(
                       margin: const EdgeInsets.only(bottom: 16),
                       child: ListTile(
-                        leading: const CircleAvatar(child: Icon(Icons.attachment)),
+                        leading: const CircleAvatar(child: Icon(Icons.description)),
                         title: Text(sub['activity_title'], style: const TextStyle(fontWeight: FontWeight.bold)),
                         subtitle: Text('Child: ${sub['first_name']} ${sub['last_name']} | Status: $status'),
                         trailing: status == 'Pending' ? const Icon(Icons.pending_actions, color: Colors.orange) : const Icon(Icons.check_circle, color: Colors.green),

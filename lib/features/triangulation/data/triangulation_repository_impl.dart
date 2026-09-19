@@ -1,13 +1,44 @@
+import 'package:intl/intl.dart';
 import '../../../core/database/database_helper.dart';
 import '../domain/triangulation_model.dart';
 import '../domain/triangulation_repository.dart';
+import '../../../data/datasources/local_data_source.dart';
+import '../../../data/datasources/remote_data_source.dart';
+import '../../../core/network/connectivity_service.dart';
+import '../../../core/utils/audit_logger.dart';
 
 class TriangulationRepositoryImpl implements TriangulationRepository {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
+  final LocalDataSource _local = LocalDataSource();
+  final RemoteDataSource _remote = RemoteDataSource();
+  final ConnectivityService _connectivity = ConnectivityService();
 
   @override
   Future<int> saveTriangulation(TriangulationModel triangulation) async {
-    return await _dbHelper.insertTriangulation(triangulation.toMap());
+    final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
+    final newTri = triangulation.copyWith(
+      updatedAt: now,
+      isSynced: await _connectivity.isOnline,
+    );
+
+    final id = await _local.saveRecord('triangulations', newTri.toMap());
+    
+    if (await _connectivity.isOnline) {
+      try {
+        await _remote.uploadRecord('triangulations', id.toString(), newTri.toMap());
+        await _local.markAsSynced('triangulations', id);
+      } catch (e) {
+        print("Cloud Sync Failed: $e");
+      }
+    }
+
+    await AuditLogger.log(
+      action: 'Generate Triangulation',
+      module: 'Triangulation',
+      description: 'Generated development analysis for child ID ${triangulation.childId} with status: ${triangulation.developmentStatus}.',
+    );
+
+    return id;
   }
 
   @override
@@ -18,16 +49,10 @@ class TriangulationRepositoryImpl implements TriangulationRepository {
 
   @override
   Future<Map<String, dynamic>> fetchTriangulationInputs(String childId) async {
-    // 1. Fetch Teacher Assessments (Evaluations)
     final evaluations = await _dbHelper.getLatestEvaluations(childId);
-    
-    // 2. Fetch Parent Feedback
     final feedback = await _dbHelper.getFeedbackByChild(childId);
-    
-    // 3. Fetch Historical Trend (Evaluation History)
     final history = await _dbHelper.getChildEvaluationHistory(childId);
 
-    // Prepare Summaries (This is where future AI logic would reside)
     String teacherSummary = _generateTeacherSummary(evaluations);
     String parentSummary = _generateParentSummary(feedback);
     String historySummary = _generateHistorySummary(history);
@@ -49,12 +74,12 @@ class TriangulationRepositoryImpl implements TriangulationRepository {
       totalScore += (e['score'] as int);
     }
     double avg = totalScore / evaluations.length;
-    return 'Based on ${evaluations.length} domains, the teacher reports an average developmental score of ${avg.toStringAsFixed(1)}. Top areas: ${evaluations.first['domain']}.';
+    return 'Based on ${evaluations.length} domains, the teacher reports an average developmental score of ${avg.toStringAsFixed(1)}.';
   }
 
   String _generateParentSummary(List<Map<String, dynamic>> feedback) {
     if (feedback.isEmpty) return 'No parent feedback records found.';
-    return 'Parent has provided ${feedback.length} updates. Latest: "${feedback.first['parent_observation']}" (Level: ${feedback.first['assistance_level']})';
+    return 'Parent has provided ${feedback.length} updates. Latest: "${feedback.first['parent_observation']}"';
   }
 
   String _generateHistorySummary(List<Map<String, dynamic>> history) {

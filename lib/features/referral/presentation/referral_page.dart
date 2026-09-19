@@ -168,6 +168,7 @@ class _ReferralFormDialogState extends State<_ReferralFormDialog> {
       followUpDate: DateFormat('yyyy-MM-dd').format(_followUpDate),
       status: _selectedStatus,
       followUpNotes: _notesController.text,
+      updatedAt: DateTime.now().toIso8601String(),
     );
 
     if (widget.referral != null) {

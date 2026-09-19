@@ -1,6 +1,6 @@
 class ChildModel {
   final int? id;
-  final String childId; // Unique auto-generated ID
+  final String childId;
   final String firstName;
   final String lastName;
   final String birthDate;
@@ -9,6 +9,8 @@ class ChildModel {
   final String address;
   final String parentName;
   final String teacherName;
+  final String updatedAt;
+  final bool isSynced;
 
   ChildModel({
     this.id,
@@ -21,6 +23,8 @@ class ChildModel {
     required this.address,
     required this.parentName,
     required this.teacherName,
+    required this.updatedAt,
+    this.isSynced = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -35,6 +39,8 @@ class ChildModel {
       'address': address,
       'parent_name': parentName,
       'teacher_name': teacherName,
+      'updated_at': updatedAt,
+      'is_synced': isSynced ? 1 : 0,
     };
   }
 
@@ -50,6 +56,8 @@ class ChildModel {
       address: map['address'] ?? '',
       parentName: map['parent_name'] ?? '',
       teacherName: map['teacher_name'] ?? '',
+      updatedAt: map['updated_at'] ?? DateTime.now().toIso8601String(),
+      isSynced: (map['is_synced'] ?? 0) == 1,
     );
   }
 
@@ -64,6 +72,8 @@ class ChildModel {
     String? address,
     String? parentName,
     String? teacherName,
+    String? updatedAt,
+    bool? isSynced,
   }) {
     return ChildModel(
       id: id ?? this.id,
@@ -76,6 +86,8 @@ class ChildModel {
       address: address ?? this.address,
       parentName: parentName ?? this.parentName,
       teacherName: teacherName ?? this.teacherName,
+      updatedAt: updatedAt ?? this.updatedAt,
+      isSynced: isSynced ?? this.isSynced,
     );
   }
 }

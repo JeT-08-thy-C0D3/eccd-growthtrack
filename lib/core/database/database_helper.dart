@@ -1,16 +1,18 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../../shared/models/user_model.dart';
 import '../../shared/models/child_model.dart';
-import '../../shared/models/assessment_model.dart';
 
 class DatabaseHelper {
+  // Singleton instance
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
 
   DatabaseHelper._init();
 
   Future<Database> get database async {
+    if (kIsWeb) throw UnsupportedError('SQLite (sqflite) is not supported on Web.');
     if (_database != null) return _database!;
     _database = await _initDB('eccd_growthtrack.db');
     return _database!;
@@ -32,8 +34,8 @@ class DatabaseHelper {
     const textType = 'TEXT NOT NULL';
     const integerType = 'INTEGER NOT NULL';
     const textUniqueType = 'TEXT NOT NULL UNIQUE';
+    const textNullable = 'TEXT';
 
-    // Users Table
     await db.execute('''
       CREATE TABLE users (
         id $idType,
@@ -41,36 +43,14 @@ class DatabaseHelper {
         name $textType,
         email $textType UNIQUE,
         password $textType,
-        role $textType
+        role $textType,
+        status $textType,
+        created_at $textType,
+        updated_at $textType,
+        is_synced $integerType
       )
     ''');
 
-    // Default users for testing
-    await db.insert('users', {
-      'uid': 'admin-001',
-      'name': 'System Admin',
-      'email': 'admin@eccd.com',
-      'password': 'password123',
-      'role': 'admin'
-    });
-    
-    await db.insert('users', {
-      'uid': 'teacher-001',
-      'name': 'Teacher Jane',
-      'email': 'teacher@eccd.com',
-      'password': 'password123',
-      'role': 'teacher'
-    });
-
-    await db.insert('users', {
-      'uid': 'parent-001',
-      'name': 'Parent John',
-      'email': 'parent@eccd.com',
-      'password': 'password123',
-      'role': 'parent'
-    });
-
-    // Children Table - Updated Schema
     await db.execute('''
       CREATE TABLE children (
         id $idType,
@@ -82,35 +62,12 @@ class DatabaseHelper {
         gender $textType,
         address $textType,
         parent_name $textType,
-        teacher_name $textType
+        teacher_name $textType,
+        updated_at $textType,
+        is_synced $integerType
       )
     ''');
 
-    // Assessments Table
-    await db.execute('''
-      CREATE TABLE assessments (
-        id $idType,
-        child_id $integerType,
-        date $textType,
-        domain $textType,
-        score $integerType,
-        remarks $textType,
-        FOREIGN KEY (child_id) REFERENCES children (id) ON DELETE CASCADE
-      )
-    ''');
-
-    // Milestones Table
-    await db.execute('''
-      CREATE TABLE milestones (
-        id $idType,
-        child_id $integerType,
-        milestone_text $textType,
-        status $textType,
-        FOREIGN KEY (child_id) REFERENCES children (id) ON DELETE CASCADE
-      )
-    ''');
-
-    // Attendance Table - Updated Schema for RFID readiness
     await db.execute('''
       CREATE TABLE attendance (
         id $idType,
@@ -118,26 +75,12 @@ class DatabaseHelper {
         attendance_date $textType,
         attendance_time $textType,
         status $textType,
+        updated_at $textType,
+        is_synced $integerType,
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
       )
     ''');
 
-    // Home Activities Table
-    await db.execute('''
-      CREATE TABLE home_activities (
-        id $idType,
-        teacher_id $integerType,
-        child_id $integerType,
-        title $textType,
-        description $textType,
-        status $textType,
-        date_assigned $textType,
-        FOREIGN KEY (teacher_id) REFERENCES users (id),
-        FOREIGN KEY (child_id) REFERENCES children (id) ON DELETE CASCADE
-      )
-    ''');
-
-    // Evaluations Table - Updated for comprehensive ECCD monitoring
     await db.execute('''
       CREATE TABLE evaluations (
         id $idType,
@@ -146,26 +89,12 @@ class DatabaseHelper {
         score $integerType,
         remarks $textType,
         evaluation_date $textType,
+        updated_at $textType,
+        is_synced $integerType,
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
       )
     ''');
 
-    // Referrals Table - Updated for Case and Referral Management
-    await db.execute('''
-      CREATE TABLE referrals (
-        id $idType,
-        child_id $textType,
-        concern $textType,
-        description $textType,
-        referral_date $textType,
-        follow_up_date $textType,
-        status $textType,
-        follow_up_notes $textType,
-        FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
-      )
-    ''');
-
-    // Parent Feedback Table - Updated for comprehensive observation tracking
     await db.execute('''
       CREATE TABLE parent_feedback (
         id $idType,
@@ -175,12 +104,13 @@ class DatabaseHelper {
         assistance_level $textType,
         notes $textType,
         submission_date $textType,
+        updated_at $textType,
+        is_synced $integerType,
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE,
         FOREIGN KEY (parent_id) REFERENCES users (id)
       )
     ''');
 
-    // Triangulations Table
     await db.execute('''
       CREATE TABLE triangulations (
         id $idType,
@@ -191,11 +121,12 @@ class DatabaseHelper {
         triangulated_summary $textType,
         development_status $textType,
         generated_date $textType,
+        updated_at $textType,
+        is_synced $integerType,
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
       )
     ''');
 
-    // Development Summaries Table
     await db.execute('''
       CREATE TABLE development_summaries (
         id $idType,
@@ -206,15 +137,16 @@ class DatabaseHelper {
         improvement_areas $textType,
         suggested_home_activities $textType,
         approval_status $textType,
-        approved_by TEXT,
-        approved_date TEXT,
+        approved_by $textNullable,
+        approved_date $textNullable,
         created_date $textType,
+        updated_at $textType,
+        is_synced $integerType,
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE,
         FOREIGN KEY (triangulation_id) REFERENCES triangulations (id) ON DELETE CASCADE
       )
     ''');
 
-    // Activities Table
     await db.execute('''
       CREATE TABLE activities (
         id $idType,
@@ -225,68 +157,285 @@ class DatabaseHelper {
         assigned_by $textType,
         created_date $textType,
         status $textType,
+        updated_at $textType,
+        is_synced $integerType,
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
       )
     ''');
 
-    // Activity Submissions Table
     await db.execute('''
       CREATE TABLE activity_submissions (
         id $idType,
         activity_id $integerType,
         child_id $textType,
-        evidence_path $textType,
         parent_note $textType,
+        assistance_level $textType,
         submission_date $textType,
-        teacher_review TEXT,
+        teacher_review $textNullable,
         review_status $textType,
+        updated_at $textType,
+        is_synced $integerType,
+        storage_placeholder $textNullable,
         FOREIGN KEY (activity_id) REFERENCES activities (id) ON DELETE CASCADE,
+        FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE referrals (
+        id $idType,
+        child_id $textType,
+        concern $textType,
+        description $textType,
+        referral_date $textType,
+        follow_up_date $textType,
+        status $textType,
+        follow_up_notes $textType,
+        updated_at $textType,
+        is_synced $integerType,
+        FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE audit_logs (
+        id $idType,
+        user_id $textType,
+        action $textType,
+        module $textType,
+        description $textType,
+        timestamp $textType,
+        is_synced $integerType
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE clarifications (
+        id $idType,
+        child_id $textType,
+        parent_id $integerType,
+        teacher_id $integerType,
+        message $textType,
+        response $textNullable,
+        status $textType,
+        created_at $textType,
+        updated_at $textType,
+        is_synced $integerType,
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
       )
     ''');
   }
 
-  // --- CRUD Operations for Activities ---
+  // --- Generic CRUD ---
 
-  Future<int> insertActivity(Map<String, dynamic> row) async {
+  Future<int> insertRecord(String table, Map<String, dynamic> row) async {
+    if (kIsWeb) return 0;
     final db = await instance.database;
-    return await db.insert('activities', row);
+    return await db.insert(table, row, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  Future<List<Map<String, dynamic>>> getActivitiesByChild(String childId) async {
+  Future<int> updateRecord(String table, Map<String, dynamic> row, String idField) async {
+    if (kIsWeb) return 0;
     final db = await instance.database;
-    return await db.query('activities', where: 'child_id = ?', whereArgs: [childId], orderBy: 'due_date ASC');
+    return await db.update(table, row, where: '$idField = ?', whereArgs: [row[idField]]);
   }
 
-  Future<List<Map<String, dynamic>>> getAllActivities() async {
+  Future<List<Map<String, dynamic>>> getUnsyncedRecords(String table) async {
+    if (kIsWeb) return [];
     final db = await instance.database;
-    return await db.query('activities', orderBy: 'created_date DESC');
+    return await db.query(table, where: 'is_synced = ?', whereArgs: [0]);
   }
 
-  Future<int> updateActivityStatus(int id, String status) async {
+  Future<void> markAsSynced(String table, String idField, dynamic idValue) async {
+    if (kIsWeb) return;
     final db = await instance.database;
-    return await db.update('activities', {'status': status}, where: 'id = ?', whereArgs: [id]);
+    await db.update(table, {'is_synced': 1}, where: '$idField = ?', whereArgs: [idValue]);
   }
 
-  // --- CRUD Operations for Activity Submissions ---
+  // --- User Operations ---
 
-  Future<int> insertActivitySubmission(Map<String, dynamic> row) async {
+  Future<int> createUser(UserModel user) async {
+    if (kIsWeb) return 0;
     final db = await instance.database;
-    return await db.insert('activity_submissions', row);
+    return await db.insert('users', user.toMap());
   }
 
-  Future<Map<String, dynamic>?> getSubmissionByActivity(int activityId) async {
+  Future<UserModel?> readUser(int id) async {
+    if (kIsWeb) return null;
     final db = await instance.database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'activity_submissions',
-      where: 'activity_id = ?',
-      whereArgs: [activityId],
-    );
-    if (maps.isNotEmpty) return maps.first;
+    final maps = await db.query('users', where: 'id = ?', whereArgs: [id]);
+    if (maps.isNotEmpty) return UserModel.fromMap(maps.first);
     return null;
   }
 
+  Future<List<UserModel>> readAllUsers() async {
+    if (kIsWeb) return [];
+    final db = await instance.database;
+    final result = await db.query('users');
+    return result.map((json) => UserModel.fromMap(json)).toList();
+  }
+
+  Future<int> delete(String table, int id) async {
+    if (kIsWeb) return 0;
+    final db = await instance.database;
+    return await db.delete(table, where: 'id = ?', whereArgs: [id]);
+  }
+
+  // --- Child Operations ---
+
+  Future<int> insertChild(ChildModel child) async {
+    if (kIsWeb) return 0;
+    final db = await instance.database;
+    return await db.insert('children', child.toMap());
+  }
+
+  Future<List<ChildModel>> getAllChildren() async {
+    if (kIsWeb) return [];
+    final db = await instance.database;
+    final result = await db.query('children', orderBy: 'last_name ASC');
+    return result.map((json) => ChildModel.fromMap(json)).toList();
+  }
+
+  Future<List<ChildModel>> readChildrenByParent(int parentId) async {
+    if (kIsWeb) return [];
+    final db = await instance.database;
+    final userMaps = await db.query('users', where: 'id = ?', whereArgs: [parentId]);
+    if (userMaps.isEmpty) return [];
+    final userName = userMaps.first['name'] as String;
+    final result = await db.query('children', where: 'parent_name = ?', whereArgs: [userName]);
+    return result.map((json) => ChildModel.fromMap(json)).toList();
+  }
+
+  Future<List<ChildModel>> readChildrenByTeacher(int teacherId) async {
+    if (kIsWeb) return [];
+    final db = await instance.database;
+    final userMaps = await db.query('users', where: 'id = ?', whereArgs: [teacherId]);
+    if (userMaps.isEmpty) return [];
+    final teacherName = userMaps.first['name'] as String;
+    final result = await db.query('children', where: 'teacher_name = ?', whereArgs: [teacherName]);
+    return result.map((json) => ChildModel.fromMap(json)).toList();
+  }
+
+  // --- Attendance ---
+
+  Future<int> insertAttendance(Map<String, dynamic> attendance) async {
+    if (kIsWeb) return 0;
+    final db = await instance.database;
+    return await db.insert('attendance', attendance);
+  }
+
+  Future<List<Map<String, dynamic>>> getChildAttendanceHistory(String childId) async {
+    if (kIsWeb) return [];
+    final db = await instance.database;
+    return await db.query('attendance', where: 'child_id = ?', whereArgs: [childId], orderBy: 'attendance_date DESC');
+  }
+
+  Future<List<Map<String, dynamic>>> getAttendanceSummaryByDate(String date) async {
+    if (kIsWeb) return [];
+    final db = await instance.database;
+    return await db.rawQuery('''
+      SELECT a.*, c.first_name, c.last_name
+      FROM attendance a
+      JOIN children c ON a.child_id = c.child_id
+      WHERE a.attendance_date = ?
+    ''', [date]);
+  }
+
+  // --- Evaluations ---
+
+  Future<int> insertEvaluation(Map<String, dynamic> evaluation) async {
+    if (kIsWeb) return 0;
+    final db = await instance.database;
+    return await db.insert('evaluations', evaluation);
+  }
+
+  Future<List<Map<String, dynamic>>> getChildEvaluationHistory(String childId) async {
+    if (kIsWeb) return [];
+    final db = await instance.database;
+    return await db.query('evaluations', where: 'child_id = ?', whereArgs: [childId], orderBy: 'evaluation_date DESC');
+  }
+
+  Future<List<Map<String, dynamic>>> getLatestEvaluations(String childId) async {
+    if (kIsWeb) return [];
+    final db = await instance.database;
+    return await db.rawQuery('''
+      SELECT e1.* FROM evaluations e1
+      WHERE e1.child_id = ? AND e1.evaluation_date = (
+        SELECT MAX(e2.evaluation_date) FROM evaluations e2
+        WHERE e2.child_id = e1.child_id AND e2.domain = e1.domain
+      )
+    ''', [childId]);
+  }
+
+  // --- Home Activities ---
+
+  Future<List<Map<String, dynamic>>> getHomeActivitiesByTeacher(int teacherId) async {
+    if (kIsWeb) return [];
+    final db = await instance.database;
+    final userMaps = await db.query('users', where: 'id = ?', whereArgs: [teacherId]);
+    if (userMaps.isEmpty) return [];
+    final teacherName = userMaps.first['name'] as String;
+    return await db.query('activities', where: 'assigned_by = ?', whereArgs: [teacherName]);
+  }
+
+  Future<int> createHomeActivity(int teacherId, int childLocalId, String title, String instructions) async {
+    if (kIsWeb) return 0;
+    final db = await instance.database;
+    final teacherMaps = await db.query('users', where: 'id = ?', whereArgs: [teacherId]);
+    final childMaps = await db.query('children', where: 'id = ?', whereArgs: [childLocalId]);
+    if (teacherMaps.isEmpty || childMaps.isEmpty) return 0;
+    final teacherName = teacherMaps.first['name'] as String;
+    final childId = childMaps.first['child_id'] as String;
+    final now = DateTime.now().toIso8601String();
+    return await db.insert('activities', {
+      'child_id': childId,
+      'activity_title': title,
+      'instructions': instructions,
+      'due_date': DateTime.now().add(const Duration(days: 7)).toIso8601String(),
+      'assigned_by': teacherName,
+      'created_date': now,
+      'status': 'Assigned',
+      'updated_at': now,
+      'is_synced': 0,
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getActivitiesByChild(String childId) async {
+    if (kIsWeb) return [];
+    final db = await instance.database;
+    return await db.query('activities', where: 'child_id = ?', whereArgs: [childId], orderBy: 'due_date DESC');
+  }
+
+  Future<List<Map<String, dynamic>>> getAllActivities() async {
+    if (kIsWeb) return [];
+    final db = await instance.database;
+    return await db.query('activities', orderBy: 'due_date DESC');
+  }
+
+  Future<int> updateActivityStatus(int id, String status) async {
+    if (kIsWeb) return 0;
+    final db = await instance.database;
+    return await db.update('activities', {
+      'status': status,
+      'updated_at': DateTime.now().toIso8601String(),
+    }, where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<int> insertActivitySubmission(Map<String, dynamic> submission) async {
+    if (kIsWeb) return 0;
+    final db = await instance.database;
+    return await db.insert('activity_submissions', submission);
+  }
+
+  Future<Map<String, dynamic>?> getSubmissionByActivity(int activityId) async {
+    if (kIsWeb) return null;
+    final db = await instance.database;
+    final maps = await db.query('activity_submissions', where: 'activity_id = ?', whereArgs: [activityId]);
+    return maps.isNotEmpty ? maps.first : null;
+  }
+
   Future<List<Map<String, dynamic>>> getAllSubmissions() async {
+    if (kIsWeb) return [];
     final db = await instance.database;
     return await db.rawQuery('''
       SELECT s.*, a.activity_title, c.first_name, c.last_name
@@ -297,51 +446,58 @@ class DatabaseHelper {
     ''');
   }
 
-  Future<int> updateSubmissionReview(int id, String review, String status) async {
+  Future<int> updateSubmissionReview(int submissionId, String review, String status) async {
+    if (kIsWeb) return 0;
     final db = await instance.database;
-    return await db.update(
-      'activity_submissions',
-      {
-        'teacher_review': review,
-        'review_status': status,
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    return await db.update('activity_submissions', {
+      'teacher_review': review,
+      'review_status': status,
+      'updated_at': DateTime.now().toIso8601String(),
+    }, where: 'id = ?', whereArgs: [submissionId]);
   }
 
-  // --- CRUD Operations for Development Summaries ---
+  // --- Feedback ---
 
-  Future<int> insertDevelopmentSummary(Map<String, dynamic> row) async {
+  Future<int> insertFeedback(Map<String, dynamic> feedback) async {
+    if (kIsWeb) return 0;
     final db = await instance.database;
-    return await db.insert('development_summaries', row);
+    return await db.insert('parent_feedback', feedback);
+  }
+
+  Future<List<Map<String, dynamic>>> getFeedbackByChild(String childId) async {
+    if (kIsWeb) return [];
+    final db = await instance.database;
+    return await db.query('parent_feedback', where: 'child_id = ?', whereArgs: [childId], orderBy: 'submission_date DESC');
+  }
+
+  // --- Triangulations & Summaries ---
+
+  Future<int> insertTriangulation(Map<String, dynamic> triangulation) async {
+    if (kIsWeb) return 0;
+    final db = await instance.database;
+    return await db.insert('triangulations', triangulation);
+  }
+
+  Future<List<Map<String, dynamic>>> getTriangulationHistory(String childId) async {
+    if (kIsWeb) return [];
+    final db = await instance.database;
+    return await db.query('triangulations', where: 'child_id = ?', whereArgs: [childId], orderBy: 'generated_date DESC');
+  }
+
+  Future<int> insertDevelopmentSummary(Map<String, dynamic> summary) async {
+    if (kIsWeb) return 0;
+    final db = await instance.database;
+    return await db.insert('development_summaries', summary);
   }
 
   Future<List<Map<String, dynamic>>> getDevelopmentSummaryHistory(String childId) async {
+    if (kIsWeb) return [];
     final db = await instance.database;
-    return await db.query(
-      'development_summaries',
-      where: 'child_id = ?',
-      whereArgs: [childId],
-      orderBy: 'created_date DESC',
-    );
-  }
-
-  Future<int> updateDevelopmentSummaryStatus(int id, String status, String approvedBy, String approvedDate) async {
-    final db = await instance.database;
-    return await db.update(
-      'development_summaries',
-      {
-        'approval_status': status,
-        'approved_by': approvedBy,
-        'approved_date': approvedDate,
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    return await db.query('development_summaries', where: 'child_id = ?', whereArgs: [childId], orderBy: 'created_date DESC');
   }
 
   Future<Map<String, dynamic>?> getLatestApprovedSummary(String childId) async {
+    if (kIsWeb) return null;
     final db = await instance.database;
     final List<Map<String, dynamic>> maps = await db.query(
       'development_summaries',
@@ -350,280 +506,30 @@ class DatabaseHelper {
       orderBy: 'approved_date DESC',
       limit: 1,
     );
-
-    if (maps.isNotEmpty) {
-      return maps.first;
-    }
-    return null;
+    return maps.isNotEmpty ? maps.first : null;
   }
 
-  // --- CRUD Operations for Parent Feedback ---
-
-  Future<int> insertFeedback(Map<String, dynamic> row) async {
+  Future<int> updateDevelopmentSummaryStatus(int id, String status, String approvedBy, String approvedDate) async {
+    if (kIsWeb) return 0;
     final db = await instance.database;
-    return await db.insert('parent_feedback', row);
+    return await db.update('development_summaries', {
+      'approval_status': status,
+      'approved_by': approvedBy,
+      'approved_date': approvedDate,
+      'updated_at': DateTime.now().toIso8601String(),
+    }, where: 'id = ?', whereArgs: [id]);
   }
 
-  Future<List<Map<String, dynamic>>> getFeedbackByChild(String childId) async {
-    final db = await instance.database;
-    return await db.query('parent_feedback', where: 'child_id = ?', whereArgs: [childId], orderBy: 'submission_date DESC');
-  }
-
-  Future<int> updateFeedback(Map<String, dynamic> row) async {
-    final db = await instance.database;
-    return await db.update('parent_feedback', row, where: 'id = ?', whereArgs: [row['id']]);
-  }
-
-  Future<int> deleteFeedback(int id) async {
-    final db = await instance.database;
-    return await db.delete('parent_feedback', where: 'id = ?', whereArgs: [id]);
-  }
-
-  // --- CRUD Operations for Triangulations ---
-
-  Future<int> insertTriangulation(Map<String, dynamic> row) async {
-    final db = await instance.database;
-    return await db.insert('triangulations', row);
-  }
-
-  Future<List<Map<String, dynamic>>> getTriangulationHistory(String childId) async {
-    final db = await instance.database;
-    return await db.query('triangulations', where: 'child_id = ?', whereArgs: [childId], orderBy: 'generated_date DESC');
-  }
-
-  // --- CRUD Operations for ECCD Evaluations ---
-
-  Future<int> insertEvaluation(Map<String, dynamic> row) async {
-    final db = await instance.database;
-    return await db.insert('evaluations', row);
-  }
-
-  Future<List<Map<String, dynamic>>> getChildEvaluationHistory(String childId) async {
-    final db = await instance.database;
-    return await db.query(
-      'evaluations',
-      where: 'child_id = ?',
-      whereArgs: [childId],
-      orderBy: 'evaluation_date DESC',
-    );
-  }
-
-  Future<List<Map<String, dynamic>>> getLatestEvaluations(String childId) async {
-    final db = await instance.database;
-    return await db.rawQuery('''
-      SELECT e1.*
-      FROM evaluations e1
-      WHERE e1.child_id = ? AND e1.evaluation_date = (
-        SELECT MAX(e2.evaluation_date)
-        FROM evaluations e2
-        WHERE e2.child_id = e1.child_id AND e2.domain = e1.domain
-      )
-    ''', [childId]);
-  }
-
-  // --- CRUD Operations for Children ---
-
-  Future<int> insertChild(ChildModel child) async {
-    final db = await instance.database;
-    return await db.insert('children', child.toMap());
-  }
-
-  Future<List<ChildModel>> getAllChildren() async {
-    final db = await instance.database;
-    final result = await db.query('children', orderBy: 'last_name ASC');
-    return result.map((json) => ChildModel.fromMap(json)).toList();
-  }
-
-  Future<int> updateChild(ChildModel child) async {
-    final db = await instance.database;
-    return await db.update(
-      'children',
-      child.toMap(),
-      where: 'id = ?',
-      whereArgs: [child.id],
-    );
-  }
-
-  Future<int> deleteChild(int id) async {
-    final db = await instance.database;
-    return await db.delete(
-      'children',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
-  // --- Other CRUD Operations (Keep existing or update as needed) ---
-
-  Future<int> createUser(UserModel user) async {
-    final db = await instance.database;
-    return await db.insert('users', user.toMap());
-  }
-
-  Future<UserModel?> readUser(int id) async {
-    final db = await instance.database;
-    final maps = await db.query(
-      'users',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-
-    if (maps.isNotEmpty) {
-      return UserModel.fromMap(maps.first);
-    } else {
-      return null;
-    }
-  }
-
-  Future<List<UserModel>> readAllUsers() async {
-    final db = await instance.database;
-    final result = await db.query('users');
-    return result.map((json) => UserModel.fromMap(json)).toList();
-  }
-
-  // Note: Previous methods like readChildrenByTeacher/Parent need update if they used teacher_id column
-  // For simplicity in this module, I'll focus on the new children CRUD.
-  
-  // --- Updated Attendance Operations for RFID Module ---
-
-  Future<int> insertAttendance(Map<String, dynamic> row) async {
-    final db = await instance.database;
-    return await db.insert('attendance', row);
-  }
-
-  Future<List<Map<String, dynamic>>> getChildAttendanceHistory(String childId) async {
-    final db = await instance.database;
-    return await db.query(
-      'attendance',
-      where: 'child_id = ?',
-      whereArgs: [childId],
-      orderBy: 'attendance_date DESC, attendance_time DESC',
-    );
-  }
-
-  Future<List<Map<String, dynamic>>> getAttendanceSummaryByDate(String date) async {
-    final db = await instance.database;
-    return await db.rawQuery('''
-      SELECT a.*, c.first_name, c.last_name
-      FROM attendance a
-      JOIN children c ON a.child_id = c.child_id
-      WHERE a.attendance_date = ?
-    ''', [date]);
-  }
-
-  Future<int> createAssessment(AssessmentModel assessment) async {
-    final db = await instance.database;
-    return await db.insert('assessments', assessment.toMap());
-  }
-
-  Future<List<AssessmentModel>> readAssessmentsByChild(int childId) async {
-    final db = await instance.database;
-    final result = await db.query(
-      'assessments',
-      where: 'child_id = ?',
-      whereArgs: [childId],
-    );
-    return result.map((json) => AssessmentModel.fromMap(json)).toList();
-  }
-
-  Future<Map<String, dynamic>> getChildProgressSummary(int childId) async {
-    final db = await instance.database;
-    final assessmentData = await db.rawQuery('''
-      SELECT domain, AVG(score) as avg_score
-      FROM assessments
-      WHERE child_id = ?
-      GROUP BY domain
-    ''', [childId]);
-
-    final attendanceData = await db.rawQuery('''
-      SELECT 
-        COUNT(*) as total,
-        SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) as present
-      FROM attendance
-      WHERE child_id = ?
-    ''', [childId]);
-
-    double attendanceRate = 0;
-    if (attendanceData.isNotEmpty && (attendanceData.first['total'] as int) > 0) {
-      attendanceRate = ((attendanceData.first['present'] as int) / (attendanceData.first['total'] as int)) * 100;
-    }
-
-    return {
-      'assessments': assessmentData,
-      'attendance_rate': attendanceRate,
-    };
-  }
-
-  Future<int> createHomeActivity(int teacherId, int childId, String title, String description) async {
-    final db = await instance.database;
-    return await db.insert('home_activities', {
-      'teacher_id': teacherId,
-      'child_id': childId,
-      'title': title,
-      'description': description,
-      'status': 'Pending',
-      'date_assigned': DateTime.now().toIso8601String().split('T')[0],
-    });
-  }
-
-  Future<List<Map<String, dynamic>>> getHomeActivitiesByTeacher(int teacherId) async {
-    final db = await instance.database;
-    return await db.rawQuery('''
-      SELECT h.*, c.first_name || ' ' || c.last_name as child_name
-      FROM home_activities h
-      JOIN children c ON h.child_id = c.id
-      WHERE h.teacher_id = ?
-      ORDER BY h.date_assigned DESC
-    ''', [teacherId]);
-  }
-
-  Future<List<ChildModel>> readChildrenByTeacher(int teacherId) async {
-    // This needs to be adapted since we don't have teacher_id in children table anymore, 
-    // but the user asked for teacher_name. 
-    // For this module, I'll just return all for now or filter by teacher_name if I had the teacher object.
-    final db = await instance.database;
-    final result = await db.query('children');
-    return result.map((json) => ChildModel.fromMap(json)).toList();
-  }
-
-  Future<List<ChildModel>> readChildrenByParent(int parentId) async {
-    final db = await instance.database;
-    final result = await db.query('children');
-    return result.map((json) => ChildModel.fromMap(json)).toList();
-  }
-
-  Future<List<Map<String, dynamic>>> getHomeActivitiesByChild(int childId) async {
-    final db = await instance.database;
-    return await db.query(
-      'home_activities',
-      where: 'child_id = ?',
-      orderBy: 'date_assigned DESC',
-    );
-  }
-
-  Future<int> updateHomeActivityStatus(int activityId, String status) async {
-    final db = await instance.database;
-    return await db.update(
-      'home_activities',
-      {'status': status},
-      where: 'id = ?',
-      whereArgs: [activityId],
-    );
-  }
-
-  // --- Updated Referral Operations ---
-
-  Future<int> insertReferral(Map<String, dynamic> row) async {
-    final db = await instance.database;
-    return await db.insert('referrals', row);
-  }
+  // --- Referrals ---
 
   Future<List<Map<String, dynamic>>> getReferralsByChild(String childId) async {
+    if (kIsWeb) return [];
     final db = await instance.database;
     return await db.query('referrals', where: 'child_id = ?', whereArgs: [childId], orderBy: 'referral_date DESC');
   }
 
   Future<List<Map<String, dynamic>>> getAllReferrals() async {
+    if (kIsWeb) return [];
     final db = await instance.database;
     return await db.rawQuery('''
       SELECT r.*, c.first_name, c.last_name
@@ -633,12 +539,14 @@ class DatabaseHelper {
     ''');
   }
 
-  // --- Reports & Analytics Operations ---
+  // --- Reports & Stats ---
 
   Future<Map<String, dynamic>> getDashboardStats(String today) async {
+    if (kIsWeb) return {};
     final db = await instance.database;
-    
     final totalChildren = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM children')) ?? 0;
+    final totalTeachers = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM users WHERE role = ?', ['teacher'])) ?? 0;
+    final totalParents = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM users WHERE role = ?', ['parent'])) ?? 0;
     final presentToday = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM attendance WHERE attendance_date = ? AND status = ?', [today, 'Present'])) ?? 0;
     final absentToday = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM attendance WHERE attendance_date = ? AND status = ?', [today, 'Absent'])) ?? 0;
     final completedEvaluations = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(DISTINCT child_id) FROM evaluations')) ?? 0;
@@ -646,6 +554,8 @@ class DatabaseHelper {
 
     return {
       'total_children': totalChildren,
+      'total_teachers': totalTeachers,
+      'total_parents': totalParents,
       'present_today': presentToday,
       'absent_today': absentToday,
       'completed_evaluations': completedEvaluations,
@@ -654,77 +564,62 @@ class DatabaseHelper {
   }
 
   Future<List<Map<String, dynamic>>> getAttendanceReport() async {
+    if (kIsWeb) return [];
     final db = await instance.database;
     return await db.rawQuery('''
-      SELECT 
-        c.child_id, 
-        c.first_name || ' ' || c.last_name as child_name, 
-        COUNT(CASE WHEN a.status = 'Present' THEN 1 END) as present,
-        COUNT(CASE WHEN a.status = 'Absent' THEN 1 END) as absent
-      FROM children c
-      LEFT JOIN attendance a ON c.child_id = a.child_id
+      SELECT c.child_id, (c.first_name || ' ' || c.last_name) as child_name,
+      SUM(CASE WHEN a.status = 'Present' THEN 1 ELSE 0 END) as present,
+      SUM(CASE WHEN a.status = 'Absent' THEN 1 ELSE 0 END) as absent
+      FROM children c LEFT JOIN attendance a ON c.child_id = a.child_id
       GROUP BY c.child_id
     ''');
   }
 
   Future<List<Map<String, dynamic>>> getEvaluationReport() async {
+    if (kIsWeb) return [];
     final db = await instance.database;
     return await db.rawQuery('''
-      SELECT 
-        e.child_id, 
-        c.first_name || ' ' || c.last_name as child_name, 
-        e.domain, 
-        e.score, 
-        e.evaluation_date, 
-        e.remarks
-      FROM evaluations e
-      JOIN children c ON e.child_id = c.child_id
-      ORDER BY e.evaluation_date DESC
+      SELECT e.*, (c.first_name || ' ' || c.last_name) as child_name
+      FROM evaluations e JOIN children c ON e.child_id = c.child_id
     ''');
   }
 
   Future<List<Map<String, dynamic>>> getReferralReport() async {
+    if (kIsWeb) return [];
     final db = await instance.database;
     return await db.rawQuery('''
-      SELECT 
-        r.child_id, 
-        c.first_name || ' ' || c.last_name as child_name, 
-        r.concern, 
-        r.referral_date, 
-        r.follow_up_date, 
-        r.status
-      FROM referrals r
-      JOIN children c ON r.child_id = c.child_id
-      ORDER BY r.referral_date DESC
+      SELECT r.*, (c.first_name || ' ' || c.last_name) as child_name
+      FROM referrals r JOIN children c ON r.child_id = c.child_id
     ''');
   }
 
   Future<List<Map<String, dynamic>>> getChildProgressReport() async {
+    if (kIsWeb) return [];
     final db = await instance.database;
-    // For progress, we compare the two latest evaluations for each domain per child
     return await db.rawQuery('''
-      SELECT 
-        e1.child_id, 
-        c.first_name || ' ' || c.last_name as child_name, 
-        e1.domain, 
-        e1.score as current_score,
-        (SELECT e2.score FROM evaluations e2 
-         WHERE e2.child_id = e1.child_id AND e2.domain = e1.domain AND e2.evaluation_date < e1.evaluation_date 
-         ORDER BY e2.evaluation_date DESC LIMIT 1) as previous_score,
-        t.development_status,
-        t.triangulated_summary
-      FROM evaluations e1
-      JOIN children c ON e1.child_id = c.child_id
-      LEFT JOIN triangulations t ON e1.child_id = t.child_id AND t.generated_date = (
-        SELECT MAX(generated_date) FROM triangulations WHERE child_id = e1.child_id
-      )
-      WHERE e1.evaluation_date = (
-        SELECT MAX(evaluation_date) FROM evaluations WHERE child_id = e1.child_id AND domain = e1.domain
-      )
+      SELECT e.child_id, (c.first_name || ' ' || c.last_name) as child_name,
+      e.domain, e.score as current_score
+      FROM evaluations e JOIN children c ON e.child_id = c.child_id
     ''');
   }
 
+  Future<Map<String, dynamic>> getChildProgressSummary(int childLocalId) async {
+    if (kIsWeb) return {'assessments': [], 'attendance_rate': 0.0};
+    final db = await instance.database;
+    final childMaps = await db.query('children', where: 'id = ?', whereArgs: [childLocalId]);
+    if (childMaps.isEmpty) return {'assessments': [], 'attendance_rate': 0.0};
+    final childId = childMaps.first['child_id'] as String;
+    final assessmentMaps = await db.rawQuery('SELECT domain, AVG(score) as avg_score FROM evaluations WHERE child_id = ? GROUP BY domain', [childId]);
+    final total = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM attendance WHERE child_id = ?', [childId])) ?? 0;
+    final present = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM attendance WHERE child_id = ? AND status = ?', [childId, 'Present'])) ?? 0;
+    return {
+      'assessments': assessmentMaps.map((e) => {'domain': e['domain'], 'avg_score': (e['avg_score'] as num?)?.toDouble() ?? 0.0}).toList(),
+      'attendance_rate': total > 0 ? (present / total) * 100 : 0.0,
+    };
+  }
+
   Future close() async {
+    if (kIsWeb) return;
     final db = await instance.database;
     db.close();
   }

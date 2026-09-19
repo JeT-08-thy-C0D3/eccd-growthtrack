@@ -71,6 +71,7 @@ class _TriangulationPageState extends State<TriangulationPage> {
       triangulatedSummary: _triangulatedSummaryController.text,
       developmentStatus: _status,
       generatedDate: DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now()),
+      updatedAt: DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now()),
     );
 
     await _repository.saveTriangulation(triangulation);

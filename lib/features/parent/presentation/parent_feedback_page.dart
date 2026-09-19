@@ -7,7 +7,7 @@ import '../data/parent_feedback_repository.dart';
 import '../domain/parent_feedback_model.dart';
 
 class ParentFeedbackPage extends StatefulWidget {
-  final ParentFeedbackModel? feedback; // If provided, we are in Edit mode
+  final ParentFeedbackModel? feedback; 
   const ParentFeedbackPage({super.key, this.feedback});
 
   @override
@@ -78,6 +78,8 @@ class _ParentFeedbackPageState extends State<ParentFeedbackPage> {
         assistanceLevel: _selectedAssistance,
         notes: _notesController.text,
         submissionDate: widget.feedback?.submissionDate ?? now,
+        updatedAt: now,
+        isSynced: false,
       );
 
       if (widget.feedback != null) {

@@ -59,15 +59,26 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
       
       final teacher = await AuthRepositoryImpl().getCurrentUser();
       
+      final names = _nameController.text.split(' ');
+      final firstName = names.isNotEmpty ? names.first : '';
+      final lastName = names.length > 1 ? names.sublist(1).join(' ') : '';
+      final dobDateTime = DateTime.tryParse(_dobController.text);
+      final age = dobDateTime != null ? DateTime.now().year - dobDateTime.year : 0;
+
       final child = ChildModel(
-        name: _nameController.text,
-        dob: _dobController.text,
+        childId: 'child-${DateTime.now().millisecondsSinceEpoch}',
+        firstName: firstName,
+        lastName: lastName,
+        birthDate: _dobController.text,
+        age: age,
         gender: _selectedGender,
-        teacherId: teacher?.id ?? 0,
-        parentId: _selectedParent!.id!,
+        address: 'N/A',
+        parentName: _selectedParent?.name ?? 'N/A',
+        teacherName: teacher?.name ?? 'N/A',
+        updatedAt: DateTime.now().toIso8601String(),
       );
 
-      await DatabaseHelper.instance.createChild(child);
+      await DatabaseHelper.instance.insertChild(child);
       
       setState(() => _isLoading = false);
       if (mounted) {

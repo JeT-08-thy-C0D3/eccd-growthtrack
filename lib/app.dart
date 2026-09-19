@@ -1,21 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'features/auth/presentation/login_page.dart';
-import 'features/admin/presentation/admin_dashboard.dart';
 import 'features/teacher/presentation/teacher_dashboard.dart';
 import 'features/parent/presentation/parent_dashboard.dart';
 import 'features/child_profile/presentation/child_list_page.dart';
 import 'features/child_profile/presentation/child_registration_page.dart';
 import 'features/attendance/presentation/attendance_page.dart';
-import 'features/attendance/presentation/attendance_history_page.dart';
 import 'features/eccd_evaluation/presentation/evaluation_page.dart';
 import 'features/home_activities/presentation/activity_management_page.dart';
 import 'features/referral/presentation/referral_page.dart';
 import 'features/reports/presentation/reports_page.dart';
 import 'features/reports/presentation/development_summary_page.dart';
 import 'features/triangulation/presentation/triangulation_page.dart';
-import 'features/parent/presentation/parent_home_activities_page.dart';
 import 'features/parent/presentation/parent_feedback_page.dart';
 import 'features/parent/presentation/parent_feedback_history_page.dart';
+import 'features/admin/presentation/admin_dashboard_page.dart';
+import 'features/admin/presentation/user_management_page.dart';
+import 'features/admin/presentation/child_monitoring_page.dart';
+import 'features/admin/presentation/referral_monitoring_page.dart';
+import 'features/admin/presentation/audit_trail_page.dart';
+import 'features/admin/presentation/admin_reports_page.dart';
 import 'shared/models/user_model.dart';
 import 'shared/models/child_model.dart';
 
@@ -35,11 +39,16 @@ class GrowthTrackApp extends StatelessWidget {
       initialRoute: initialUser == null ? '/login' : _getInitialRoute(initialUser!.role),
       routes: {
         '/login': (context) => const LoginPage(),
-        '/admin': (context) => const AdminDashboard(),
-        '/teacher': (context) => const TeacherDashboard(),
-        '/parent': (context) => const ParentDashboard(),
+        '/admin': (context) => _buildAdminRoute(),
+        '/admin/users': (context) => const UserManagementPage(),
+        '/admin/monitoring': (context) => const ChildMonitoringPage(),
+        '/admin/referrals': (context) => const ReferralMonitoringPage(),
+        '/admin/audit': (context) => const AuditTrailPage(),
+        '/admin/reports': (context) => const AdminReportsPage(),
+        '/teacher': (context) => _buildTeacherRoute(),
+        '/parent': (context) => _buildParentRoute(),
         
-        // Teacher Feature Routes
+        // Feature Routes
         '/register-child': (context) => const ChildListPage(),
         '/child-registration': (context) => const ChildRegistrationPage(),
         '/attendance': (context) => const AttendancePage(),
@@ -49,12 +58,31 @@ class GrowthTrackApp extends StatelessWidget {
         '/reports': (context) => const ReportsPage(),
         '/triangulation': (context) => const TriangulationPage(),
         '/ai-summary': (context) => const DevelopmentSummaryPage(),
-
-        // Parent Feature Routes
         '/feedback': (context) => const ParentFeedbackPage(),
         '/feedback-history': (context) => const ParentFeedbackHistoryPage(),
       },
     );
+  }
+
+  Widget _buildAdminRoute() {
+    if (!kIsWeb) {
+      return const PlatformErrorPage(requiredPlatform: 'Web');
+    }
+    return const AdminDashboardPage();
+  }
+
+  Widget _buildTeacherRoute() {
+    if (kIsWeb) {
+      return const PlatformErrorPage(requiredPlatform: 'Mobile App');
+    }
+    return const TeacherDashboard();
+  }
+
+  Widget _buildParentRoute() {
+    if (kIsWeb) {
+      return const PlatformErrorPage(requiredPlatform: 'Mobile App');
+    }
+    return const ParentDashboard();
   }
 
   String _getInitialRoute(UserRole role) {
@@ -66,15 +94,40 @@ class GrowthTrackApp extends StatelessWidget {
   }
 }
 
-class PlaceholderPage extends StatelessWidget {
-  final String title;
-  const PlaceholderPage({super.key, required this.title});
+class PlatformErrorPage extends StatelessWidget {
+  final String requiredPlatform;
+  const PlatformErrorPage({super.key, required this.requiredPlatform});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: Center(child: Text('$title Page - Coming Soon')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.phonelink_erase, size: 64, color: Colors.red),
+              const SizedBox(height: 24),
+              Text(
+                'Invalid Platform',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'This dashboard is only available on $requiredPlatform.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton(
+                onPressed: () => Navigator.pushReplacementNamed(context, '/login'),
+                child: const Text('Back to Login'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

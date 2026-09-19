@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../../core/database/database_helper.dart';
+import '../data/activity_repository.dart';
+import '../domain/activity_model.dart';
 import '../../../shared/models/child_model.dart';
 import '../../auth/data/auth_repository_impl.dart';
 
@@ -11,7 +12,8 @@ class HomeActivitiesPage extends StatefulWidget {
 }
 
 class _HomeActivitiesPageState extends State<HomeActivitiesPage> {
-  List<Map<String, dynamic>> _activities = [];
+  final ActivityRepository _repository = ActivityRepositoryImpl();
+  List<ActivityModel> _activities = [];
   bool _isLoading = true;
 
   @override
@@ -24,7 +26,7 @@ class _HomeActivitiesPageState extends State<HomeActivitiesPage> {
     setState(() => _isLoading = true);
     final teacher = await AuthRepositoryImpl().getCurrentUser();
     if (teacher != null) {
-      final data = await DatabaseHelper.instance.getHomeActivitiesByTeacher(teacher.id!);
+      final data = await _repository.getHomeActivitiesByTeacher(teacher.id!);
       setState(() {
         _activities = data;
         _isLoading = false;
@@ -36,7 +38,7 @@ class _HomeActivitiesPageState extends State<HomeActivitiesPage> {
     final teacher = await AuthRepositoryImpl().getCurrentUser();
     if (teacher == null) return;
 
-    final children = await DatabaseHelper.instance.readChildrenByTeacher(teacher.id!);
+    final children = await _repository.getTeacherChildren(teacher.id!);
     if (children.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -53,6 +55,7 @@ class _HomeActivitiesPageState extends State<HomeActivitiesPage> {
       isScrollControlled: true,
       builder: (context) => _AssignActivitySheet(
         children: children,
+        repository: _repository,
         onSaved: () {
           Navigator.pop(context);
           _loadActivities();
@@ -79,7 +82,7 @@ class _HomeActivitiesPageState extends State<HomeActivitiesPage> {
                   itemCount: _activities.length,
                   itemBuilder: (context, index) {
                     final activity = _activities[index];
-                    final isPending = activity['status'] == 'Pending';
+                    final isPending = activity.status == 'Assigned';
 
                     return Card(
                       child: ListTile(
@@ -90,15 +93,15 @@ class _HomeActivitiesPageState extends State<HomeActivitiesPage> {
                             color: Colors.white,
                           ),
                         ),
-                        title: Text(activity['title'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                        title: Text(activity.activityTitle, style: const TextStyle(fontWeight: FontWeight.bold)),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Child: ${activity['child_name']}'),
-                            Text(activity['description']),
+                            Text('Due: ${activity.dueDate}'),
+                            Text(activity.instructions),
                           ],
                         ),
-                        trailing: Text(activity['date_assigned']),
+                        trailing: Text(activity.status),
                       ),
                     );
                   },
@@ -109,8 +112,13 @@ class _HomeActivitiesPageState extends State<HomeActivitiesPage> {
 
 class _AssignActivitySheet extends StatefulWidget {
   final List<ChildModel> children;
+  final ActivityRepository repository;
   final VoidCallback onSaved;
-  const _AssignActivitySheet({required this.children, required this.onSaved});
+  const _AssignActivitySheet({
+    required this.children,
+    required this.repository,
+    required this.onSaved,
+  });
 
   @override
   State<_AssignActivitySheet> createState() => _AssignActivitySheetState();
@@ -134,11 +142,11 @@ class _AssignActivitySheetState extends State<_AssignActivitySheet> {
     setState(() => _isSaving = true);
     final teacher = await AuthRepositoryImpl().getCurrentUser();
     
-    await DatabaseHelper.instance.createHomeActivity(
-      teacher!.id!,
-      _selectedChild!.id!,
-      _titleController.text,
-      _descController.text,
+    await widget.repository.createHomeActivity(
+      teacherId: teacher!.id!,
+      childId: _selectedChild!.id!,
+      title: _titleController.text,
+      instructions: _descController.text,
     );
 
     setState(() => _isSaving = false);
@@ -161,7 +169,7 @@ class _AssignActivitySheetState extends State<_AssignActivitySheet> {
           const Text('Assign Activity to Parent', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
           DropdownButtonFormField<ChildModel>(
-            initialValue: _selectedChild,
+            value: _selectedChild,
             decoration: const InputDecoration(labelText: 'Select Child', border: OutlineInputBorder()),
             items: widget.children.map((c) => DropdownMenuItem(value: c, child: Text("${c.firstName} ${c.lastName}"))).toList(),
             onChanged: (val) => setState(() => _selectedChild = val),

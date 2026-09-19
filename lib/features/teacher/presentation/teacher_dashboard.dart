@@ -12,8 +12,9 @@ class TeacherDashboard extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Teacher Dashboard'),
-        backgroundColor: colorScheme.primaryContainer,
-        foregroundColor: colorScheme.onPrimaryContainer,
+        backgroundColor: colorScheme.surface,
+        elevation: 0,
+        scrolledUnderElevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
@@ -28,7 +29,6 @@ class TeacherDashboard extends StatelessWidget {
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          // Adjust columns based on screen width
           int crossAxisCount = 2;
           if (constraints.maxWidth > 900) {
             crossAxisCount = 4;
@@ -87,7 +87,7 @@ class TeacherDashboard extends StatelessWidget {
               _DashboardCard(
                 title: 'AI Summary',
                 icon: Icons.auto_awesome,
-                color: Colors.purple,
+                color: Colors.deepPurple,
                 onTap: () => Navigator.pushNamed(context, '/ai-summary'),
               ),
             ],
@@ -114,30 +114,34 @@ class _DashboardCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      elevation: 4,
-      shadowColor: color.withValues(alpha: 0.2),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: color.withOpacity(0.2)),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      color: color.withOpacity(0.05),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.1),
+                color: color.withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, size: 40, color: color),
+              child: Icon(icon, size: 36, color: color),
             ),
             const SizedBox(height: 16),
             Text(
               title,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontSize: 16,
+                fontSize: 15,
                 fontWeight: FontWeight.bold,
+                letterSpacing: -0.5,
               ),
             ),
           ],

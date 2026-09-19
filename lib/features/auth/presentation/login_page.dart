@@ -102,12 +102,6 @@ class _LoginPageState extends State<LoginPage> {
                     ? const CircularProgressIndicator(color: Colors.white)
                     : const Text('Login', style: TextStyle(fontSize: 18)),
               ),
-              const SizedBox(height: 16),
-              const Text(
-                'Demo Accounts:\nadmin@eccd.com / password123\nteacher@eccd.com / password123\nparent@eccd.com / password123',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey, fontSize: 12),
-              ),
             ],
           ),
         ),

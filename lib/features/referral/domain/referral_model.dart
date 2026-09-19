@@ -7,6 +7,8 @@ class ReferralModel {
   final String followUpDate;
   final String status; // Pending, Referred, For Follow-Up, Completed, Closed
   final String? followUpNotes;
+  final String updatedAt;
+  final bool isSynced;
 
   ReferralModel({
     this.id,
@@ -17,6 +19,8 @@ class ReferralModel {
     required this.followUpDate,
     required this.status,
     this.followUpNotes,
+    required this.updatedAt,
+    this.isSynced = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -29,6 +33,8 @@ class ReferralModel {
       'follow_up_date': followUpDate,
       'status': status,
       'follow_up_notes': followUpNotes,
+      'updated_at': updatedAt,
+      'is_synced': isSynced ? 1 : 0,
     };
   }
 
@@ -42,6 +48,8 @@ class ReferralModel {
       followUpDate: map['follow_up_date'] ?? '',
       status: map['status'] ?? 'Pending',
       followUpNotes: map['follow_up_notes'],
+      updatedAt: map['updated_at'] ?? DateTime.now().toIso8601String(),
+      isSynced: (map['is_synced'] ?? 0) == 1,
     );
   }
 
@@ -54,6 +62,8 @@ class ReferralModel {
     String? followUpDate,
     String? status,
     String? followUpNotes,
+    String? updatedAt,
+    bool? isSynced,
   }) {
     return ReferralModel(
       id: id ?? this.id,
@@ -64,6 +74,8 @@ class ReferralModel {
       followUpDate: followUpDate ?? this.followUpDate,
       status: status ?? this.status,
       followUpNotes: followUpNotes ?? this.followUpNotes,
+      updatedAt: updatedAt ?? this.updatedAt,
+      isSynced: isSynced ?? this.isSynced,
     );
   }
 }

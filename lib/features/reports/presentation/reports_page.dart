@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:eccd_growthtrack/shared/models/child_model.dart';
+import 'package:eccd_growthtrack/core/database/database_helper.dart';
 import '../data/reports_repository.dart';
 import '../domain/reports_model.dart';
 import 'widgets/attendance_report.dart';
@@ -20,6 +22,10 @@ class _ReportsPageState extends State<ReportsPage> {
   List<EvaluationReportItem> _evaluationItems = [];
   List<ReferralReportItem> _referralItems = [];
   List<ChildProgressReportItem> _progressItems = [];
+  
+  List<ChildModel> _allChildren = [];
+  ChildModel? _selectedFilterChild;
+  
   bool _isLoading = true;
 
   @override
@@ -30,26 +36,43 @@ class _ReportsPageState extends State<ReportsPage> {
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
+    
+    _allChildren = await DatabaseHelper.instance.getAllChildren();
     final stats = await _repository.getDashboardStats();
+    
+    await _applyFilters();
+
+    setState(() {
+      _stats = stats;
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _applyFilters() async {
     final attendance = await _repository.getAttendanceReport();
     final evaluations = await _repository.getEvaluationReport();
     final referrals = await _repository.getReferralReport();
     final progress = await _repository.getChildProgressReport();
 
     setState(() {
-      _stats = stats;
-      _attendanceItems = attendance;
-      _evaluationItems = evaluations;
-      _referralItems = referrals;
-      _progressItems = progress;
-      _isLoading = false;
+      if (_selectedFilterChild != null) {
+        _attendanceItems = attendance.where((item) => item.childId == _selectedFilterChild!.childId).toList();
+        _evaluationItems = evaluations.where((item) => item.childId == _selectedFilterChild!.childId).toList();
+        _referralItems = referrals.where((item) => item.childId == _selectedFilterChild!.childId).toList();
+        _progressItems = progress.where((item) => item.childId == _selectedFilterChild!.childId).toList();
+      } else {
+        _attendanceItems = attendance;
+        _evaluationItems = evaluations;
+        _referralItems = referrals;
+        _progressItems = progress;
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Reports & Analytics'),
@@ -57,6 +80,7 @@ class _ReportsPageState extends State<ReportsPage> {
             isScrollable: true,
             tabs: [
               Tab(text: 'Dashboard'),
+              Tab(text: 'Progress'),
               Tab(text: 'Attendance'),
               Tab(text: 'Evaluations'),
               Tab(text: 'Referrals'),
@@ -71,6 +95,7 @@ class _ReportsPageState extends State<ReportsPage> {
             : TabBarView(
                 children: [
                   _buildDashboard(),
+                  _buildReportTab('Progress Summary', ChildProgressReportTable(items: _progressItems)),
                   _buildReportTab('Attendance Summary', AttendanceReportTable(items: _attendanceItems)),
                   _buildReportTab('Evaluation Summary', EvaluationReportTable(items: _evaluationItems)),
                   _buildReportTab('Referral Summary', ReferralReportTable(items: _referralItems)),
@@ -104,9 +129,20 @@ class _ReportsPageState extends State<ReportsPage> {
             ],
           ),
           const SizedBox(height: 32),
-          const Text('Recent Progress Summary', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          ChildProgressReportTable(items: _progressItems),
+          const Text('Quick Filters', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<ChildModel?>(
+            value: _selectedFilterChild,
+            decoration: const InputDecoration(labelText: 'Filter by Child', border: OutlineInputBorder()),
+            items: [
+              const DropdownMenuItem(value: null, child: Text('All Children')),
+              ..._allChildren.map((c) => DropdownMenuItem(value: c, child: Text("${c.firstName} ${c.lastName}"))),
+            ],
+            onChanged: (val) {
+              setState(() => _selectedFilterChild = val);
+              _applyFilters();
+            },
+          ),
         ],
       ),
     );

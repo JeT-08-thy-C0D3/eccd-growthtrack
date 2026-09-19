@@ -103,6 +103,7 @@ class _DevelopmentSummaryPageState extends State<DevelopmentSummaryPage> {
       approvedBy: status == 'Approved' ? user?.name : null,
       approvedDate: status == 'Approved' ? now : null,
       createdDate: now,
+      updatedAt: now,
     );
 
     await _repository.addSummary(summary);

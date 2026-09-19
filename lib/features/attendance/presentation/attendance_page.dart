@@ -45,6 +45,7 @@ class _AttendancePageState extends State<AttendancePage> {
       attendanceDate: DateFormat('yyyy-MM-dd').format(now),
       attendanceTime: DateFormat('HH:mm:ss').format(now),
       status: status,
+      updatedAt: now.toIso8601String(),
     );
 
     await _repository.addAttendance(attendance);
