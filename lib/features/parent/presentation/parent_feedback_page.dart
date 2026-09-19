@@ -48,7 +48,7 @@ class _ParentFeedbackPageState extends State<ParentFeedbackPage> {
   Future<void> _loadData() async {
     final user = await AuthRepositoryImpl().getCurrentUser();
     if (user != null) {
-      final children = await DatabaseHelper.instance.readChildrenByParent(user.id!);
+      final children = await DatabaseHelper.instance.readChildrenByParent(user.uid);
       setState(() {
         _children = children;
         if (widget.feedback != null) {
@@ -69,11 +69,19 @@ class _ParentFeedbackPageState extends State<ParentFeedbackPage> {
       
       final user = await AuthRepositoryImpl().getCurrentUser();
       final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
+      final localUsers = await DatabaseHelper.instance.readAllUsers();
+      int parentId = user?.id ?? 0;
+      for (final localUser in localUsers) {
+        if (localUser.uid == user?.uid && localUser.id != null) {
+          parentId = localUser.id!;
+          break;
+        }
+      }
 
       final feedback = ParentFeedbackModel(
         id: widget.feedback?.id,
         childId: _selectedChild!.childId,
-        parentId: user!.id!,
+        parentId: parentId,
         parentObservation: _observationController.text,
         assistanceLevel: _selectedAssistance,
         notes: _notesController.text,

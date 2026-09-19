@@ -30,7 +30,7 @@ class _ParentFeedbackHistoryPageState extends State<ParentFeedbackHistoryPage> {
     setState(() => _isLoading = true);
     final user = await AuthRepositoryImpl().getCurrentUser();
     if (user != null) {
-      _children = await DatabaseHelper.instance.readChildrenByParent(user.id!);
+      _children = await DatabaseHelper.instance.readChildrenByParent(user.uid);
       if (_children.isNotEmpty) {
         _filterChild = _children.first;
         await _loadHistory();

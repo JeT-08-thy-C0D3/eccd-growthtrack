@@ -1,4 +1,5 @@
 import '../../../shared/models/child_model.dart';
+import '../../../core/database/database_helper.dart';
 import '../../../data/datasources/local_data_source.dart';
 import '../../../core/network/connectivity_service.dart';
 import '../../../data/datasources/remote_data_source.dart';
@@ -43,11 +44,7 @@ class ChildRepositoryImpl implements ChildRepository {
 
   @override
   Future<List<ChildModel>> getChildren() async {
-    // Architecture choice: Always read from Local Cache for speed
-    // Background sync handles keeping the cache fresh
-    final List<Map<String, dynamic>> data = await _local.getUnsyncedRecords('children'); // Or read all from DB
-    // Note: Use DatabaseHelper to read all, this is just showing the source.
-    return data.map((e) => ChildModel.fromMap(e)).toList();
+    return await DatabaseHelper.instance.getAllChildren();
   }
   
   @override

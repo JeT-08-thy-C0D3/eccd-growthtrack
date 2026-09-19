@@ -104,6 +104,7 @@ class _AttendancePageState extends State<AttendancePage> {
                   ),
                   const SizedBox(height: 40),
                   DropdownButtonFormField<ChildModel>(
+                    isExpanded: true,
                     initialValue: _selectedChild,
                     decoration: const InputDecoration(
                       labelText: 'Select Child (Simulate Scan)',
@@ -113,7 +114,10 @@ class _AttendancePageState extends State<AttendancePage> {
                     items: _children.map((c) {
                       return DropdownMenuItem(
                         value: c,
-                        child: Text('${c.firstName} ${c.lastName} (${c.childId})'),
+                        child: Text(
+                          '${c.firstName} ${c.lastName} (${c.childId})',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       );
                     }).toList(),
                     onChanged: (val) => setState(() => _selectedChild = val),

@@ -37,7 +37,7 @@ class _ActivityManagementPageState extends State<ActivityManagementPage> {
       _activities = await _repository.getAllActivities();
       _children = await DatabaseHelper.instance.getAllChildren();
     } else if (_currentUser?.role == UserRole.parent) {
-      final children = await DatabaseHelper.instance.readChildrenByParent(_currentUser!.id!);
+      final children = await DatabaseHelper.instance.readChildrenByParent(_currentUser!.uid);
       if (children.isNotEmpty) {
         _activities = await _repository.getActivitiesForChild(children.first.childId);
       }

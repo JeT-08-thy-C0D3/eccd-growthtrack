@@ -1,9 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../shared/models/user_model.dart';
 import '../domain/auth_repository.dart';
 import '../../../core/utils/audit_logger.dart';
+import '../../../core/database/database_helper.dart';
 
 class AuthRepositoryImpl implements AuthRepository {
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
@@ -27,6 +29,11 @@ class AuthRepositoryImpl implements AuthRepository {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString(_userKey, user.uid);
           
+          // --- Demo Critical: Cache user locally on Mobile ---
+          if (!kIsWeb) {
+            await DatabaseHelper.instance.insertRecord('users', user.toMap());
+          }
+
           await AuditLogger.log(
             action: 'Login',
             module: 'Authentication',

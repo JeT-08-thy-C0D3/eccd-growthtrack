@@ -30,7 +30,7 @@ class _ParentDashboardState extends State<ParentDashboard> {
     setState(() => _isLoading = true);
     final user = await AuthRepositoryImpl().getCurrentUser();
     if (user != null) {
-      final children = await DatabaseHelper.instance.readChildrenByParent(user.id!);
+      final children = await DatabaseHelper.instance.readChildrenByParent(user.uid);
       
       DevelopmentSummaryModel? summary;
       if (children.isNotEmpty) {

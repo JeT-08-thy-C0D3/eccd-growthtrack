@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../core/utils/audit_logger.dart';
@@ -19,6 +21,7 @@ class ReferralRepositoryImpl implements ReferralRepository {
   final LocalDataSource _local = LocalDataSource();
   final RemoteDataSource _remote = RemoteDataSource();
   final ConnectivityService _connectivity = ConnectivityService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   @override
   Future<int> addReferral(ReferralModel referral) async {
@@ -59,11 +62,39 @@ class ReferralRepositoryImpl implements ReferralRepository {
 
   @override
   Future<List<Map<String, dynamic>>> getAllReferrals() async {
+    if (kIsWeb) {
+      final referrals = await _firestore.collection('referrals').get();
+      final children = await _firestore.collection('children').get();
+      final childrenById = {
+        for (final child in children.docs) child.data()['child_id']: child.data(),
+      };
+
+      return referrals.docs.map((doc) {
+        final data = doc.data();
+        final child = childrenById[data['child_id']] ?? {};
+        return {
+          ...data,
+          'id': data['id'] ?? int.tryParse(doc.id),
+          'first_name': child['first_name'] ?? '',
+          'last_name': child['last_name'] ?? '',
+        };
+      }).toList();
+    }
+
     return await _dbHelper.getAllReferrals();
   }
 
   @override
   Future<int> updateReferral(ReferralModel referral) async {
+    if (kIsWeb) {
+      if (referral.id == null) return 0;
+      await _firestore
+          .collection('referrals')
+          .doc(referral.id.toString())
+          .set(referral.toMap(), SetOptions(merge: true));
+      return referral.id!;
+    }
+
     final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
     final updatedReferral = referral.copyWith(
       updatedAt: now,

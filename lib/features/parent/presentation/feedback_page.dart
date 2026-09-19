@@ -25,7 +25,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
   Future<void> _loadChild() async {
     final user = await AuthRepositoryImpl().getCurrentUser();
     if (user != null) {
-      final children = await DatabaseHelper.instance.readChildrenByParent(user.id!);
+      final children = await DatabaseHelper.instance.readChildrenByParent(user.uid);
       if (children.isNotEmpty) {
         setState(() {
           _child = children.first;

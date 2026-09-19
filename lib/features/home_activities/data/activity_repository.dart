@@ -44,7 +44,9 @@ class ActivityRepositoryImpl implements ActivityRepository {
 
   @override
   Future<List<ChildModel>> getTeacherChildren(int teacherId) async {
-    return await _dbHelper.readChildrenByTeacher(teacherId);
+    final user = await _dbHelper.readUser(teacherId);
+    if (user == null) return [];
+    return await _dbHelper.readChildrenByTeacher(user.uid);
   }
 
   @override

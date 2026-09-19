@@ -25,7 +25,7 @@ class _EccdEvaluationPageState extends State<EccdEvaluationPage> {
     setState(() => _isLoading = true);
     final teacher = await AuthRepositoryImpl().getCurrentUser();
     if (teacher != null) {
-      final children = await DatabaseHelper.instance.readChildrenByTeacher(teacher.id!);
+      final children = await DatabaseHelper.instance.readChildrenByTeacher(teacher.uid);
       setState(() {
         _children = children;
         _isLoading = false;

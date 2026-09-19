@@ -296,20 +296,20 @@ class DatabaseHelper {
     return result.map((json) => ChildModel.fromMap(json)).toList();
   }
 
-  Future<List<ChildModel>> readChildrenByParent(int parentId) async {
+  Future<List<ChildModel>> readChildrenByParent(String parentUid) async {
     if (kIsWeb) return [];
     final db = await instance.database;
-    final userMaps = await db.query('users', where: 'id = ?', whereArgs: [parentId]);
+    final userMaps = await db.query('users', where: 'uid = ?', whereArgs: [parentUid]);
     if (userMaps.isEmpty) return [];
     final userName = userMaps.first['name'] as String;
     final result = await db.query('children', where: 'parent_name = ?', whereArgs: [userName]);
     return result.map((json) => ChildModel.fromMap(json)).toList();
   }
 
-  Future<List<ChildModel>> readChildrenByTeacher(int teacherId) async {
+  Future<List<ChildModel>> readChildrenByTeacher(String teacherUid) async {
     if (kIsWeb) return [];
     final db = await instance.database;
-    final userMaps = await db.query('users', where: 'id = ?', whereArgs: [teacherId]);
+    final userMaps = await db.query('users', where: 'uid = ?', whereArgs: [teacherUid]);
     if (userMaps.isEmpty) return [];
     final teacherName = userMaps.first['name'] as String;
     final result = await db.query('children', where: 'teacher_name = ?', whereArgs: [teacherName]);
