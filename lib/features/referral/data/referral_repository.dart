@@ -6,6 +6,8 @@ import '../../../core/utils/audit_logger.dart';
 import '../domain/referral_model.dart';
 import '../../../data/datasources/local_data_source.dart';
 import '../../../data/datasources/remote_data_source.dart';
+import '../../../data/repositories/file_upload_repository.dart';
+import '../../../core/config/supabase_config.dart';
 import '../../../core/network/connectivity_service.dart';
 
 abstract class ReferralRepository {
@@ -14,6 +16,7 @@ abstract class ReferralRepository {
   Future<List<Map<String, dynamic>>> getAllReferrals();
   Future<int> updateReferral(ReferralModel referral);
   Future<int> deleteReferral(int id);
+  Future<String?> uploadReferralAttachment(String referralId, String filePath);
 }
 
 class ReferralRepositoryImpl implements ReferralRepository {
@@ -22,6 +25,7 @@ class ReferralRepositoryImpl implements ReferralRepository {
   final RemoteDataSource _remote = RemoteDataSource();
   final ConnectivityService _connectivity = ConnectivityService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FileUploadRepository _fileUploadRepo = FileUploadRepository();
 
   @override
   Future<int> addReferral(ReferralModel referral) async {
@@ -129,5 +133,17 @@ class ReferralRepositoryImpl implements ReferralRepository {
     final result = await _dbHelper.delete('referrals', id);
     // Note: Remote delete usually handled by SyncService or direct call
     return result;
+  }
+
+  @override
+  Future<String?> uploadReferralAttachment(String referralId, String filePath) async {
+    return await _fileUploadRepo.uploadFile(
+      bucket: SupabaseConfig.referralAttachments,
+      entityId: referralId,
+      category: 'referral_attachment',
+      filePath: filePath,
+      docCollection: 'referrals',
+      urlFieldName: 'attachment_url',
+    );
   }
 }

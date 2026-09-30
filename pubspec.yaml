@@ -42,6 +42,10 @@ dependencies:
   firebase_auth: ^5.7.0
   cloud_firestore: ^5.6.12
 
+  # Supabase & Media
+  supabase_flutter: ^2.8.0
+  image_picker: ^1.1.2
+
   # Connectivity & Sync
   connectivity_plus: ^6.0.3
 

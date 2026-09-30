@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../core/database/database_helper.dart';
+import '../../shared/models/file_upload_model.dart';
 
 class LocalDataSource {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
@@ -45,9 +46,31 @@ class LocalDataSource {
     await db.update(table, {'is_synced': 1}, where: '$idField = ?', whereArgs: [id]);
   }
 
+  // File Upload Caching Methods
+  Future<int> saveFileUpload(FileUploadModel fileUpload) async {
+    if (kIsWeb) return 0;
+    return await _dbHelper.insertFileUpload(fileUpload);
+  }
+
+  Future<FileUploadModel?> getFileUploadByFileId(String fileId) async {
+    if (kIsWeb) return null;
+    return await _dbHelper.getFileUploadByFileId(fileId);
+  }
+
+  Future<List<FileUploadModel>> getUnsyncedFileUploads() async {
+    if (kIsWeb) return [];
+    return await _dbHelper.getUnsyncedFileUploads();
+  }
+
+  Future<int> markFileUploadSynced(String fileId, String remoteUrl) async {
+    if (kIsWeb) return 0;
+    return await _dbHelper.markFileUploadSynced(fileId, remoteUrl);
+  }
+
   String _getIdField(String table) {
     if (table == 'children') return 'child_id';
     if (table == 'users') return 'uid';
+    if (table == 'file_uploads') return 'file_id';
     return 'id'; 
   }
 }

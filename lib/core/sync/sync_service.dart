@@ -1,12 +1,14 @@
 import 'dart:async';
 import '../../data/datasources/local_data_source.dart';
 import '../../data/datasources/remote_data_source.dart';
+import '../../data/repositories/file_upload_repository.dart';
 import '../network/connectivity_service.dart';
 
 class SyncService {
   final LocalDataSource _local = LocalDataSource();
   final RemoteDataSource _remote = RemoteDataSource();
   final ConnectivityService _connectivity = ConnectivityService();
+  final FileUploadRepository _fileUploadRepo = FileUploadRepository();
   
   bool _isSyncing = false;
   final List<String> _tablesToSync = [
@@ -40,6 +42,9 @@ class SyncService {
 
     try {
       print("SYNC ENGINE: Starting synchronization...");
+      // 0. Sync pending file uploads first
+      await _fileUploadRepo.syncPendingFileUploads();
+
       for (String table in _tablesToSync) {
         await _syncTable(table);
       }

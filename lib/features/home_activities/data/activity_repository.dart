@@ -5,6 +5,8 @@ import '../domain/activity_submission_model.dart';
 import '../../../shared/models/child_model.dart';
 import '../../../data/datasources/local_data_source.dart';
 import '../../../data/datasources/remote_data_source.dart';
+import '../../../data/repositories/file_upload_repository.dart';
+import '../../../core/config/supabase_config.dart';
 import '../../../core/network/connectivity_service.dart';
 import '../../../core/utils/audit_logger.dart';
 
@@ -18,6 +20,7 @@ abstract class ActivityRepository {
   Future<ActivitySubmissionModel?> getSubmission(int activityId);
   Future<List<Map<String, dynamic>>> getAllSubmissions();
   Future<int> reviewSubmission(int submissionId, String review, String status);
+  Future<String?> uploadSubmissionEvidence(String submissionId, String filePath);
 
   // Added for Teacher Home Activities workflow
   Future<List<ActivityModel>> getHomeActivitiesByTeacher(int teacherId);
@@ -35,6 +38,7 @@ class ActivityRepositoryImpl implements ActivityRepository {
   final LocalDataSource _local = LocalDataSource();
   final RemoteDataSource _remote = RemoteDataSource();
   final ConnectivityService _connectivity = ConnectivityService();
+  final FileUploadRepository _fileUploadRepo = FileUploadRepository();
 
   @override
   Future<List<ActivityModel>> getHomeActivitiesByTeacher(int teacherId) async {
@@ -176,5 +180,17 @@ class ActivityRepositoryImpl implements ActivityRepository {
     );
 
     return result;
+  }
+
+  @override
+  Future<String?> uploadSubmissionEvidence(String submissionId, String filePath) async {
+    return await _fileUploadRepo.uploadFile(
+      bucket: SupabaseConfig.homeActivityEvidence,
+      entityId: submissionId,
+      category: 'activity_evidence',
+      filePath: filePath,
+      docCollection: 'activity_submissions',
+      urlFieldName: 'evidence_url',
+    );
   }
 }

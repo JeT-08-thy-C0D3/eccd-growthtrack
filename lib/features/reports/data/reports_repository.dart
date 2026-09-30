@@ -1,7 +1,10 @@
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/database/database_helper.dart';
+import '../../../data/repositories/file_upload_repository.dart';
+import '../../../core/config/supabase_config.dart';
 import '../domain/reports_model.dart';
 
 abstract class ReportsRepository {
@@ -10,11 +13,13 @@ abstract class ReportsRepository {
   Future<List<EvaluationReportItem>> getEvaluationReport();
   Future<List<ReferralReportItem>> getReferralReport();
   Future<List<ChildProgressReportItem>> getChildProgressReport();
+  Future<String?> uploadPdfReport(String reportId, Uint8List pdfBytes, String fileName);
 }
 
 class ReportsRepositoryImpl implements ReportsRepository {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FileUploadRepository _fileUploadRepo = FileUploadRepository();
 
   @override
   Future<DashboardStats> getDashboardStats() async {
@@ -134,5 +139,19 @@ class ReportsRepositoryImpl implements ReportsRepository {
       final data = await _dbHelper.getChildProgressReport();
       return data.map((e) => ChildProgressReportItem.fromMap(e)).toList();
     }
+  }
+
+  @override
+  Future<String?> uploadPdfReport(String reportId, Uint8List pdfBytes, String fileName) async {
+    return await _fileUploadRepo.uploadBytes(
+      bucket: SupabaseConfig.pdfReports,
+      entityId: reportId,
+      category: 'pdf_report',
+      bytes: pdfBytes,
+      fileName: fileName,
+      contentType: 'application/pdf',
+      docCollection: 'reports',
+      urlFieldName: 'pdf_url',
+    );
   }
 }

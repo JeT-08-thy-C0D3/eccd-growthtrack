@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../data/repositories/file_upload_repository.dart';
 import '../database/database_helper.dart';
 import '../network/connectivity_service.dart';
 
@@ -7,6 +8,7 @@ class SyncEngine {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final ConnectivityService _connectivity = ConnectivityService();
+  final FileUploadRepository _fileUploadRepo = FileUploadRepository();
   
   Timer? _syncTimer;
   bool _isSyncing = false;
@@ -38,6 +40,9 @@ class SyncEngine {
     try {
       print("SyncEngine: Starting synchronization...");
       
+      // 0. Sync pending file uploads to Supabase
+      await _fileUploadRepo.syncPendingFileUploads();
+
       // 1. Sync Children
       await _syncTable('children', 'child_id');
       

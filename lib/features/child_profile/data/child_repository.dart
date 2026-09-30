@@ -3,6 +3,8 @@ import '../../../core/database/database_helper.dart';
 import '../../../data/datasources/local_data_source.dart';
 import '../../../core/network/connectivity_service.dart';
 import '../../../data/datasources/remote_data_source.dart';
+import '../../../data/repositories/file_upload_repository.dart';
+import '../../../core/config/supabase_config.dart';
 import '../../../core/utils/audit_logger.dart';
 
 abstract class ChildRepository {
@@ -10,12 +12,14 @@ abstract class ChildRepository {
   Future<List<ChildModel>> getChildren();
   Future<int> updateChild(ChildModel child);
   Future<int> deleteChild(int id);
+  Future<String?> uploadProfilePhoto(String childId, String filePath);
 }
 
 class ChildRepositoryImpl implements ChildRepository {
   final LocalDataSource _local = LocalDataSource();
   final RemoteDataSource _remote = RemoteDataSource();
   final ConnectivityService _connectivity = ConnectivityService();
+  final FileUploadRepository _fileUploadRepo = FileUploadRepository();
 
   @override
   Future<int> addChild(ChildModel child) async {
@@ -65,5 +69,17 @@ class ChildRepositoryImpl implements ChildRepository {
   Future<int> deleteChild(int id) async {
      // Local delete + cloud delete trigger
      return 0; // Simplified for example
+  }
+
+  @override
+  Future<String?> uploadProfilePhoto(String childId, String filePath) async {
+    return await _fileUploadRepo.uploadFile(
+      bucket: SupabaseConfig.childProfilePhotos,
+      entityId: childId,
+      category: 'profile_photo',
+      filePath: filePath,
+      docCollection: 'children',
+      urlFieldName: 'photo_url',
+    );
   }
 }

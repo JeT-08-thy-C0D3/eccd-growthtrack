@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../../shared/models/user_model.dart';
 import '../../shared/models/child_model.dart';
+import '../../shared/models/file_upload_model.dart';
 
 class DatabaseHelper {
   // Singleton instance
@@ -222,6 +223,19 @@ class DatabaseHelper {
         updated_at $textType,
         is_synced $integerType,
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE file_uploads (
+        id $idType,
+        file_id $textUniqueType,
+        entity_id $textType,
+        category $textType,
+        local_path $textType,
+        remote_url $textNullable,
+        created_at $textType,
+        is_synced $integerType
       )
     ''');
   }
@@ -616,6 +630,47 @@ class DatabaseHelper {
       'assessments': assessmentMaps.map((e) => {'domain': e['domain'], 'avg_score': (e['avg_score'] as num?)?.toDouble() ?? 0.0}).toList(),
       'attendance_rate': total > 0 ? (present / total) * 100 : 0.0,
     };
+  }
+
+  // --- File Uploads ---
+
+  Future<int> insertFileUpload(FileUploadModel fileUpload) async {
+    if (kIsWeb) return 0;
+    final db = await instance.database;
+    return await db.insert(
+      'file_uploads',
+      fileUpload.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<FileUploadModel?> getFileUploadByFileId(String fileId) async {
+    if (kIsWeb) return null;
+    final db = await instance.database;
+    final maps = await db.query('file_uploads', where: 'file_id = ?', whereArgs: [fileId]);
+    if (maps.isNotEmpty) return FileUploadModel.fromMap(maps.first);
+    return null;
+  }
+
+  Future<List<FileUploadModel>> getUnsyncedFileUploads() async {
+    if (kIsWeb) return [];
+    final db = await instance.database;
+    final result = await db.query('file_uploads', where: 'is_synced = ?', whereArgs: [0]);
+    return result.map((json) => FileUploadModel.fromMap(json)).toList();
+  }
+
+  Future<int> markFileUploadSynced(String fileId, String remoteUrl) async {
+    if (kIsWeb) return 0;
+    final db = await instance.database;
+    return await db.update(
+      'file_uploads',
+      {
+        'remote_url': remoteUrl,
+        'is_synced': 1,
+      },
+      where: 'file_id = ?',
+      whereArgs: [fileId],
+    );
   }
 
   Future close() async {

@@ -19,4 +19,11 @@ class RemoteDataSource {
             .get())
         .docs;
   }
+
+  Future<void> updateDocumentFileUrl(String collection, String docId, String fieldName, String fileUrl) async {
+    await _firestore.collection(collection).doc(docId).set({
+      fieldName: fileUrl,
+      'updated_at': DateTime.now().toIso8601String(),
+    }, SetOptions(merge: true));
+  }
 }
