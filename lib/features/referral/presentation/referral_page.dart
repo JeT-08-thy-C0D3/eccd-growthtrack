@@ -4,7 +4,8 @@ import '../../../core/database/database_helper.dart';
 import '../../../shared/models/child_model.dart';
 import '../data/referral_repository.dart';
 import '../domain/referral_model.dart';
-import 'referral_history_page.dart';
+import '../../../core/utils/validators.dart';
+import '../../../shared/widgets/confirmation_dialog.dart';
 
 class ReferralPage extends StatefulWidget {
   const ReferralPage({super.key});
@@ -15,7 +16,10 @@ class ReferralPage extends StatefulWidget {
 
 class _ReferralPageState extends State<ReferralPage> {
   final ReferralRepository _repository = ReferralRepositoryImpl();
-  List<Map<String, dynamic>> _referrals = [];
+  final TextEditingController _searchController = TextEditingController();
+  List<Map<String, dynamic>> _allReferrals = [];
+  List<Map<String, dynamic>> _filteredReferrals = [];
+  String _searchQuery = '';
   bool _isLoading = true;
 
   @override
@@ -26,8 +30,21 @@ class _ReferralPageState extends State<ReferralPage> {
 
   Future<void> _loadReferrals() async {
     setState(() => _isLoading = true);
-    _referrals = await _repository.getAllReferrals();
+    _allReferrals = await _repository.getAllReferrals();
+    _applySearch();
     setState(() => _isLoading = false);
+  }
+
+  void _applySearch() {
+    setState(() {
+      final q = _searchQuery.toLowerCase();
+      _filteredReferrals = _allReferrals.where((item) {
+        final name = "${item['first_name']} ${item['last_name']}".toLowerCase();
+        final concern = (item['concern'] as String? ?? '').toLowerCase();
+        final status = (item['status'] as String? ?? '').toLowerCase();
+        return name.contains(q) || concern.contains(q) || status.contains(q);
+      }).toList();
+    });
   }
 
   void _showReferralForm({Map<String, dynamic>? existingReferral}) async {
@@ -55,6 +72,12 @@ class _ReferralPageState extends State<ReferralPage> {
   }
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -68,43 +91,61 @@ class _ReferralPageState extends State<ReferralPage> {
         label: const Text('New Referral'),
         icon: const Icon(Icons.add),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _referrals.isEmpty
-              ? const Center(child: Text('No active referrals found.'))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _referrals.length,
-                  itemBuilder: (context, index) {
-                    final item = _referrals[index];
-                    final status = item['status'];
-                    final color = _getStatusColor(status);
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: SearchBar(
+              controller: _searchController,
+              hintText: 'Search by Concern, Child Name, or Status...',
+              leading: const Icon(Icons.search),
+              onChanged: (val) {
+                _searchQuery = val;
+                _applySearch();
+              },
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _filteredReferrals.isEmpty
+                    ? const Center(child: Text('No matching referrals found.'))
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _filteredReferrals.length,
+                        itemBuilder: (context, index) {
+                          final item = _filteredReferrals[index];
+                          final status = item['status'];
+                          final color = _getStatusColor(status);
 
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: color.withValues(alpha: 0.1),
-                          child: Icon(Icons.assignment_late, color: color),
-                        ),
-                        title: Text('${item['first_name']} ${item['last_name']}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Concern: ${item['concern']}'),
-                            Text('Date: ${item['referral_date']}', style: const TextStyle(fontSize: 12)),
-                          ],
-                        ),
-                        trailing: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                          child: Text(status, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 10)),
-                        ),
-                        onTap: () => _showReferralForm(existingReferral: item),
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: color.withValues(alpha: 0.1),
+                                child: Icon(Icons.assignment_late, color: color),
+                              ),
+                              title: Text('${item['first_name']} ${item['last_name']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Concern: ${item['concern']}'),
+                                  Text('Date: ${item['referral_date']}', style: const TextStyle(fontSize: 12)),
+                                ],
+                              ),
+                              trailing: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+                                child: Text(status, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 10)),
+                              ),
+                              onTap: () => _showReferralForm(existingReferral: item),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -130,6 +171,7 @@ class _ReferralFormDialog extends StatefulWidget {
 }
 
 class _ReferralFormDialogState extends State<_ReferralFormDialog> {
+  final _formKey = GlobalKey<FormState>();
   final _repository = ReferralRepositoryImpl();
   final _concernController = TextEditingController();
   final _descController = TextEditingController();
@@ -157,27 +199,45 @@ class _ReferralFormDialogState extends State<_ReferralFormDialog> {
   }
 
   void _save() async {
-    if (_concernController.text.isEmpty || _selectedChild == null) return;
+    if (_formKey.currentState!.validate()) {
+      if (_selectedChild == null) return;
 
-    final referral = ReferralModel(
-      id: widget.referral?.id,
-      childId: _selectedChild!.childId,
-      concern: _concernController.text,
-      description: _descController.text,
-      referralDate: DateFormat('yyyy-MM-dd').format(_referralDate),
-      followUpDate: DateFormat('yyyy-MM-dd').format(_followUpDate),
-      status: _selectedStatus,
-      followUpNotes: _notesController.text,
-      updatedAt: DateTime.now().toIso8601String(),
-    );
+      if (widget.referral != null) {
+        final confirmed = await ConfirmationDialog.showEdit(
+          context: context,
+          itemName: 'Referral for ${_selectedChild!.firstName}',
+        );
+        if (!confirmed) return;
+      }
 
-    if (widget.referral != null) {
-      await _repository.updateReferral(referral);
-    } else {
-      await _repository.addReferral(referral);
+      final referral = ReferralModel(
+        id: widget.referral?.id,
+        childId: _selectedChild!.childId,
+        concern: _concernController.text.trim(),
+        description: _descController.text.trim(),
+        referralDate: DateFormat('yyyy-MM-dd').format(_referralDate),
+        followUpDate: DateFormat('yyyy-MM-dd').format(_followUpDate),
+        status: _selectedStatus,
+        followUpNotes: _notesController.text.trim(),
+        updatedAt: DateTime.now().toIso8601String(),
+      );
+
+      if (widget.referral != null) {
+        await _repository.updateReferral(referral);
+      } else {
+        await _repository.addReferral(referral);
+      }
+
+      if (mounted) Navigator.pop(context, true);
     }
+  }
 
-    if (mounted) Navigator.pop(context, true);
+  @override
+  void dispose() {
+    _concernController.dispose();
+    _descController.dispose();
+    _notesController.dispose();
+    super.dispose();
   }
 
   @override
@@ -185,44 +245,60 @@ class _ReferralFormDialogState extends State<_ReferralFormDialog> {
     return AlertDialog(
       title: Text(widget.referral != null ? 'Update Referral' : 'New Referral'),
       content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            DropdownButtonFormField<ChildModel>(
-              value: _selectedChild,
-              decoration: const InputDecoration(labelText: 'Child'),
-              items: widget.children.map((c) => DropdownMenuItem(value: c, child: Text("${c.firstName} ${c.lastName}"))).toList(),
-              onChanged: widget.referral != null ? null : (val) => setState(() => _selectedChild = val),
-            ),
-            TextField(controller: _concernController, decoration: const InputDecoration(labelText: 'Developmental Concern')),
-            TextField(controller: _descController, decoration: const InputDecoration(labelText: 'Description'), maxLines: 2),
-            const SizedBox(height: 16),
-            ListTile(
-              title: const Text('Referral Date', style: TextStyle(fontSize: 14)),
-              subtitle: Text(DateFormat('yyyy-MM-dd').format(_referralDate)),
-              trailing: const Icon(Icons.calendar_today, size: 20),
-              onTap: () async {
-                final picked = await showDatePicker(context: context, initialDate: _referralDate, firstDate: DateTime(2020), lastDate: DateTime.now());
-                if (picked != null) setState(() => _referralDate = picked);
-              },
-            ),
-            ListTile(
-              title: const Text('Follow-up Date', style: TextStyle(fontSize: 14)),
-              subtitle: Text(DateFormat('yyyy-MM-dd').format(_followUpDate)),
-              trailing: const Icon(Icons.calendar_today, size: 20),
-              onTap: () async {
-                final picked = await showDatePicker(context: context, initialDate: _followUpDate, firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)));
-                if (picked != null) setState(() => _followUpDate = picked);
-              },
-            ),
-            DropdownButtonFormField<String>(
-              value: _selectedStatus,
-              decoration: const InputDecoration(labelText: 'Status'),
-              items: ['Pending', 'Referred', 'For Follow-Up', 'Completed', 'Closed'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-              onChanged: (val) => setState(() => _selectedStatus = val!),
-            ),
-            TextField(controller: _notesController, decoration: const InputDecoration(labelText: 'Follow-up Notes'), maxLines: 2),
-          ],
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<ChildModel>(
+                initialValue: _selectedChild,
+                decoration: const InputDecoration(labelText: 'Child'),
+                items: widget.children.map((c) => DropdownMenuItem(value: c, child: Text("${c.firstName} ${c.lastName}"))).toList(),
+                onChanged: widget.referral != null ? null : (val) => setState(() => _selectedChild = val),
+              ),
+              TextFormField(
+                controller: _concernController,
+                decoration: const InputDecoration(labelText: 'Developmental Concern'),
+                validator: (v) => Validators.validateRequired(v, 'Developmental Concern'),
+              ),
+              TextFormField(
+                controller: _descController,
+                decoration: const InputDecoration(labelText: 'Description'),
+                maxLines: 2,
+                validator: (v) => Validators.validateRequired(v, 'Description'),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                title: const Text('Referral Date', style: TextStyle(fontSize: 14)),
+                subtitle: Text(DateFormat('yyyy-MM-dd').format(_referralDate)),
+                trailing: const Icon(Icons.calendar_today, size: 20),
+                onTap: () async {
+                  final picked = await showDatePicker(context: context, initialDate: _referralDate, firstDate: DateTime(2020), lastDate: DateTime.now());
+                  if (picked != null) setState(() => _referralDate = picked);
+                },
+              ),
+              ListTile(
+                title: const Text('Follow-up Date', style: TextStyle(fontSize: 14)),
+                subtitle: Text(DateFormat('yyyy-MM-dd').format(_followUpDate)),
+                trailing: const Icon(Icons.calendar_today, size: 20),
+                onTap: () async {
+                  final picked = await showDatePicker(context: context, initialDate: _followUpDate, firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)));
+                  if (picked != null) setState(() => _followUpDate = picked);
+                },
+              ),
+              DropdownButtonFormField<String>(
+                initialValue: _selectedStatus,
+                decoration: const InputDecoration(labelText: 'Status'),
+                items: ['Pending', 'Referred', 'For Follow-Up', 'Completed', 'Closed'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                onChanged: (val) => setState(() => _selectedStatus = val!),
+              ),
+              TextFormField(
+                controller: _notesController,
+                decoration: const InputDecoration(labelText: 'Follow-up Notes'),
+                maxLines: 2,
+              ),
+            ],
+          ),
         ),
       ),
       actions: [

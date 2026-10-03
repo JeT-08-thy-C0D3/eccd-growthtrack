@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../shared/models/child_model.dart';
+import '../data/repositories/audit_repository.dart';
 import '../../reports/data/reports_repository.dart';
 import '../../reports/domain/reports_model.dart';
 import '../../reports/presentation/widgets/attendance_report.dart';
@@ -70,11 +71,14 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     });
   }
 
-  void _exportReport(String type) {
+  void _exportReport(String type) async {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Preparing $type Report for export...')),
     );
-    // In a real implementation, this would generate PDF or CSV
+    await AuditRepository().logAction(
+      action: 'Report Generated',
+      targetRecord: '$type Report',
+    );
   }
 
   @override
@@ -180,7 +184,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
             const SizedBox(width: 24),
             Expanded(
               child: DropdownButtonFormField<ChildModel?>(
-                value: _selectedFilterChild,
+                initialValue: _selectedFilterChild,
                 decoration: const InputDecoration(
                   labelText: 'Filter by Specific Child',
                   border: OutlineInputBorder(),

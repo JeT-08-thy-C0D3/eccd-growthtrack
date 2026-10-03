@@ -6,6 +6,9 @@ import '../data/child_repository.dart';
 import '../../../shared/models/child_model.dart';
 import '../../../shared/models/user_model.dart';
 import '../../auth/data/auth_repository_impl.dart';
+import '../../../core/utils/validators.dart';
+import '../../../shared/widgets/terms_privacy_dialog.dart';
+import '../../../shared/widgets/confirmation_dialog.dart';
 
 class ChildRegistrationPage extends StatefulWidget {
   final ChildModel? child; // If provided, we are in Edit mode
@@ -34,6 +37,7 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
   String? _parentLoadError;
   bool _isLoadingParents = true;
   bool _isEditMode = false;
+  bool _agreedToPrivacyConsent = true;
 
   @override
   void initState() {
@@ -90,7 +94,6 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
           .toList();
     } catch (e) {
       _parentLoadError = e.toString();
-      // If Firebase is temporarily unavailable, fall back to the local cache.
       final allUsers = await DatabaseHelper.instance.readAllUsers();
       parentUsers = allUsers
           .where(
@@ -137,7 +140,7 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
   String _generateChildId() {
     final random = Random();
     final year = DateTime.now().year.toString();
-    final id = random.nextInt(9000) + 1000; // 4 digit random
+    final id = random.nextInt(9000) + 1000;
     return 'ECCD-$year-$id';
   }
 
@@ -171,17 +174,37 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
         return;
       }
 
+      if (!_agreedToPrivacyConsent) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Parent Data Privacy Consent under RA 10173/12199 is required'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      final childName = "${_firstNameController.text} ${_lastNameController.text}";
+
+      if (_isEditMode) {
+        final confirmed = await ConfirmationDialog.showEdit(
+          context: context,
+          itemName: childName,
+        );
+        if (!confirmed) return;
+      }
+
       final child = ChildModel(
         id: widget.child?.id,
         childId: _childIdController.text,
-        firstName: _firstNameController.text,
-        lastName: _lastNameController.text,
+        firstName: _firstNameController.text.trim(),
+        lastName: _lastNameController.text.trim(),
         birthDate: _birthDateController.text,
         age: int.tryParse(_ageController.text) ?? 0,
         gender: _selectedGender,
-        address: _addressController.text,
+        address: _addressController.text.trim(),
         parentName: _selectedParent!.name,
-        teacherName: _teacherNameController.text,
+        teacherName: _teacherNameController.text.trim(),
         updatedAt: DateTime.now().toIso8601String(),
       );
 
@@ -250,7 +273,7 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
                         labelText: 'First Name',
                         border: OutlineInputBorder(),
                       ),
-                      validator: (value) => value!.isEmpty ? 'Required' : null,
+                      validator: (v) => Validators.validateRequired(v, 'First name'),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -261,7 +284,7 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
                         labelText: 'Last Name',
                         border: OutlineInputBorder(),
                       ),
-                      validator: (value) => value!.isEmpty ? 'Required' : null,
+                      validator: (v) => Validators.validateRequired(v, 'Last name'),
                     ),
                   ),
                 ],
@@ -280,7 +303,7 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
                         border: OutlineInputBorder(),
                         prefixIcon: Icon(Icons.calendar_today),
                       ),
-                      validator: (value) => value!.isEmpty ? 'Required' : null,
+                      validator: (v) => Validators.validateRequired(v, 'Birth date'),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -293,7 +316,7 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
                         labelText: 'Age',
                         border: OutlineInputBorder(),
                       ),
-                      validator: (value) => value!.isEmpty ? 'Required' : null,
+                      validator: (v) => Validators.validateAge(v, min: 0, max: 12),
                     ),
                   ),
                 ],
@@ -319,7 +342,7 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.location_on),
                 ),
-                validator: (value) => value!.isEmpty ? 'Required' : null,
+                validator: (v) => Validators.validateRequired(v, 'Address'),
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<UserModel>(
@@ -362,7 +385,7 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
                       },
                 validator: (value) {
                   if (_parents.isEmpty) return 'No parent accounts available';
-                  return value == null ? 'Required' : null;
+                  return value == null ? 'Parent selection is required' : null;
                 },
               ),
               const SizedBox(height: 16),
@@ -373,9 +396,31 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.school),
                 ),
-                validator: (value) => value!.isEmpty ? 'Required' : null,
+                validator: (v) => Validators.validateRequired(v, 'Teacher name'),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Checkbox(
+                    value: _agreedToPrivacyConsent,
+                    onChanged: (val) => setState(() => _agreedToPrivacyConsent = val ?? false),
+                  ),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => TermsPrivacyDialog.show(context),
+                      child: const Text(
+                        'Parent Data Privacy Consent (RA 10173 & RA 12199 Compliance)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: _saveForm,
                 style: ElevatedButton.styleFrom(

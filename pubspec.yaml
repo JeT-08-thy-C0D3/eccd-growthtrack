@@ -45,6 +45,7 @@ dependencies:
   # Supabase & Media
   supabase_flutter: ^2.8.0
   image_picker: ^1.1.2
+  permission_handler: ^11.3.1
 
   # Connectivity & Sync
   connectivity_plus: ^6.0.3

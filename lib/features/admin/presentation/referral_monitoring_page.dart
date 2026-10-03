@@ -15,6 +15,8 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
   List<Map<String, dynamic>> _filteredReferrals = [];
   String _selectedFilter = 'All';
   bool _isLoading = true;
+  int? _sortColumnIndex;
+  bool _sortAscending = true;
 
   final List<String> _statusFilters = [
     'All',
@@ -36,20 +38,54 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
     final data = await _repository.getAllReferrals();
     setState(() {
       _allReferrals = data;
-      _applyFilter();
+      _applyFilterAndSort();
       _isLoading = false;
     });
   }
 
-  void _applyFilter() {
+  void _applyFilterAndSort() {
     setState(() {
       if (_selectedFilter == 'All') {
-        _filteredReferrals = _allReferrals;
+        _filteredReferrals = List.from(_allReferrals);
       } else {
         _filteredReferrals = _allReferrals
             .where((r) => r['status'] == _selectedFilter)
             .toList();
       }
+
+      if (_sortColumnIndex != null) {
+        _filteredReferrals.sort((a, b) {
+          int result = 0;
+          switch (_sortColumnIndex) {
+            case 0:
+              final nameA = "${a['first_name']} ${a['last_name']}".toLowerCase();
+              final nameB = "${b['first_name']} ${b['last_name']}".toLowerCase();
+              result = nameA.compareTo(nameB);
+              break;
+            case 1:
+              result = (a['concern'] as String).compareTo(b['concern'] as String);
+              break;
+            case 2:
+              result = (a['referral_date'] as String).compareTo(b['referral_date'] as String);
+              break;
+            case 3:
+              result = (a['follow_up_date'] as String).compareTo(b['follow_up_date'] as String);
+              break;
+            case 4:
+              result = (a['status'] as String).compareTo(b['status'] as String);
+              break;
+          }
+          return _sortAscending ? result : -result;
+        });
+      }
+    });
+  }
+
+  void _sort(int columnIndex, bool ascending) {
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+      _applyFilterAndSort();
     });
   }
 
@@ -133,7 +169,7 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
                         if (selected) {
                           setState(() {
                             _selectedFilter = status;
-                            _applyFilter();
+                            _applyFilterAndSort();
                           });
                         }
                       },
@@ -156,14 +192,31 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
         child: SizedBox(
           width: double.infinity,
           child: DataTable(
+            sortColumnIndex: _sortColumnIndex,
+            sortAscending: _sortAscending,
             headingRowColor: WidgetStateProperty.all(Theme.of(context).colorScheme.primaryContainer),
-            columns: const [
-              DataColumn(label: Text('Child Name', style: TextStyle(fontWeight: FontWeight.bold))),
-              DataColumn(label: Text('Concern', style: TextStyle(fontWeight: FontWeight.bold))),
-              DataColumn(label: Text('Referral Date', style: TextStyle(fontWeight: FontWeight.bold))),
-              DataColumn(label: Text('Follow-Up', style: TextStyle(fontWeight: FontWeight.bold))),
-              DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
-              DataColumn(label: Text('Action', style: TextStyle(fontWeight: FontWeight.bold))),
+            columns: [
+              DataColumn(
+                label: const Text('Child Name', style: TextStyle(fontWeight: FontWeight.bold)),
+                onSort: (index, ascending) => _sort(index, ascending),
+              ),
+              DataColumn(
+                label: const Text('Concern', style: TextStyle(fontWeight: FontWeight.bold)),
+                onSort: (index, ascending) => _sort(index, ascending),
+              ),
+              DataColumn(
+                label: const Text('Referral Date', style: TextStyle(fontWeight: FontWeight.bold)),
+                onSort: (index, ascending) => _sort(index, ascending),
+              ),
+              DataColumn(
+                label: const Text('Follow-Up', style: TextStyle(fontWeight: FontWeight.bold)),
+                onSort: (index, ascending) => _sort(index, ascending),
+              ),
+              DataColumn(
+                label: const Text('Status', style: TextStyle(fontWeight: FontWeight.bold)),
+                onSort: (index, ascending) => _sort(index, ascending),
+              ),
+              const DataColumn(label: Text('Action', style: TextStyle(fontWeight: FontWeight.bold))),
             ],
             rows: _filteredReferrals.map((r) {
               final statusColor = _getStatusColor(r['status']);

@@ -37,13 +37,13 @@ class UserRemoteDataSource {
     await _firestore.collection('users').doc(uid).delete();
   }
 
-  Future<List<UserModel>> fetchUsersFromFirestore() async {
-    final query = await _firestore.collection('users').get();
+  Future<List<UserModel>> fetchUsersFromFirestore({int limit = 50}) async {
+    final query = await _firestore.collection('users').limit(limit).get();
     return query.docs.map((doc) => UserModel.fromMap(doc.data())).toList();
   }
 
-  Stream<List<UserModel>> streamUsersFromFirestore() {
-    return _firestore.collection('users').snapshots().map((snapshot) {
+  Stream<List<UserModel>> streamUsersFromFirestore({int limit = 50}) {
+    return _firestore.collection('users').limit(limit).snapshots().map((snapshot) {
       return snapshot.docs.map((doc) => UserModel.fromMap(doc.data())).toList();
     });
   }

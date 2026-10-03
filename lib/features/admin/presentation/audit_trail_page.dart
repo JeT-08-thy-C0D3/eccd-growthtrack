@@ -14,7 +14,64 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
   final AuditRepository _repository = AuditRepository();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  String? _selectedModule;
+  String? _selectedActionFilter;
+  int? _sortColumnIndex;
+  bool _sortAscending = false; // Default timestamp descending
+
+  final List<String> _trackedActions = [
+    'User Created',
+    'User Updated',
+    'User Deleted',
+    'Referral Updated',
+    'Report Generated',
+  ];
+
+  void _sort(int columnIndex, bool ascending) {
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+    });
+  }
+
+  List<AuditLogModel> _filterAndSortLogs(List<AuditLogModel> logs) {
+    var filtered = logs.where((log) {
+      final q = _searchQuery.toLowerCase();
+      final matchesSearch = log.action.toLowerCase().contains(q) ||
+          log.performedBy.toLowerCase().contains(q) ||
+          log.targetRecord.toLowerCase().contains(q);
+      final matchesAction = _selectedActionFilter == null || log.action == _selectedActionFilter;
+      return matchesSearch && matchesAction;
+    }).toList();
+
+    if (_sortColumnIndex != null) {
+      filtered.sort((a, b) {
+        int result = 0;
+        switch (_sortColumnIndex) {
+          case 0:
+            result = a.timestamp.compareTo(b.timestamp);
+            break;
+          case 1:
+            result = a.action.compareTo(b.action);
+            break;
+          case 2:
+            result = a.performedBy.compareTo(b.performedBy);
+            break;
+          case 3:
+            result = a.targetRecord.compareTo(b.targetRecord);
+            break;
+        }
+        return _sortAscending ? result : -result;
+      });
+    }
+
+    return filtered;
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -39,13 +96,7 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
                   return const Center(child: Text('No audit logs found.'));
                 }
 
-                final logs = snapshot.data!.where((log) {
-                  final matchesSearch = log.description.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-                      log.action.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-                      log.userId.toLowerCase().contains(_searchQuery.toLowerCase());
-                  final matchesModule = _selectedModule == null || log.module == _selectedModule;
-                  return matchesSearch && matchesModule;
-                }).toList();
+                final logs = _filterAndSortLogs(snapshot.data!);
 
                 return SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
@@ -54,21 +105,33 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
                     child: SizedBox(
                       width: double.infinity,
                       child: DataTable(
+                        sortColumnIndex: _sortColumnIndex,
+                        sortAscending: _sortAscending,
                         headingRowColor: WidgetStateProperty.all(Theme.of(context).colorScheme.surfaceContainerHighest),
-                        columns: const [
-                          DataColumn(label: Text('Timestamp', style: TextStyle(fontWeight: FontWeight.bold))),
-                          DataColumn(label: Text('User ID', style: TextStyle(fontWeight: FontWeight.bold))),
-                          DataColumn(label: Text('Module', style: TextStyle(fontWeight: FontWeight.bold))),
-                          DataColumn(label: Text('Action', style: TextStyle(fontWeight: FontWeight.bold))),
-                          DataColumn(label: Text('Description', style: TextStyle(fontWeight: FontWeight.bold))),
+                        columns: [
+                          DataColumn(
+                            label: const Text('Timestamp', style: TextStyle(fontWeight: FontWeight.bold)),
+                            onSort: (index, ascending) => _sort(index, ascending),
+                          ),
+                          DataColumn(
+                            label: const Text('Action', style: TextStyle(fontWeight: FontWeight.bold)),
+                            onSort: (index, ascending) => _sort(index, ascending),
+                          ),
+                          DataColumn(
+                            label: const Text('Performed By', style: TextStyle(fontWeight: FontWeight.bold)),
+                            onSort: (index, ascending) => _sort(index, ascending),
+                          ),
+                          DataColumn(
+                            label: const Text('Target Record', style: TextStyle(fontWeight: FontWeight.bold)),
+                            onSort: (index, ascending) => _sort(index, ascending),
+                          ),
                         ],
                         rows: logs.map((log) {
                           return DataRow(cells: [
                             DataCell(Text(DateFormat('yyyy-MM-dd HH:mm:ss').format(log.timestamp))),
-                            DataCell(Text(log.userId, style: const TextStyle(fontSize: 12, fontFamily: 'monospace'))),
-                            DataCell(_buildModuleBadge(log.module)),
-                            DataCell(Text(log.action, style: const TextStyle(fontWeight: FontWeight.w500))),
-                            DataCell(Text(log.description)),
+                            DataCell(_buildActionBadge(log.action)),
+                            DataCell(Text(log.performedBy, style: const TextStyle(fontWeight: FontWeight.w500))),
+                            DataCell(Text(log.targetRecord)),
                           ]);
                         }).toList(),
                       ),
@@ -84,8 +147,6 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
   }
 
   Widget _buildFilterBar() {
-    final modules = ['Authentication', 'User Management', 'Child Registration', 'Referral', 'Evaluation'];
-
     return Container(
       padding: const EdgeInsets.all(16),
       color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
@@ -95,7 +156,7 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
             flex: 2,
             child: SearchBar(
               controller: _searchController,
-              hintText: 'Search logs...',
+              hintText: 'Search logs by Action, Performed By, or Target Record...',
               leading: const Icon(Icons.search),
               onChanged: (value) => setState(() => _searchQuery = value),
             ),
@@ -104,18 +165,18 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
           Expanded(
             flex: 1,
             child: DropdownButtonFormField<String>(
-              value: _selectedModule,
+              initialValue: _selectedActionFilter,
               decoration: const InputDecoration(
-                labelText: 'Filter by Module',
+                labelText: 'Filter Action',
                 border: OutlineInputBorder(),
                 isDense: true,
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               ),
               items: [
-                const DropdownMenuItem(value: null, child: Text('All Modules')),
-                ...modules.map((m) => DropdownMenuItem(value: m, child: Text(m))),
+                const DropdownMenuItem(value: null, child: Text('All Actions')),
+                ..._trackedActions.map((a) => DropdownMenuItem(value: a, child: Text(a))),
               ],
-              onChanged: (val) => setState(() => _selectedModule = val),
+              onChanged: (val) => setState(() => _selectedActionFilter = val),
             ),
           ),
         ],
@@ -123,13 +184,13 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
     );
   }
 
-  Widget _buildModuleBadge(String module) {
+  Widget _buildActionBadge(String action) {
     Color color = Colors.grey;
-    if (module == 'Authentication') color = Colors.purple;
-    if (module == 'User Management') color = Colors.red;
-    if (module == 'Child Registration') color = Colors.blue;
-    if (module == 'Referral') color = Colors.orange;
-    if (module == 'Evaluation') color = Colors.green;
+    if (action.contains('User Created')) color = Colors.blue;
+    if (action.contains('User Updated')) color = Colors.orange;
+    if (action.contains('User Deleted')) color = Colors.red;
+    if (action.contains('Referral Updated')) color = Colors.purple;
+    if (action.contains('Report Generated')) color = Colors.green;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -139,8 +200,8 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
         border: Border.all(color: color.withValues(alpha: 0.5)),
       ),
       child: Text(
-        module,
-        style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 10),
+        action,
+        style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 11),
       ),
     );
   }

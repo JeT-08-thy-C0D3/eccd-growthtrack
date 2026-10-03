@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../data/child_repository.dart';
 import '../../../shared/models/child_model.dart';
+import '../../../shared/widgets/confirmation_dialog.dart';
 import 'child_registration_page.dart';
 
 class ChildListPage extends StatefulWidget {
@@ -12,7 +13,10 @@ class ChildListPage extends StatefulWidget {
 
 class _ChildListPageState extends State<ChildListPage> {
   final ChildRepository _repository = ChildRepositoryImpl();
-  List<ChildModel> _children = [];
+  final TextEditingController _searchController = TextEditingController();
+  List<ChildModel> _allChildren = [];
+  List<ChildModel> _filteredChildren = [];
+  String _searchQuery = '';
   bool _isLoading = true;
 
   @override
@@ -25,34 +29,43 @@ class _ChildListPageState extends State<ChildListPage> {
     setState(() => _isLoading = true);
     final data = await _repository.getChildren();
     setState(() {
-      _children = data;
+      _allChildren = data;
+      _applySearch();
       _isLoading = false;
     });
   }
 
-  void _deleteChild(int id) async {
-    final confirmed = await showDialog<bool>(
+  void _applySearch() {
+    setState(() {
+      final q = _searchQuery.toLowerCase();
+      _filteredChildren = _allChildren.where((child) {
+        return child.firstName.toLowerCase().contains(q) ||
+            child.lastName.toLowerCase().contains(q) ||
+            child.childId.toLowerCase().contains(q) ||
+            child.parentName.toLowerCase().contains(q);
+      }).toList();
+    });
+  }
+
+  void _deleteChild(ChildModel child) async {
+    final confirmed = await ConfirmationDialog.showDelete(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirm Delete'),
-        content: const Text('Are you sure you want to delete this child profile?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+      itemName: '${child.firstName} ${child.lastName}',
     );
 
-    if (confirmed == true) {
-      await _repository.deleteChild(id);
+    if (confirmed) {
+      await _repository.deleteChild(child.id!);
       _refreshChildren();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Deleted successfully')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Child profile deleted successfully')));
       }
     }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -75,59 +88,77 @@ class _ChildListPageState extends State<ChildListPage> {
         label: const Text('Register Child'),
         icon: const Icon(Icons.add),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _children.isEmpty
-              ? const Center(child: Text('No children registered yet.'))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: _children.length,
-                  itemBuilder: (context, index) {
-                    final child = _children[index];
-                    return Card(
-                      elevation: 2,
-                      margin: const EdgeInsets.symmetric(vertical: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        leading: CircleAvatar(
-                          backgroundColor: Colors.blue.shade100,
-                          child: Text(child.firstName[0], style: const TextStyle(fontWeight: FontWeight.bold)),
-                        ),
-                        title: Text('${child.firstName} ${child.lastName}', 
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('ID: ${child.childId}'),
-                            Text('Age: ${child.age} | Gender: ${child.gender}'),
-                            Text('Parent: ${child.parentName}'),
-                          ],
-                        ),
-                        isThreeLine: true,
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit, color: Colors.blue),
-                              onPressed: () async {
-                                final result = await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (context) => ChildRegistrationPage(child: child)),
-                                );
-                                if (result == true) _refreshChildren();
-                              },
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: SearchBar(
+              controller: _searchController,
+              hintText: 'Search by Name, Child ID, or Parent...',
+              leading: const Icon(Icons.search),
+              onChanged: (val) {
+                _searchQuery = val;
+                _applySearch();
+              },
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _filteredChildren.isEmpty
+                    ? const Center(child: Text('No matching child records found.'))
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: _filteredChildren.length,
+                        itemBuilder: (context, index) {
+                          final child = _filteredChildren[index];
+                          return Card(
+                            elevation: 2,
+                            margin: const EdgeInsets.symmetric(vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            child: ListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              leading: CircleAvatar(
+                                backgroundColor: Colors.blue.shade100,
+                                child: Text(child.firstName[0], style: const TextStyle(fontWeight: FontWeight.bold)),
+                              ),
+                              title: Text('${child.firstName} ${child.lastName}',
+                                style: const TextStyle(fontWeight: FontWeight.bold)),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('ID: ${child.childId}'),
+                                  Text('Age: ${child.age} | Gender: ${child.gender}'),
+                                  Text('Parent: ${child.parentName}'),
+                                ],
+                              ),
+                              isThreeLine: true,
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit, color: Colors.blue),
+                                    onPressed: () async {
+                                      final result = await Navigator.push(
+                                        context,
+                                        MaterialPageRoute(builder: (context) => ChildRegistrationPage(child: child)),
+                                      );
+                                      if (result == true) _refreshChildren();
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete, color: Colors.red),
+                                    onPressed: () => _deleteChild(child),
+                                  ),
+                                ],
+                              ),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.red),
-                              onPressed: () => _deleteChild(child.id!),
-                            ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
+          ),
+        ],
+      ),
     );
   }
 }

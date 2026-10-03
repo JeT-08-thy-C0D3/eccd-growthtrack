@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../core/utils/audit_logger.dart';
+import '../../admin/data/repositories/audit_repository.dart';
 import '../domain/referral_model.dart';
 import '../../../data/datasources/local_data_source.dart';
 import '../../../data/datasources/remote_data_source.dart';
@@ -119,10 +120,9 @@ class ReferralRepositoryImpl implements ReferralRepository {
     }
 
     // 3. Log Action
-    await AuditLogger.log(
-      action: 'Update Referral',
-      module: 'Referral',
-      description: 'Updated referral status to: ${referral.status}.',
+    await AuditRepository().logAction(
+      action: 'Referral Updated',
+      targetRecord: 'Referral ID: ${referral.id} • Child ID: ${referral.childId} • Status: ${referral.status}',
     );
     
     return result;

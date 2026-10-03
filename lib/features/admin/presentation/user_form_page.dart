@@ -3,6 +3,9 @@ import 'package:intl/intl.dart';
 import '../../../shared/models/user_model.dart';
 import '../domain/repositories/user_repository.dart';
 import '../data/repositories/user_repository_impl.dart';
+import '../../../core/utils/validators.dart';
+import '../../../shared/widgets/terms_privacy_dialog.dart';
+import '../../../shared/widgets/confirmation_dialog.dart';
 
 class UserFormPage extends StatefulWidget {
   final UserModel? user;
@@ -21,6 +24,7 @@ class _UserFormPageState extends State<UserFormPage> {
   late TextEditingController _passwordController;
   UserRole _selectedRole = UserRole.teacher;
   bool _isLoading = false;
+  bool _agreedToDataPrivacy = true;
 
   @override
   void initState() {
@@ -35,6 +39,25 @@ class _UserFormPageState extends State<UserFormPage> {
 
   void _saveUser() async {
     if (_formKey.currentState!.validate()) {
+      if (!_agreedToDataPrivacy) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please accept the Data Privacy Notice (RA 10173 & RA 12199)'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      final isEdit = widget.user != null;
+      if (isEdit) {
+        final confirmed = await ConfirmationDialog.showEdit(
+          context: context,
+          itemName: _nameController.text,
+        );
+        if (!confirmed) return;
+      }
+
       setState(() => _isLoading = true);
 
       try {
@@ -43,8 +66,8 @@ class _UserFormPageState extends State<UserFormPage> {
         final user = UserModel(
           id: widget.user?.id,
           uid: widget.user?.uid ?? 'temp-${DateTime.now().millisecondsSinceEpoch}',
-          name: _nameController.text,
-          email: _emailController.text,
+          name: _nameController.text.trim(),
+          email: _emailController.text.trim(),
           password: _passwordController.text,
           role: _selectedRole,
           status: widget.user?.status ?? 'active',
@@ -78,6 +101,14 @@ class _UserFormPageState extends State<UserFormPage> {
   }
 
   @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -98,7 +129,7 @@ class _UserFormPageState extends State<UserFormPage> {
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
-                  const Text('Assign proper roles and verify email addresses.'),
+                  const Text('Assign proper roles and verify email addresses under RA 10173 compliance.'),
                   const SizedBox(height: 32),
                   TextFormField(
                     controller: _nameController,
@@ -107,7 +138,7 @@ class _UserFormPageState extends State<UserFormPage> {
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.person),
                     ),
-                    validator: (value) => value!.isEmpty ? 'Required' : null,
+                    validator: (v) => Validators.validateRequired(v, 'Full Name'),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -118,8 +149,8 @@ class _UserFormPageState extends State<UserFormPage> {
                       prefixIcon: Icon(Icons.email),
                     ),
                     keyboardType: TextInputType.emailAddress,
-                    enabled: widget.user == null, // Cannot change email for existing user in this prototype
-                    validator: (value) => value!.isEmpty ? 'Required' : null,
+                    enabled: widget.user == null,
+                    validator: Validators.validateEmail,
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -130,11 +161,11 @@ class _UserFormPageState extends State<UserFormPage> {
                       prefixIcon: Icon(Icons.lock),
                     ),
                     obscureText: true,
-                    validator: (value) => (widget.user == null && value!.length < 6) ? 'Min 6 characters' : null,
+                    validator: (v) => widget.user == null ? Validators.validatePassword(v, minLength: 6) : null,
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<UserRole>(
-                    value: _selectedRole,
+                    initialValue: _selectedRole,
                     decoration: const InputDecoration(
                       labelText: 'Account Role',
                       border: OutlineInputBorder(),
@@ -146,6 +177,28 @@ class _UserFormPageState extends State<UserFormPage> {
                     )).toList(),
                     onChanged: (val) => setState(() => _selectedRole = val!),
                   ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: _agreedToDataPrivacy,
+                        onChanged: (val) => setState(() => _agreedToDataPrivacy = val ?? false),
+                      ),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => TermsPrivacyDialog.show(context),
+                          child: const Text(
+                            'User Data Privacy & Compliance Notice (RA 10173 & RA 12199)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.blue,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 32),
                   ElevatedButton(
                     onPressed: _isLoading ? null : _saveUser,
@@ -153,6 +206,7 @@ class _UserFormPageState extends State<UserFormPage> {
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       backgroundColor: Colors.blue,
                       foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     child: _isLoading 
                       ? const CircularProgressIndicator(color: Colors.white)
