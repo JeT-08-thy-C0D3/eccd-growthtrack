@@ -20,7 +20,18 @@ class _ReferralPageState extends State<ReferralPage> {
   List<Map<String, dynamic>> _allReferrals = [];
   List<Map<String, dynamic>> _filteredReferrals = [];
   String _searchQuery = '';
+  String _selectedStatusFilter = 'All';
+  String _sortBy = 'Date Newest First';
   bool _isLoading = true;
+
+  final List<String> _statusFilters = [
+    'All',
+    'Pending',
+    'Referred',
+    'For Follow-Up',
+    'Completed',
+    'Closed'
+  ];
 
   @override
   void initState() {
@@ -31,19 +42,39 @@ class _ReferralPageState extends State<ReferralPage> {
   Future<void> _loadReferrals() async {
     setState(() => _isLoading = true);
     _allReferrals = await _repository.getAllReferrals();
-    _applySearch();
+    _applyFilterAndSort();
     setState(() => _isLoading = false);
   }
 
-  void _applySearch() {
+  void _applyFilterAndSort() {
     setState(() {
       final q = _searchQuery.toLowerCase();
       _filteredReferrals = _allReferrals.where((item) {
-        final name = "${item['first_name']} ${item['last_name']}".toLowerCase();
+        final childName = "${item['first_name']} ${item['last_name']}".toLowerCase();
+        final childId = (item['child_id'] as String? ?? '').toLowerCase();
         final concern = (item['concern'] as String? ?? '').toLowerCase();
         final status = (item['status'] as String? ?? '').toLowerCase();
-        return name.contains(q) || concern.contains(q) || status.contains(q);
+
+        final matchesSearch = childName.contains(q) || childId.contains(q) || concern.contains(q) || status.contains(q);
+        final matchesStatus = _selectedStatusFilter == 'All' ||
+            status.toLowerCase() == _selectedStatusFilter.toLowerCase();
+
+        return matchesSearch && matchesStatus;
       }).toList();
+
+      _filteredReferrals.sort((a, b) {
+        final dateA = (a['referral_date'] as String? ?? '');
+        final dateB = (b['referral_date'] as String? ?? '');
+        switch (_sortBy) {
+          case 'Name A-Z':
+            return "${a['first_name']} ${a['last_name']}".toLowerCase().compareTo("${b['first_name']} ${b['last_name']}".toLowerCase());
+          case 'Date Oldest First':
+            return dateA.compareTo(dateB);
+          case 'Date Newest First':
+          default:
+            return dateB.compareTo(dateA);
+        }
+      });
     });
   }
 
@@ -94,17 +125,18 @@ class _ReferralPageState extends State<ReferralPage> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: SearchBar(
               controller: _searchController,
-              hintText: 'Search by Concern, Child Name, or Status...',
+              hintText: 'Search by Child ID, Child Name, or Concern...',
               leading: const Icon(Icons.search),
               onChanged: (val) {
                 _searchQuery = val;
-                _applySearch();
+                _applyFilterAndSort();
               },
             ),
           ),
+          _buildFilterBar(),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -125,7 +157,7 @@ class _ReferralPageState extends State<ReferralPage> {
                                 backgroundColor: color.withValues(alpha: 0.1),
                                 child: Icon(Icons.assignment_late, color: color),
                               ),
-                              title: Text('${item['first_name']} ${item['last_name']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              title: Text('${item['first_name']} ${item['last_name']} (${item['child_id']})', style: const TextStyle(fontWeight: FontWeight.bold)),
                               subtitle: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -143,6 +175,61 @@ class _ReferralPageState extends State<ReferralPage> {
                           );
                         },
                       ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Row(
+        children: [
+          const Icon(Icons.filter_list, size: 18),
+          const SizedBox(width: 8),
+          const Text('Status:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: _statusFilters.map((status) {
+                  final isSelected = _selectedStatusFilter == status;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text(status == 'All' ? 'All Status' : status, style: const TextStyle(fontSize: 11)),
+                      selected: isSelected,
+                      onSelected: (selected) {
+                        if (selected) {
+                          setState(() {
+                            _selectedStatusFilter = status;
+                            _applyFilterAndSort();
+                          });
+                        }
+                      },
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+          DropdownButton<String>(
+            value: _sortBy,
+            underline: const SizedBox(),
+            icon: const Icon(Icons.sort, size: 20),
+            items: ['Date Newest First', 'Date Oldest First', 'Name A-Z']
+                .map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 12))))
+                .toList(),
+            onChanged: (val) {
+              if (val != null) {
+                setState(() {
+                  _sortBy = val;
+                  _applyFilterAndSort();
+                });
+              }
+            },
           ),
         ],
       ),
@@ -253,7 +340,7 @@ class _ReferralFormDialogState extends State<_ReferralFormDialog> {
               DropdownButtonFormField<ChildModel>(
                 initialValue: _selectedChild,
                 decoration: const InputDecoration(labelText: 'Child'),
-                items: widget.children.map((c) => DropdownMenuItem(value: c, child: Text("${c.firstName} ${c.lastName}"))).toList(),
+                items: widget.children.map((c) => DropdownMenuItem(value: c, child: Text("${c.firstName} ${c.lastName} (${c.childId})"))).toList(),
                 onChanged: widget.referral != null ? null : (val) => setState(() => _selectedChild = val),
               ),
               TextFormField(

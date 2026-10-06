@@ -90,6 +90,12 @@ class TeacherDashboard extends StatelessWidget {
                 color: Colors.deepPurple,
                 onTap: () => Navigator.pushNamed(context, '/ai-summary'),
               ),
+              _DashboardCard(
+                title: 'Clarification Requests',
+                icon: Icons.question_answer,
+                color: Colors.pink,
+                onTap: () => Navigator.pushNamed(context, '/teacher/clarifications'),
+              ),
             ],
           );
         },

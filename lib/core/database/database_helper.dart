@@ -4,6 +4,7 @@ import 'package:path/path.dart';
 import '../../shared/models/user_model.dart';
 import '../../shared/models/child_model.dart';
 import '../../shared/models/file_upload_model.dart';
+import '../../shared/models/assessment_model.dart';
 
 class DatabaseHelper {
   // Singleton instance
@@ -25,9 +26,18 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _createDB,
+      onUpgrade: _onUpgrade,
     );
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute(
+        'ALTER TABLE users ADD COLUMN terms_accepted_at TEXT',
+      );
+    }
   }
 
   Future _createDB(Database db, int version) async {
@@ -48,7 +58,9 @@ class DatabaseHelper {
         status $textType,
         created_at $textType,
         updated_at $textType,
-        is_synced $integerType
+        is_synced $integerType,
+        terms_accepted_at $textNullable,
+        fcm_token $textNullable
       )
     ''');
 
@@ -160,6 +172,7 @@ class DatabaseHelper {
         status $textType,
         updated_at $textType,
         is_synced $integerType,
+        max_score INTEGER DEFAULT 20,
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
       )
     ''');
@@ -177,6 +190,7 @@ class DatabaseHelper {
         updated_at $textType,
         is_synced $integerType,
         storage_placeholder $textNullable,
+        score INTEGER,
         FOREIGN KEY (activity_id) REFERENCES activities (id) ON DELETE CASCADE,
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
       )
@@ -216,6 +230,7 @@ class DatabaseHelper {
         child_id $textType,
         parent_id $integerType,
         teacher_id $integerType,
+        category $textNullable,
         message $textType,
         response $textNullable,
         status $textType,
@@ -234,6 +249,23 @@ class DatabaseHelper {
         category $textType,
         local_path $textType,
         remote_url $textNullable,
+        created_at $textType,
+        is_synced $integerType
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE notifications (
+        id $idType,
+        doc_id $textNullable,
+        recipient_uid $textType,
+        child_id $textType,
+        child_name $textType,
+        type $textType,
+        title $textType,
+        body $textType,
+        reference_id $textNullable,
+        is_read $integerType,
         created_at $textType,
         is_synced $integerType
       )
@@ -287,6 +319,12 @@ class DatabaseHelper {
     final db = await instance.database;
     final result = await db.query('users');
     return result.map((json) => UserModel.fromMap(json)).toList();
+  }
+
+  Future<int> updateUserFcmToken(String uid, String token) async {
+    if (kIsWeb) return 0;
+    final db = await instance.database;
+    return await db.update('users', {'fcm_token': token}, where: 'uid = ?', whereArgs: [uid]);
   }
 
   Future<int> delete(String table, int id) async {
@@ -363,6 +401,12 @@ class DatabaseHelper {
     return await db.insert('evaluations', evaluation);
   }
 
+  Future<int> createAssessment(AssessmentModel assessment) async {
+    if (kIsWeb) return 0;
+    final db = await instance.database;
+    return await db.insert('evaluations', assessment.toMap());
+  }
+
   Future<List<Map<String, dynamic>>> getChildEvaluationHistory(String childId) async {
     if (kIsWeb) return [];
     final db = await instance.database;
@@ -392,7 +436,7 @@ class DatabaseHelper {
     return await db.query('activities', where: 'assigned_by = ?', whereArgs: [teacherName]);
   }
 
-  Future<int> createHomeActivity(int teacherId, int childLocalId, String title, String instructions) async {
+  Future<int> createHomeActivity(int teacherId, int childLocalId, String title, String instructions, {int maxScore = 20}) async {
     if (kIsWeb) return 0;
     final db = await instance.database;
     final teacherMaps = await db.query('users', where: 'id = ?', whereArgs: [teacherId]);
@@ -411,6 +455,7 @@ class DatabaseHelper {
       'status': 'Assigned',
       'updated_at': now,
       'is_synced': 0,
+      'max_score': maxScore,
     });
   }
 
@@ -452,7 +497,7 @@ class DatabaseHelper {
     if (kIsWeb) return [];
     final db = await instance.database;
     return await db.rawQuery('''
-      SELECT s.*, a.activity_title, c.first_name, c.last_name
+      SELECT s.*, a.activity_title, a.max_score, c.first_name, c.last_name
       FROM activity_submissions s
       JOIN activities a ON s.activity_id = a.id
       JOIN children c ON s.child_id = c.child_id
@@ -460,14 +505,18 @@ class DatabaseHelper {
     ''');
   }
 
-  Future<int> updateSubmissionReview(int submissionId, String review, String status) async {
+  Future<int> updateSubmissionReview(int submissionId, String review, String status, {int? score}) async {
     if (kIsWeb) return 0;
     final db = await instance.database;
-    return await db.update('activity_submissions', {
+    final updates = <String, dynamic>{
       'teacher_review': review,
       'review_status': status,
       'updated_at': DateTime.now().toIso8601String(),
-    }, where: 'id = ?', whereArgs: [submissionId]);
+    };
+    if (score != null) {
+      updates['score'] = score;
+    }
+    return await db.update('activity_submissions', updates, where: 'id = ?', whereArgs: [submissionId]);
   }
 
   // --- Feedback ---
@@ -508,6 +557,17 @@ class DatabaseHelper {
     if (kIsWeb) return [];
     final db = await instance.database;
     return await db.query('development_summaries', where: 'child_id = ?', whereArgs: [childId], orderBy: 'created_date DESC');
+  }
+
+  Future<List<Map<String, dynamic>>> getApprovedSummariesByChild(String childId) async {
+    if (kIsWeb) return [];
+    final db = await instance.database;
+    return await db.query(
+      'development_summaries',
+      where: 'child_id = ? AND approval_status = ?',
+      whereArgs: [childId, 'Approved'],
+      orderBy: 'approved_date DESC',
+    );
   }
 
   Future<Map<String, dynamic>?> getLatestApprovedSummary(String childId) async {
@@ -551,6 +611,37 @@ class DatabaseHelper {
       JOIN children c ON r.child_id = c.child_id
       ORDER BY r.referral_date DESC
     ''');
+  }
+
+  // --- Notifications ---
+
+  Future<int> insertNotification(Map<String, dynamic> notification) async {
+    if (kIsWeb) return 0;
+    final db = await instance.database;
+    return await db.insert('notifications', notification);
+  }
+
+  Future<List<Map<String, dynamic>>> getNotificationsByParent(String parentUid) async {
+    if (kIsWeb) return [];
+    final db = await instance.database;
+    return await db.query(
+      'notifications',
+      where: 'recipient_uid = ?',
+      whereArgs: [parentUid],
+      orderBy: 'created_at DESC',
+    );
+  }
+
+  Future<int> markNotificationAsRead(int id) async {
+    if (kIsWeb) return 0;
+    final db = await instance.database;
+    return await db.update('notifications', {'is_read': 1}, where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<int> markAllNotificationsAsRead(String parentUid) async {
+    if (kIsWeb) return 0;
+    final db = await instance.database;
+    return await db.update('notifications', {'is_read': 1}, where: 'recipient_uid = ?', whereArgs: [parentUid]);
   }
 
   // --- Reports & Stats ---

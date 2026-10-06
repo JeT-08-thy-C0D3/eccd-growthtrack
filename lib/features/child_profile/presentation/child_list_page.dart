@@ -17,6 +17,8 @@ class _ChildListPageState extends State<ChildListPage> {
   List<ChildModel> _allChildren = [];
   List<ChildModel> _filteredChildren = [];
   String _searchQuery = '';
+  String _selectedGenderFilter = 'All';
+  String _sortBy = 'Name A-Z';
   bool _isLoading = true;
 
   @override
@@ -30,20 +32,39 @@ class _ChildListPageState extends State<ChildListPage> {
     final data = await _repository.getChildren();
     setState(() {
       _allChildren = data;
-      _applySearch();
+      _applyFilterAndSort();
       _isLoading = false;
     });
   }
 
-  void _applySearch() {
+  void _applyFilterAndSort() {
     setState(() {
       final q = _searchQuery.toLowerCase();
       _filteredChildren = _allChildren.where((child) {
-        return child.firstName.toLowerCase().contains(q) ||
-            child.lastName.toLowerCase().contains(q) ||
+        final name = "${child.firstName} ${child.lastName}".toLowerCase();
+        final matchesSearch = name.contains(q) ||
             child.childId.toLowerCase().contains(q) ||
             child.parentName.toLowerCase().contains(q);
+
+        final matchesGender = _selectedGenderFilter == 'All' ||
+            child.gender.toLowerCase() == _selectedGenderFilter.toLowerCase();
+
+        return matchesSearch && matchesGender;
       }).toList();
+
+      _filteredChildren.sort((a, b) {
+        switch (_sortBy) {
+          case 'Name Z-A':
+            return "${b.firstName} ${b.lastName}".toLowerCase().compareTo("${a.firstName} ${a.lastName}".toLowerCase());
+          case 'Age (Youngest)':
+            return a.age.compareTo(b.age);
+          case 'Age (Oldest)':
+            return b.age.compareTo(a.age);
+          case 'Name A-Z':
+          default:
+            return "${a.firstName} ${a.lastName}".toLowerCase().compareTo("${b.firstName} ${b.lastName}".toLowerCase());
+        }
+      });
     });
   }
 
@@ -91,17 +112,18 @@ class _ChildListPageState extends State<ChildListPage> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: SearchBar(
               controller: _searchController,
-              hintText: 'Search by Name, Child ID, or Parent...',
+              hintText: 'Search by Child ID, Name, or Parent...',
               leading: const Icon(Icons.search),
               onChanged: (val) {
                 _searchQuery = val;
-                _applySearch();
+                _applyFilterAndSort();
               },
             ),
           ),
+          _buildFilterBar(),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -128,7 +150,7 @@ class _ChildListPageState extends State<ChildListPage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text('ID: ${child.childId}'),
-                                  Text('Age: ${child.age} | Gender: ${child.gender}'),
+                                  Text('Age: ${child.age} yrs | Gender: ${child.gender}'),
                                   Text('Parent: ${child.parentName}'),
                                 ],
                               ),
@@ -156,6 +178,66 @@ class _ChildListPageState extends State<ChildListPage> {
                           );
                         },
                       ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.filter_list, size: 18),
+              const SizedBox(width: 8),
+              const Text('Filter Gender:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: ['All', 'Male', 'Female'].map((gender) {
+                      final isSelected = _selectedGenderFilter == gender;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ChoiceChip(
+                          label: Text(gender == 'All' ? 'All Genders' : gender, style: const TextStyle(fontSize: 11)),
+                          selected: isSelected,
+                          onSelected: (selected) {
+                            if (selected) {
+                              setState(() {
+                                _selectedGenderFilter = gender;
+                                _applyFilterAndSort();
+                              });
+                            }
+                          },
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              DropdownButton<String>(
+                value: _sortBy,
+                underline: const SizedBox(),
+                icon: const Icon(Icons.sort, size: 20),
+                items: ['Name A-Z', 'Name Z-A', 'Age (Youngest)', 'Age (Oldest)']
+                    .map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 12))))
+                    .toList(),
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() {
+                      _sortBy = val;
+                      _applyFilterAndSort();
+                    });
+                  }
+                },
+              ),
+            ],
           ),
         ],
       ),

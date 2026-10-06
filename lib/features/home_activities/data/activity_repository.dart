@@ -9,6 +9,7 @@ import '../../../data/repositories/file_upload_repository.dart';
 import '../../../core/config/supabase_config.dart';
 import '../../../core/network/connectivity_service.dart';
 import '../../../core/utils/audit_logger.dart';
+import '../../notification/data/notification_repository.dart';
 
 abstract class ActivityRepository {
   Future<int> createActivity(ActivityModel activity);
@@ -19,7 +20,7 @@ abstract class ActivityRepository {
   Future<int> submitActivity(ActivitySubmissionModel submission);
   Future<ActivitySubmissionModel?> getSubmission(int activityId);
   Future<List<Map<String, dynamic>>> getAllSubmissions();
-  Future<int> reviewSubmission(int submissionId, String review, String status);
+  Future<int> reviewSubmission(int submissionId, String review, String status, {int? score});
   Future<String?> uploadSubmissionEvidence(String submissionId, String filePath);
 
   // Added for Teacher Home Activities workflow
@@ -30,6 +31,7 @@ abstract class ActivityRepository {
     required int childId,
     required String title,
     required String instructions,
+    int maxScore = 20,
   });
 }
 
@@ -59,14 +61,13 @@ class ActivityRepositoryImpl implements ActivityRepository {
     required int childId,
     required String title,
     required String instructions,
+    int maxScore = 20,
   }) async {
-    final id = await _dbHelper.createHomeActivity(teacherId, childId, title, instructions);
+    final id = await _dbHelper.createHomeActivity(teacherId, childId, title, instructions, maxScore: maxScore);
     
-    // Cloud Sync (Optional, similar to createActivity)
     if (await _connectivity.isOnline) {
       try {
-        final activityMaps = await _dbHelper.getActivitiesByChild(childId.toString()); // Note: this might need adjustment if using childLocalId
-        // In a real app, we'd fetch the specific activity just created.
+        await _dbHelper.getActivitiesByChild(childId.toString());
       } catch (e) {
         print("Cloud Sync Failed: $e");
       }
@@ -75,7 +76,7 @@ class ActivityRepositoryImpl implements ActivityRepository {
     await AuditLogger.log(
       action: 'Assign Activity',
       module: 'Home Activities',
-      description: 'Assigned activity: $title to child ID $childId.',
+      description: 'Assigned activity: $title (Max Score: $maxScore) to child ID $childId.',
     );
 
     return id;
@@ -103,7 +104,16 @@ class ActivityRepositoryImpl implements ActivityRepository {
     await AuditLogger.log(
       action: 'Assign Activity',
       module: 'Home Activities',
-      description: 'Assigned activity: ${activity.activityTitle} to child ID ${activity.childId}.',
+      description: 'Assigned activity: ${activity.activityTitle} (Max Score: ${activity.maxScore}) to child ID ${activity.childId}.',
+    );
+
+    // Send Parent Notification
+    await NotificationRepositoryImpl().sendNotification(
+      childId: activity.childId,
+      type: 'home_activity',
+      title: 'New Home Activity Assigned',
+      body: 'Teacher assigned "${activity.activityTitle}" (Max Score: ${activity.maxScore} pts, Due: ${activity.dueDate}).',
+      referenceId: id.toString(),
     );
 
     return id;
@@ -167,16 +177,13 @@ class ActivityRepositoryImpl implements ActivityRepository {
   }
 
   @override
-  Future<int> reviewSubmission(int submissionId, String review, String status) async {
-    final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
-    
-    // Note: To properly sync this, we'd need to fetch the existing submission and copyWith
-    final result = await _dbHelper.updateSubmissionReview(submissionId, review, status);
+  Future<int> reviewSubmission(int submissionId, String review, String status, {int? score}) async {
+    final result = await _dbHelper.updateSubmissionReview(submissionId, review, status, score: score);
     
     await AuditLogger.log(
       action: 'Review Activity',
       module: 'Home Activities',
-      description: 'Teacher reviewed activity submission ID $submissionId as $status.',
+      description: 'Teacher reviewed activity submission ID $submissionId as $status with score ${score ?? 'N/A'}.',
     );
 
     return result;

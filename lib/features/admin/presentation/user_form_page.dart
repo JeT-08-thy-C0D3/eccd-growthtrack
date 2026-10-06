@@ -4,8 +4,8 @@ import '../../../shared/models/user_model.dart';
 import '../domain/repositories/user_repository.dart';
 import '../data/repositories/user_repository_impl.dart';
 import '../../../core/utils/validators.dart';
-import '../../../shared/widgets/terms_privacy_dialog.dart';
 import '../../../shared/widgets/confirmation_dialog.dart';
+import '../../auth/presentation/terms_and_conditions_screen.dart';
 
 class UserFormPage extends StatefulWidget {
   final UserModel? user;
@@ -24,7 +24,7 @@ class _UserFormPageState extends State<UserFormPage> {
   late TextEditingController _passwordController;
   UserRole _selectedRole = UserRole.teacher;
   bool _isLoading = false;
-  bool _agreedToDataPrivacy = true;
+  bool _agreedToTerms = true;
 
   @override
   void initState() {
@@ -39,10 +39,10 @@ class _UserFormPageState extends State<UserFormPage> {
 
   void _saveUser() async {
     if (_formKey.currentState!.validate()) {
-      if (!_agreedToDataPrivacy) {
+      if (!_agreedToTerms) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Please accept the Data Privacy Notice (RA 10173 & RA 12199)'),
+            content: Text('You must agree to the Terms and Conditions before creating an account.'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -74,6 +74,7 @@ class _UserFormPageState extends State<UserFormPage> {
           createdAt: widget.user?.createdAt ?? now,
           updatedAt: now,
           isSynced: false,
+          termsAcceptedAt: widget.user?.termsAcceptedAt ?? now,
         );
 
         if (widget.user == null) {
@@ -91,7 +92,10 @@ class _UserFormPageState extends State<UserFormPage> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e')),
+            SnackBar(
+              content: Text('Failed to ${widget.user == null ? "create" : "update"} account: $e'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       } finally {
@@ -129,7 +133,7 @@ class _UserFormPageState extends State<UserFormPage> {
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
-                  const Text('Assign proper roles and verify email addresses under RA 10173 compliance.'),
+                  const Text('Assign proper roles and verify email addresses under RA 10173 & RA 12199 compliance.'),
                   const SizedBox(height: 32),
                   TextFormField(
                     controller: _nameController,
@@ -181,14 +185,19 @@ class _UserFormPageState extends State<UserFormPage> {
                   Row(
                     children: [
                       Checkbox(
-                        value: _agreedToDataPrivacy,
-                        onChanged: (val) => setState(() => _agreedToDataPrivacy = val ?? false),
+                        value: _agreedToTerms,
+                        onChanged: (val) => setState(() => _agreedToTerms = val ?? false),
                       ),
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => TermsPrivacyDialog.show(context),
+                          onTap: () async {
+                            final accepted = await TermsAndConditionsScreen.show(context);
+                            if (accepted == true) {
+                              setState(() => _agreedToTerms = true);
+                            }
+                          },
                           child: const Text(
-                            'User Data Privacy & Compliance Notice (RA 10173 & RA 12199)',
+                            'I agree to the Terms and Conditions (RA 10173 & RA 12199)',
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.blue,

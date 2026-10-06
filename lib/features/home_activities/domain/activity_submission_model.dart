@@ -3,12 +3,13 @@ class ActivitySubmissionModel {
   final int activityId;
   final String childId;
   final String parentNote;
-  final String assistanceLevel; // Added as per requirements
+  final String assistanceLevel;
   final String submissionDate;
   final String? teacherReview;
   final String reviewStatus; // Pending, Approved, Rejected
   final String updatedAt;
   final bool isSynced;
+  final int? score;
 
   ActivitySubmissionModel({
     this.id,
@@ -21,6 +22,7 @@ class ActivitySubmissionModel {
     required this.reviewStatus,
     required this.updatedAt,
     this.isSynced = false,
+    this.score,
   });
 
   Map<String, dynamic> toMap() {
@@ -35,7 +37,8 @@ class ActivitySubmissionModel {
       'review_status': reviewStatus,
       'updated_at': updatedAt,
       'is_synced': isSynced ? 1 : 0,
-      'storage_placeholder': null, // For future Firebase Storage integration
+      'storage_placeholder': null,
+      'score': score,
     };
   }
 
@@ -51,6 +54,7 @@ class ActivitySubmissionModel {
       reviewStatus: map['review_status'] ?? 'Pending',
       updatedAt: map['updated_at'] ?? DateTime.now().toIso8601String(),
       isSynced: (map['is_synced'] ?? 0) == 1,
+      score: map['score'] as int?,
     );
   }
 
@@ -65,6 +69,7 @@ class ActivitySubmissionModel {
     String? reviewStatus,
     String? updatedAt,
     bool? isSynced,
+    int? score,
   }) {
     return ActivitySubmissionModel(
       id: id ?? this.id,
@@ -77,6 +82,7 @@ class ActivitySubmissionModel {
       reviewStatus: reviewStatus ?? this.reviewStatus,
       updatedAt: updatedAt ?? this.updatedAt,
       isSynced: isSynced ?? this.isSynced,
+      score: score ?? this.score,
     );
   }
 }

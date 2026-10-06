@@ -11,6 +11,8 @@ class UserModel {
   final String createdAt;
   final String updatedAt;
   final bool isSynced;
+  final String? termsAcceptedAt;
+  final String? fcmToken;
 
   UserModel({
     this.id,
@@ -23,6 +25,8 @@ class UserModel {
     required this.createdAt,
     required this.updatedAt,
     this.isSynced = false,
+    this.termsAcceptedAt,
+    this.fcmToken,
   });
 
   Map<String, dynamic> toMap() {
@@ -37,6 +41,8 @@ class UserModel {
       'created_at': createdAt,
       'updated_at': updatedAt,
       'is_synced': isSynced ? 1 : 0,
+      'terms_accepted_at': termsAcceptedAt,
+      'fcm_token': fcmToken,
     };
   }
 
@@ -55,6 +61,8 @@ class UserModel {
       createdAt: map['created_at'] ?? DateTime.now().toIso8601String(),
       updatedAt: map['updated_at'] ?? DateTime.now().toIso8601String(),
       isSynced: (map['is_synced'] ?? 0) == 1,
+      termsAcceptedAt: map['terms_accepted_at'] as String?,
+      fcmToken: map['fcm_token'] as String?,
     );
   }
 
@@ -69,6 +77,8 @@ class UserModel {
     String? createdAt,
     String? updatedAt,
     bool? isSynced,
+    String? termsAcceptedAt,
+    String? fcmToken,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -81,6 +91,8 @@ class UserModel {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       isSynced: isSynced ?? this.isSynced,
+      termsAcceptedAt: termsAcceptedAt ?? this.termsAcceptedAt,
+      fcmToken: fcmToken ?? this.fcmToken,
     );
   }
 }

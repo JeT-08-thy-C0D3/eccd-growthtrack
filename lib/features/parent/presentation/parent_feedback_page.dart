@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../shared/models/child_model.dart';
+import '../../../shared/widgets/confirmation_dialog.dart';
 import '../../auth/data/auth_repository_impl.dart';
 import '../data/parent_feedback_repository.dart';
 import '../domain/parent_feedback_model.dart';
@@ -65,6 +66,14 @@ class _ParentFeedbackPageState extends State<ParentFeedbackPage> {
     if (_formKey.currentState!.validate()) {
       if (_selectedChild == null) return;
 
+      if (widget.feedback != null) {
+        final confirmed = await ConfirmationDialog.showEdit(
+          context: context,
+          itemName: 'Feedback for ${_selectedChild!.firstName}',
+        );
+        if (!confirmed) return;
+      }
+
       setState(() => _isSaving = true);
       
       final user = await AuthRepositoryImpl().getCurrentUser();
@@ -82,9 +91,9 @@ class _ParentFeedbackPageState extends State<ParentFeedbackPage> {
         id: widget.feedback?.id,
         childId: _selectedChild!.childId,
         parentId: parentId,
-        parentObservation: _observationController.text,
+        parentObservation: _observationController.text.trim(),
         assistanceLevel: _selectedAssistance,
-        notes: _notesController.text,
+        notes: _notesController.text.trim(),
         submissionDate: widget.feedback?.submissionDate ?? now,
         updatedAt: now,
         isSynced: false,

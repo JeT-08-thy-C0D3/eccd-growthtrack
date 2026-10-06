@@ -3,6 +3,7 @@ class ClarificationModel {
   final String childId;
   final int parentId;
   final int? teacherId;
+  final String category; // Assessment, Home Activity, Referral, General Concern
   final String message;
   final String? response;
   final String status; // Pending, Responded
@@ -15,6 +16,7 @@ class ClarificationModel {
     required this.childId,
     required this.parentId,
     this.teacherId,
+    this.category = 'General Concern',
     required this.message,
     this.response,
     required this.status,
@@ -29,6 +31,7 @@ class ClarificationModel {
       'child_id': childId,
       'parent_id': parentId,
       'teacher_id': teacherId,
+      'category': category,
       'message': message,
       'response': response,
       'status': status,
@@ -44,6 +47,7 @@ class ClarificationModel {
       childId: map['child_id'] ?? '',
       parentId: map['parent_id'] ?? 0,
       teacherId: map['teacher_id'],
+      category: map['category'] ?? 'General Concern',
       message: map['message'] ?? '',
       response: map['response'],
       status: map['status'] ?? 'Pending',
@@ -58,6 +62,7 @@ class ClarificationModel {
     String? childId,
     int? parentId,
     int? teacherId,
+    String? category,
     String? message,
     String? response,
     String? status,
@@ -70,6 +75,7 @@ class ClarificationModel {
       childId: childId ?? this.childId,
       parentId: parentId ?? this.parentId,
       teacherId: teacherId ?? this.teacherId,
+      category: category ?? this.category,
       message: message ?? this.message,
       response: response ?? this.response,
       status: status ?? this.status,

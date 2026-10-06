@@ -13,9 +13,9 @@ class ChildProgressReportTable extends StatelessWidget {
         columns: const [
           DataColumn(label: Text('Child ID')),
           DataColumn(label: Text('Child Name')),
-          DataColumn(label: Text('Domain')),
+          DataColumn(label: Text('Domain / Activity')),
           DataColumn(label: Text('Prev Score')),
-          DataColumn(label: Text('Curr Score')),
+          DataColumn(label: Text('Score / Max Score')),
           DataColumn(label: Text('Status')),
           DataColumn(label: Text('Triangulated Summary')),
         ],
@@ -25,7 +25,7 @@ class ChildProgressReportTable extends StatelessWidget {
             DataCell(Text(item.childName)),
             DataCell(Text(item.domain)),
             DataCell(Text(item.previousScore?.toString() ?? '-')),
-            DataCell(Text(item.currentScore.toString())),
+            DataCell(Text('${item.currentScore} / ${item.maxScore}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue))),
             DataCell(Text(item.developmentStatus ?? 'N/A')),
             DataCell(Text(item.triangulatedSummary ?? 'N/A')),
           ]);

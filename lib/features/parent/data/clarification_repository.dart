@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
 import '../../../core/database/database_helper.dart';
 import '../domain/clarification_model.dart';
@@ -5,11 +7,13 @@ import '../../../data/datasources/local_data_source.dart';
 import '../../../data/datasources/remote_data_source.dart';
 import '../../../core/network/connectivity_service.dart';
 import '../../../core/utils/audit_logger.dart';
+import '../../notification/data/notification_repository.dart';
 
 abstract class ClarificationRepository {
   Future<int> sendRequest(ClarificationModel request);
   Future<List<ClarificationModel>> getRequestsByChild(String childId);
   Future<List<ClarificationModel>> getRequestsByParent(int parentId);
+  Future<List<Map<String, dynamic>>> getAllRequestsWithChild();
   Future<int> respondToRequest(int id, String response, int teacherId);
 }
 
@@ -18,30 +22,38 @@ class ClarificationRepositoryImpl implements ClarificationRepository {
   final LocalDataSource _local = LocalDataSource();
   final RemoteDataSource _remote = RemoteDataSource();
   final ConnectivityService _connectivity = ConnectivityService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   @override
   Future<int> sendRequest(ClarificationModel request) async {
     final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
     final newRequest = request.copyWith(
+      createdAt: request.createdAt.isEmpty ? now : request.createdAt,
       updatedAt: now,
       isSynced: await _connectivity.isOnline,
     );
 
-    final id = await _local.saveRecord('clarifications', newRequest.toMap());
-    
-    if (await _connectivity.isOnline) {
-      try {
-        await _remote.uploadRecord('clarifications', id.toString(), newRequest.toMap());
-        await _local.markAsSynced('clarifications', id);
-      } catch (e) {
-        print("Cloud Sync Failed: $e");
+    int id = 0;
+    if (kIsWeb) {
+      final docRef = await _firestore.collection('clarifications').add(newRequest.toMap());
+      id = docRef.id.hashCode.abs();
+    } else {
+      id = await _local.saveRecord('clarifications', newRequest.toMap());
+      
+      if (await _connectivity.isOnline) {
+        try {
+          await _remote.uploadRecord('clarifications', id.toString(), newRequest.toMap());
+          await _local.markAsSynced('clarifications', id);
+        } catch (e) {
+          print("Cloud Sync Failed: $e");
+        }
       }
     }
 
     await AuditLogger.log(
       action: 'Clarification Request',
       module: 'Parent Module',
-      description: 'Parent ID ${request.parentId} sent a clarification request for child ID ${request.childId}.',
+      description: 'Parent ID ${request.parentId} submitted clarification (${request.category}) for child ID ${request.childId}.',
     );
 
     return id;
@@ -49,6 +61,14 @@ class ClarificationRepositoryImpl implements ClarificationRepository {
 
   @override
   Future<List<ClarificationModel>> getRequestsByChild(String childId) async {
+    if (kIsWeb) {
+      final snapshot = await _firestore
+          .collection('clarifications')
+          .where('child_id', isEqualTo: childId)
+          .get();
+      return snapshot.docs.map((doc) => ClarificationModel.fromMap(doc.data())).toList();
+    }
+
     final db = await _dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
       'clarifications',
@@ -61,6 +81,14 @@ class ClarificationRepositoryImpl implements ClarificationRepository {
 
   @override
   Future<List<ClarificationModel>> getRequestsByParent(int parentId) async {
+    if (kIsWeb) {
+      final snapshot = await _firestore
+          .collection('clarifications')
+          .where('parent_id', isEqualTo: parentId)
+          .get();
+      return snapshot.docs.map((doc) => ClarificationModel.fromMap(doc.data())).toList();
+    }
+
     final db = await _dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
       'clarifications',
@@ -72,10 +100,55 @@ class ClarificationRepositoryImpl implements ClarificationRepository {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> getAllRequestsWithChild() async {
+    if (kIsWeb) {
+      final clarificationsSnapshot = await _firestore.collection('clarifications').get();
+      final childrenSnapshot = await _firestore.collection('children').get();
+      final childrenMap = {
+        for (final doc in childrenSnapshot.docs) doc.data()['child_id']: doc.data()
+      };
+
+      return clarificationsSnapshot.docs.map((doc) {
+        final data = doc.data();
+        final child = childrenMap[data['child_id']] ?? {};
+        return {
+          ...data,
+          'doc_id': doc.id,
+          'first_name': child['first_name'] ?? 'Child',
+          'last_name': child['last_name'] ?? '',
+        };
+      }).toList();
+    }
+
+    final db = await _dbHelper.database;
+    return await db.rawQuery('''
+      SELECT cl.*, c.first_name, c.last_name
+      FROM clarifications cl
+      LEFT JOIN children c ON cl.child_id = c.child_id
+      ORDER BY cl.created_at DESC
+    ''');
+  }
+
+  @override
   Future<int> respondToRequest(int id, String response, int teacherId) async {
     final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
     
-    // Simplified update for prototype
+    if (kIsWeb) {
+      final snapshot = await _firestore.collection('clarifications').get();
+      for (final doc in snapshot.docs) {
+        if (doc.data()['id'] == id || doc.id == id.toString()) {
+          await doc.reference.update({
+            'response': response,
+            'teacher_id': teacherId,
+            'status': 'Responded',
+            'updated_at': now,
+          });
+          break;
+        }
+      }
+      return id;
+    }
+
     final db = await _dbHelper.database;
     final result = await db.update(
       'clarifications',
@@ -90,11 +163,57 @@ class ClarificationRepositoryImpl implements ClarificationRepository {
       whereArgs: [id],
     );
 
+    if (await _connectivity.isOnline) {
+      try {
+        final maps = await db.query('clarifications', where: 'id = ?', whereArgs: [id]);
+        if (maps.isNotEmpty) {
+          await _remote.uploadRecord('clarifications', id.toString(), maps.first);
+          await _local.markAsSynced('clarifications', id);
+        }
+      } catch (e) {
+        print("Cloud Sync Failed: $e");
+      }
+    }
+
     await AuditLogger.log(
       action: 'Respond to Clarification',
       module: 'Teacher Module',
       description: 'Teacher ID $teacherId responded to clarification request ID $id.',
     );
+
+    try {
+      String childId = '';
+      String category = 'General Concern';
+      if (kIsWeb) {
+        final snapshot = await _firestore.collection('clarifications').get();
+        for (final doc in snapshot.docs) {
+          if (doc.data()['id'] == id || doc.id == id.toString()) {
+            childId = doc.data()['child_id'] as String? ?? '';
+            category = doc.data()['category'] as String? ?? 'General Concern';
+            break;
+          }
+        }
+      } else {
+        final db = await _dbHelper.database;
+        final maps = await db.query('clarifications', where: 'id = ?', whereArgs: [id]);
+        if (maps.isNotEmpty) {
+          childId = maps.first['child_id'] as String? ?? '';
+          category = maps.first['category'] as String? ?? 'General Concern';
+        }
+      }
+
+      if (childId.isNotEmpty) {
+        await NotificationRepositoryImpl().sendNotification(
+          childId: childId,
+          type: 'clarification_response',
+          title: 'Teacher Responded to Clarification',
+          body: 'Teacher responded to your question regarding "$category".',
+          referenceId: id.toString(),
+        );
+      }
+    } catch (e) {
+      print("Notification Error: $e");
+    }
 
     return result;
   }

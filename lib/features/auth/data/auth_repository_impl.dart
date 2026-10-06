@@ -1,11 +1,12 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, debugPrintStack, kIsWeb;
 import '../../../shared/models/user_model.dart';
 import '../domain/auth_repository.dart';
 import '../../../core/utils/audit_logger.dart';
 import '../../../core/database/database_helper.dart';
+import '../../../core/services/fcm_service.dart';
 
 class AuthRepositoryImpl implements AuthRepository {
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
@@ -21,7 +22,12 @@ class AuthRepositoryImpl implements AuthRepository {
       );
 
       if (credential.user != null) {
-        final doc = await _firestore.collection('users').doc(credential.user!.uid).get();
+        DocumentSnapshot<Map<String, dynamic>> doc;
+        try {
+          doc = await _firestore.collection('users').doc(credential.user!.uid).get();
+        } catch (e) {
+          throw 'Cloud database is currently unavailable. Please check your internet connection.';
+        }
         
         if (doc.exists) {
           final user = UserModel.fromMap(doc.data()!);
@@ -29,10 +35,12 @@ class AuthRepositoryImpl implements AuthRepository {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString(_userKey, user.uid);
           
-          // --- Demo Critical: Cache user locally on Mobile ---
           if (!kIsWeb) {
             await DatabaseHelper.instance.insertRecord('users', user.toMap());
           }
+
+          // Initialize FCM and sync FCM Token to user profile
+          await FcmService().initializeAndSyncToken(user.uid);
 
           await AuditLogger.log(
             action: 'Login',
@@ -41,41 +49,73 @@ class AuthRepositoryImpl implements AuthRepository {
           );
           
           return user;
+        } else {
+          throw 'User profile record not found in system database.';
         }
       }
       return null;
-    } catch (e) {
-      print('Auth Error: $e');
-      return null;
+    } on FirebaseAuthException catch (e) {
+      switch (e.code) {
+        case 'user-not-found':
+        case 'wrong-password':
+        case 'invalid-credential':
+          throw 'Invalid email address or password. Please check your credentials.';
+        case 'invalid-email':
+          throw 'The email address format is invalid.';
+        case 'user-disabled':
+          throw 'This account has been disabled by the administrator.';
+        case 'too-many-requests':
+          throw 'Too many failed login attempts. Please try again later.';
+        case 'network-request-failed':
+          throw 'No internet connection. Please check your network and try again.';
+        default:
+          throw e.message ?? 'Authentication failed. Please try again.';
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Login error: $e');
+      debugPrintStack(stackTrace: stackTrace);
+      if (e is String) rethrow;
+      throw 'An unexpected error occurred during login. Please try again.';
     }
   }
 
   @override
   Future<void> logout() async {
-    final user = await getCurrentUser();
-    await _firebaseAuth.signOut();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_userKey);
-    
-    if (user != null) {
-      await AuditLogger.log(
-        action: 'Logout',
-        module: 'Authentication',
-        description: 'User ${user.email} logged out from Firebase.',
-      );
+    try {
+      final user = await getCurrentUser();
+      await _firebaseAuth.signOut();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_userKey);
+      
+      if (user != null) {
+        await AuditLogger.log(
+          action: 'Logout',
+          module: 'Authentication',
+          description: 'User ${user.email} logged out from Firebase.',
+        );
+      }
+    } catch (e) {
+      print('Logout Error: $e');
     }
   }
 
   @override
   Future<UserModel?> getCurrentUser() async {
-    final User? firebaseUser = _firebaseAuth.currentUser;
-    if (firebaseUser != null) {
-      final doc = await _firestore.collection('users').doc(firebaseUser.uid).get();
-      if (doc.exists) {
-        return UserModel.fromMap(doc.data()!);
+    try {
+      final User? firebaseUser = _firebaseAuth.currentUser;
+      if (firebaseUser != null) {
+        final doc = await _firestore.collection('users').doc(firebaseUser.uid).get();
+        if (doc.exists) {
+          final user = UserModel.fromMap(doc.data()!);
+          FcmService().initializeAndSyncToken(user.uid);
+          return user;
+        }
       }
+      return null;
+    } catch (e) {
+      print('getCurrentUser error: $e');
+      return null;
     }
-    return null;
   }
 
   @override

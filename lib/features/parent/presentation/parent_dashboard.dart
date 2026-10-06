@@ -5,6 +5,7 @@ import '../../../shared/models/child_model.dart';
 import '../../../shared/models/user_model.dart';
 import '../../reports/presentation/child_summary_report.dart';
 import '../../reports/domain/development_summary_model.dart';
+import '../../notification/data/notification_repository.dart';
 import 'child_development_summary_view.dart';
 
 class ParentDashboard extends StatefulWidget {
@@ -60,11 +61,37 @@ class _ParentDashboardState extends State<ParentDashboard> {
         backgroundColor: colorScheme.surface,
         elevation: 0,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_none),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('No new notifications')),
+          StreamBuilder<int>(
+            stream: NotificationRepositoryImpl().getUnreadCountStream(_parentUser?.uid ?? ''),
+            builder: (context, snapshot) {
+              final unreadCount = snapshot.data ?? 0;
+              return Stack(
+                alignment: Alignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.notifications_outlined),
+                    tooltip: 'Notifications',
+                    onPressed: () => Navigator.pushNamed(context, '/parent/notifications'),
+                  ),
+                  if (unreadCount > 0)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                        child: Text(
+                          '$unreadCount',
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
               );
             },
           ),
@@ -166,6 +193,12 @@ class _ParentDashboardState extends State<ParentDashboard> {
                             },
                           ),
                           _ParentMenuCard(
+                            title: 'Practice Activities',
+                            icon: Icons.self_improvement,
+                            color: Colors.green,
+                            onTap: () => Navigator.pushNamed(context, '/parent/practice-activities'),
+                          ),
+                          _ParentMenuCard(
                             title: 'Submit Feedback',
                             icon: Icons.chat_bubble_outline,
                             color: Colors.orange,
@@ -176,6 +209,12 @@ class _ParentDashboardState extends State<ParentDashboard> {
                             icon: Icons.history_edu,
                             color: Colors.deepOrange,
                             onTap: () => Navigator.pushNamed(context, '/feedback-history'),
+                          ),
+                          _ParentMenuCard(
+                            title: 'Clarification Requests',
+                            icon: Icons.question_answer,
+                            color: Colors.teal,
+                            onTap: () => Navigator.pushNamed(context, '/clarifications'),
                           ),
                           _ParentMenuCard(
                             title: 'Health Logs',

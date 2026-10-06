@@ -6,6 +6,7 @@ import '../../auth/data/auth_repository_impl.dart';
 import '../../triangulation/domain/triangulation_model.dart';
 import '../data/development_summary_repository.dart';
 import '../domain/development_summary_model.dart';
+import '../../notification/data/notification_repository.dart';
 import 'development_summary_history_page.dart';
 
 class DevelopmentSummaryPage extends StatefulWidget {
@@ -107,6 +108,15 @@ class _DevelopmentSummaryPageState extends State<DevelopmentSummaryPage> {
     );
 
     await _repository.addSummary(summary);
+
+    if (status == 'Approved') {
+      await NotificationRepositoryImpl().sendNotification(
+        childId: _selectedChild!.childId,
+        type: 'development_summary',
+        title: 'Development Summary Approved',
+        body: 'The development summary for ${_selectedChild!.firstName} ${_selectedChild!.lastName} has been published by Teacher ${user?.name ?? ''}.',
+      );
+    }
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

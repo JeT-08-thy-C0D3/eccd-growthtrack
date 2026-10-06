@@ -10,6 +10,7 @@ import '../../../data/datasources/remote_data_source.dart';
 import '../../../data/repositories/file_upload_repository.dart';
 import '../../../core/config/supabase_config.dart';
 import '../../../core/network/connectivity_service.dart';
+import '../../notification/data/notification_repository.dart';
 
 abstract class ReferralRepository {
   Future<int> addReferral(ReferralModel referral);
@@ -123,6 +124,15 @@ class ReferralRepositoryImpl implements ReferralRepository {
     await AuditRepository().logAction(
       action: 'Referral Updated',
       targetRecord: 'Referral ID: ${referral.id} • Child ID: ${referral.childId} • Status: ${referral.status}',
+    );
+
+    // Send Parent Notification
+    await NotificationRepositoryImpl().sendNotification(
+      childId: referral.childId,
+      type: 'referral',
+      title: 'Referral Status Updated',
+      body: 'Referral case for concern "${referral.concern}" updated to status "${referral.status}".',
+      referenceId: referral.id?.toString(),
     );
     
     return result;

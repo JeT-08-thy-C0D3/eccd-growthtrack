@@ -21,6 +21,12 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
   List<ChildModel> _filteredChildren = [];
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  String _selectedGenderFilter = 'All';
+  int? _sortColumnIndex;
+  bool _sortAscending = true;
+  int _currentPage = 0;
+  static const int _itemsPerPage = 10;
 
   @override
   void initState() {
@@ -38,20 +44,62 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
       _children = await DatabaseHelper.instance.getAllChildren();
     }
 
+    _applyFilterAndSort();
+    setState(() => _isLoading = false);
+  }
+
+  void _applyFilterAndSort() {
     setState(() {
-      _filteredChildren = _children;
-      _isLoading = false;
+      final q = _searchQuery.toLowerCase();
+      _filteredChildren = _children.where((child) {
+        final matchesSearch = child.firstName.toLowerCase().contains(q) ||
+            child.lastName.toLowerCase().contains(q) ||
+            child.childId.toLowerCase().contains(q) ||
+            child.teacherName.toLowerCase().contains(q) ||
+            child.parentName.toLowerCase().contains(q);
+        
+        final matchesGender = _selectedGenderFilter == 'All' ||
+            child.gender.toLowerCase() == _selectedGenderFilter.toLowerCase();
+
+        return matchesSearch && matchesGender;
+      }).toList();
+
+      if (_sortColumnIndex != null) {
+        _filteredChildren.sort((a, b) {
+          int result = 0;
+          switch (_sortColumnIndex) {
+            case 0:
+              final nameA = "${a.firstName} ${a.lastName}".toLowerCase();
+              final nameB = "${b.firstName} ${b.lastName}".toLowerCase();
+              result = nameA.compareTo(nameB);
+              break;
+            case 1:
+              result = a.childId.toLowerCase().compareTo(b.childId.toLowerCase());
+              break;
+            case 2:
+              result = a.age.compareTo(b.age);
+              break;
+            case 3:
+              result = a.gender.compareTo(b.gender);
+              break;
+            case 4:
+              result = a.teacherName.toLowerCase().compareTo(b.teacherName.toLowerCase());
+              break;
+            case 5:
+              result = a.parentName.toLowerCase().compareTo(b.parentName.toLowerCase());
+              break;
+          }
+          return _sortAscending ? result : -result;
+        });
+      }
     });
   }
 
-  void _filterChildren(String query) {
+  void _sort(int columnIndex, bool ascending) {
     setState(() {
-      _filteredChildren = _children
-          .where((child) =>
-              child.firstName.toLowerCase().contains(query.toLowerCase()) ||
-              child.lastName.toLowerCase().contains(query.toLowerCase()) ||
-              child.childId.toLowerCase().contains(query.toLowerCase()))
-          .toList();
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+      _applyFilterAndSort();
     });
   }
 
@@ -63,10 +111,29 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
   }
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final isWide = MediaQuery.of(context).size.width > 1000;
+    final totalItems = _filteredChildren.length;
+    final totalPages = (totalItems / _itemsPerPage).ceil();
+
+    if (_currentPage >= totalPages && totalPages > 0) {
+      _currentPage = totalPages - 1;
+    }
+
+    final paginatedChildren = _filteredChildren
+        .skip(_currentPage * _itemsPerPage)
+        .take(_itemsPerPage)
+        .toList();
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Child Monitoring (Admin)'),
+        title: const Text('Child Monitoring & Case Review (Admin)'),
         actions: [
           IconButton(onPressed: _loadChildren, icon: const Icon(Icons.refresh)),
         ],
@@ -74,39 +141,213 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: SearchBar(
               controller: _searchController,
-              hintText: 'Search by Name or Child ID...',
+              hintText: 'Search by Name, Child ID, Teacher, or Parent...',
               leading: const Icon(Icons.search),
-              onChanged: _filterChildren,
+              onChanged: (val) {
+                _searchQuery = val;
+                _currentPage = 0;
+                _applyFilterAndSort();
+              },
             ),
           ),
+          _buildFilterBar(),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _filteredChildren.isEmpty
                     ? const Center(child: Text('No matching child records found.'))
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _filteredChildren.length,
-                        itemBuilder: (context, index) {
-                          final child = _filteredChildren[index];
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                child: Text(child.firstName[0].toUpperCase()),
-                              ),
-                              title: Text('${child.firstName} ${child.lastName}', 
-                                style: const TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: Text('ID: ${child.childId} | Teacher: ${child.teacherName}'),
-                              trailing: const Icon(Icons.analytics_outlined, color: Colors.blue),
-                              onTap: () => _viewChildDetails(child),
-                            ),
-                          );
-                        },
+                    : Column(
+                        children: [
+                          Expanded(child: _buildResponsiveList(paginatedChildren, isWide)),
+                          _buildPaginationControls(totalItems, totalPages),
+                        ],
                       ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterBar() {
+    final genderFilters = ['All', 'Male', 'Female'];
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          const Icon(Icons.filter_list, size: 20),
+          const SizedBox(width: 8),
+          const Text('Filter Gender:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: genderFilters.map((gender) {
+                  final isSelected = _selectedGenderFilter == gender;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(gender == 'All' ? 'All Genders' : gender),
+                      selected: isSelected,
+                      onSelected: (selected) {
+                        if (selected) {
+                          setState(() {
+                            _selectedGenderFilter = gender;
+                            _currentPage = 0;
+                            _applyFilterAndSort();
+                          });
+                        }
+                      },
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResponsiveList(List<ChildModel> paginatedChildren, bool isWide) {
+    if (isWide && kIsWeb) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 1200),
+            child: Card(
+              clipBehavior: Clip.antiAlias,
+              shape: RoundedRectangleBorder(
+                side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: DataTable(
+                sortColumnIndex: _sortColumnIndex,
+                sortAscending: _sortAscending,
+                headingRowColor: WidgetStateProperty.all(Theme.of(context).colorScheme.surfaceContainer),
+                columns: [
+                  DataColumn(
+                    label: const Text('Child Name', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onSort: (index, ascending) => _sort(index, ascending),
+                  ),
+                  DataColumn(
+                    label: const Text('Child ID', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onSort: (index, ascending) => _sort(index, ascending),
+                  ),
+                  DataColumn(
+                    label: const Text('Age', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onSort: (index, ascending) => _sort(index, ascending),
+                  ),
+                  DataColumn(
+                    label: const Text('Gender', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onSort: (index, ascending) => _sort(index, ascending),
+                  ),
+                  DataColumn(
+                    label: const Text('Teacher', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onSort: (index, ascending) => _sort(index, ascending),
+                  ),
+                  DataColumn(
+                    label: const Text('Parent/Guardian', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onSort: (index, ascending) => _sort(index, ascending),
+                  ),
+                  const DataColumn(label: Text('Action', style: TextStyle(fontWeight: FontWeight.bold))),
+                ],
+                rows: paginatedChildren.map((child) {
+                  return DataRow(cells: [
+                    DataCell(Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 14,
+                          child: Text(child.firstName[0].toUpperCase(), style: const TextStyle(fontSize: 12)),
+                        ),
+                        const SizedBox(width: 12),
+                        Text('${child.firstName} ${child.lastName}', style: const TextStyle(fontWeight: FontWeight.w500)),
+                      ],
+                    )),
+                    DataCell(Text(child.childId)),
+                    DataCell(Text('${child.age} yrs')),
+                    DataCell(Text(child.gender)),
+                    DataCell(Text(child.teacherName)),
+                    DataCell(Text(child.parentName)),
+                    DataCell(
+                      IconButton(
+                        icon: const Icon(Icons.analytics_outlined, color: Colors.blue),
+                        onPressed: () => _viewChildDetails(child),
+                        tooltip: 'View Full Record & Case Assessment',
+                      ),
+                    ),
+                  ]);
+                }).toList(),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: paginatedChildren.length,
+      itemBuilder: (context, index) {
+        final child = paginatedChildren[index];
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          child: ListTile(
+            leading: CircleAvatar(
+              child: Text(child.firstName[0].toUpperCase()),
+            ),
+            title: Text('${child.firstName} ${child.lastName}', 
+              style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text('ID: ${child.childId} | Teacher: ${child.teacherName}'),
+            trailing: const Icon(Icons.analytics_outlined, color: Colors.blue),
+            onTap: () => _viewChildDetails(child),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPaginationControls(int totalItems, int totalPages) {
+    if (totalItems == 0) return const SizedBox.shrink();
+
+    final startItem = (_currentPage * _itemsPerPage) + 1;
+    final endItem = ((_currentPage + 1) * _itemsPerPage) > totalItems
+        ? totalItems
+        : (_currentPage + 1) * _itemsPerPage;
+    final displayTotalPages = totalPages == 0 ? 1 : totalPages;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'Showing $startItem - $endItem of $totalItems children',
+            style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                onPressed: _currentPage > 0 ? () => setState(() => _currentPage--) : null,
+                tooltip: 'Previous Page',
+              ),
+              Text(
+                'Page ${_currentPage + 1} of $displayTotalPages',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                onPressed: _currentPage + 1 < displayTotalPages ? () => setState(() => _currentPage++) : null,
+                tooltip: 'Next Page',
+              ),
+            ],
           ),
         ],
       ),
@@ -275,8 +516,8 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
     if (status == 'Needs Intervention') color = Colors.red;
 
     return Card(
-      color: color.withOpacity(0.05),
-      shape: RoundedRectangleBorder(side: BorderSide(color: color.withOpacity(0.2)), borderRadius: BorderRadius.circular(12)),
+      color: color.withValues(alpha: 0.05),
+      shape: RoundedRectangleBorder(side: BorderSide(color: color.withValues(alpha: 0.2)), borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

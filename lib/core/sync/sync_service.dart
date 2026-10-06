@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/datasources/local_data_source.dart';
 import '../../data/datasources/remote_data_source.dart';
 import '../../data/repositories/file_upload_repository.dart';
@@ -71,13 +72,19 @@ class SyncService {
       }
     }
 
-    // 2. DOWNLOAD (Cloud -> Local) - Simplistic "fetch all" for prototype
+    // 2. DOWNLOAD (Cloud -> Local) - Incremental sync using last_sync_timestamp
     try {
-      final updates = await _remote.fetchUpdates(table, '1970-01-01'); 
+      final prefs = await SharedPreferences.getInstance();
+      final lastSyncKey = 'last_sync_$table';
+      final lastSyncDate = prefs.getString(lastSyncKey) ?? '1970-01-01T00:00:00.000';
+
+      final updates = await _remote.fetchUpdates(table, lastSyncDate); 
       for (var doc in updates) {
         final remoteData = doc.data();
         await _local.saveRecord(table, remoteData, isFromRemote: true);
       }
+
+      await prefs.setString(lastSyncKey, DateTime.now().toIso8601String());
     } catch (e) {
       print("DOWNLOAD ERROR [$table]: $e");
     }
@@ -86,6 +93,7 @@ class SyncService {
   String _getIdField(String table) {
     if (table == 'children') return 'child_id';
     if (table == 'users') return 'uid';
+    if (table == 'file_uploads') return 'file_id';
     return 'id';
   }
 }

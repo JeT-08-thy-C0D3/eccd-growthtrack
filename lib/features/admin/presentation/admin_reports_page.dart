@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../shared/models/child_model.dart';
 import '../data/repositories/audit_repository.dart';
@@ -19,6 +18,7 @@ class AdminReportsPage extends StatefulWidget {
 
 class _AdminReportsPageState extends State<AdminReportsPage> {
   final ReportsRepository _repository = ReportsRepositoryImpl();
+  final TextEditingController _searchController = TextEditingController();
   DashboardStats? _stats;
   List<AttendanceReportItem> _attendanceItems = [];
   List<EvaluationReportItem> _evaluationItems = [];
@@ -27,8 +27,14 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
   
   List<ChildModel> _allChildren = [];
   ChildModel? _selectedFilterChild;
-  
+  String _searchQuery = '';
   bool _isLoading = true;
+
+  static const int _itemsPerPage = 10;
+  int _progressPage = 0;
+  int _attendancePage = 0;
+  int _evaluationPage = 0;
+  int _referralPage = 0;
 
   @override
   void initState() {
@@ -56,18 +62,37 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     final referrals = await _repository.getReferralReport();
     final progress = await _repository.getChildProgressReport();
 
+    final q = _searchQuery.toLowerCase();
+
     setState(() {
-      if (_selectedFilterChild != null) {
-        _attendanceItems = attendance.where((item) => item.childId == _selectedFilterChild!.childId).toList();
-        _evaluationItems = evaluations.where((item) => item.childId == _selectedFilterChild!.childId).toList();
-        _referralItems = referrals.where((item) => item.childId == _selectedFilterChild!.childId).toList();
-        _progressItems = progress.where((item) => item.childId == _selectedFilterChild!.childId).toList();
-      } else {
-        _attendanceItems = attendance;
-        _evaluationItems = evaluations;
-        _referralItems = referrals;
-        _progressItems = progress;
-      }
+      _attendanceItems = attendance.where((item) {
+        final matchesChild = _selectedFilterChild == null || item.childId == _selectedFilterChild!.childId;
+        final matchesQuery = q.isEmpty || item.childName.toLowerCase().contains(q) || item.childId.toLowerCase().contains(q);
+        return matchesChild && matchesQuery;
+      }).toList();
+
+      _evaluationItems = evaluations.where((item) {
+        final matchesChild = _selectedFilterChild == null || item.childId == _selectedFilterChild!.childId;
+        final matchesQuery = q.isEmpty || item.childName.toLowerCase().contains(q) || item.domain.toLowerCase().contains(q);
+        return matchesChild && matchesQuery;
+      }).toList();
+
+      _referralItems = referrals.where((item) {
+        final matchesChild = _selectedFilterChild == null || item.childId == _selectedFilterChild!.childId;
+        final matchesQuery = q.isEmpty || item.childName.toLowerCase().contains(q) || item.concern.toLowerCase().contains(q) || item.status.toLowerCase().contains(q);
+        return matchesChild && matchesQuery;
+      }).toList();
+
+      _progressItems = progress.where((item) {
+        final matchesChild = _selectedFilterChild == null || item.childId == _selectedFilterChild!.childId;
+        final matchesQuery = q.isEmpty || item.childName.toLowerCase().contains(q) || item.domain.toLowerCase().contains(q);
+        return matchesChild && matchesQuery;
+      }).toList();
+
+      _progressPage = 0;
+      _attendancePage = 0;
+      _evaluationPage = 0;
+      _referralPage = 0;
     });
   }
 
@@ -79,6 +104,12 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       action: 'Report Generated',
       targetRecord: '$type Report',
     );
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -120,10 +151,10 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
             : TabBarView(
                 children: [
                   _buildOverviewTab(),
-                  _buildReportTab('Longitudinal Progress', ChildProgressReportTable(items: _progressItems), 'Progress'),
-                  _buildReportTab('Attendance Analysis', AttendanceReportTable(items: _attendanceItems), 'Attendance'),
-                  _buildReportTab('Evaluation Data', EvaluationReportTable(items: _evaluationItems), 'Evaluation'),
-                  _buildReportTab('Referral Monitoring', ReferralReportTable(items: _referralItems), 'Referral'),
+                  _buildProgressTab(),
+                  _buildAttendanceTab(),
+                  _buildEvaluationTab(),
+                  _buildReferralTab(),
                 ],
               ),
       ),
@@ -131,6 +162,8 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
   }
 
   Widget _buildOverviewTab() {
+    final paginatedProgress = _progressItems.skip(0).take(_itemsPerPage).toList();
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -149,7 +182,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Recent Progress Summary',
+                'Recent Progress Summary (Top 10)',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
               ),
               TextButton.icon(
@@ -160,7 +193,113 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
             ],
           ),
           const SizedBox(height: 16),
-          ChildProgressReportTable(items: _progressItems),
+          ChildProgressReportTable(items: paginatedProgress),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProgressTab() {
+    final totalItems = _progressItems.length;
+    final totalPages = (totalItems / _itemsPerPage).ceil();
+    final paginatedItems = _progressItems.skip(_progressPage * _itemsPerPage).take(_itemsPerPage).toList();
+
+    return _buildReportTabWrapper(
+      title: 'Longitudinal Progress',
+      exportType: 'Progress',
+      content: ChildProgressReportTable(items: paginatedItems),
+      currentPage: _progressPage,
+      totalPages: totalPages,
+      totalItems: totalItems,
+      onPageChanged: (newPage) => setState(() => _progressPage = newPage),
+    );
+  }
+
+  Widget _buildAttendanceTab() {
+    final totalItems = _attendanceItems.length;
+    final totalPages = (totalItems / _itemsPerPage).ceil();
+    final paginatedItems = _attendanceItems.skip(_attendancePage * _itemsPerPage).take(_itemsPerPage).toList();
+
+    return _buildReportTabWrapper(
+      title: 'Attendance Analysis',
+      exportType: 'Attendance',
+      content: AttendanceReportTable(items: paginatedItems),
+      currentPage: _attendancePage,
+      totalPages: totalPages,
+      totalItems: totalItems,
+      onPageChanged: (newPage) => setState(() => _attendancePage = newPage),
+    );
+  }
+
+  Widget _buildEvaluationTab() {
+    final totalItems = _evaluationItems.length;
+    final totalPages = (totalItems / _itemsPerPage).ceil();
+    final paginatedItems = _evaluationItems.skip(_evaluationPage * _itemsPerPage).take(_itemsPerPage).toList();
+
+    return _buildReportTabWrapper(
+      title: 'Evaluation Data',
+      exportType: 'Evaluation',
+      content: EvaluationReportTable(items: paginatedItems),
+      currentPage: _evaluationPage,
+      totalPages: totalPages,
+      totalItems: totalItems,
+      onPageChanged: (newPage) => setState(() => _evaluationPage = newPage),
+    );
+  }
+
+  Widget _buildReferralTab() {
+    final totalItems = _referralItems.length;
+    final totalPages = (totalItems / _itemsPerPage).ceil();
+    final paginatedItems = _referralItems.skip(_referralPage * _itemsPerPage).take(_itemsPerPage).toList();
+
+    return _buildReportTabWrapper(
+      title: 'Referral Monitoring',
+      exportType: 'Referral',
+      content: ReferralReportTable(items: paginatedItems),
+      currentPage: _referralPage,
+      totalPages: totalPages,
+      totalItems: totalItems,
+      onPageChanged: (newPage) => setState(() => _referralPage = newPage),
+    );
+  }
+
+  Widget _buildReportTabWrapper({
+    required String title,
+    required String exportType,
+    required Widget content,
+    required int currentPage,
+    required int totalPages,
+    required int totalItems,
+    required ValueChanged<int> onPageChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+              OutlinedButton.icon(
+                onPressed: () => _exportReport(exportType),
+                icon: const Icon(Icons.download_rounded),
+                label: const Text('Export CSV'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Expanded(
+            child: Card(
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                children: [
+                  Expanded(child: content),
+                  _buildPaginationBar(currentPage, totalPages, totalItems, onPageChanged),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -176,38 +315,60 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       ),
       child: Padding(
         padding: const EdgeInsets.all(20),
-        child: Row(
+        child: Column(
           children: [
-            const Icon(Icons.filter_alt_outlined, color: Colors.blue),
-            const SizedBox(width: 12),
-            const Text('Filter Reports:', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(width: 24),
-            Expanded(
-              child: DropdownButtonFormField<ChildModel?>(
-                initialValue: _selectedFilterChild,
-                decoration: const InputDecoration(
-                  labelText: 'Filter by Specific Child',
-                  border: OutlineInputBorder(),
-                  isDense: true,
+            Row(
+              children: [
+                Expanded(
+                  child: SearchBar(
+                    controller: _searchController,
+                    hintText: 'Search report data by Child Name, ID, or Domain...',
+                    leading: const Icon(Icons.search),
+                    onChanged: (val) {
+                      _searchQuery = val;
+                      _applyFilters();
+                    },
+                  ),
                 ),
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('Show All Municipal Records')),
-                  ..._allChildren.map((c) => DropdownMenuItem(value: c, child: Text("${c.firstName} ${c.lastName} (${c.childId})"))),
-                ],
-                onChanged: (val) {
-                  setState(() => _selectedFilterChild = val);
-                  _applyFilters();
-                },
-              ),
+              ],
             ),
-            const SizedBox(width: 16),
-            OutlinedButton.icon(
-              onPressed: () {
-                setState(() => _selectedFilterChild = null);
-                _applyFilters();
-              },
-              icon: const Icon(Icons.clear_all),
-              label: const Text('Reset'),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                const Icon(Icons.filter_alt_outlined, color: Colors.blue),
+                const SizedBox(width: 12),
+                const Text('Filter Child:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(width: 24),
+                Expanded(
+                  child: DropdownButtonFormField<ChildModel?>(
+                    initialValue: _selectedFilterChild,
+                    decoration: const InputDecoration(
+                      labelText: 'Filter by Specific Child',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('Show All Municipal Records')),
+                      ..._allChildren.map((c) => DropdownMenuItem(value: c, child: Text("${c.firstName} ${c.lastName} (${c.childId})"))),
+                    ],
+                    onChanged: (val) {
+                      setState(() => _selectedFilterChild = val);
+                      _applyFilters();
+                    },
+                  ),
+                ),
+                const SizedBox(width: 16),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    _searchController.clear();
+                    _searchQuery = '';
+                    setState(() => _selectedFilterChild = null);
+                    _applyFilters();
+                  },
+                  icon: const Icon(Icons.clear_all),
+                  label: const Text('Reset Filters'),
+                ),
+              ],
             ),
           ],
         ),
@@ -267,25 +428,48 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     );
   }
 
-  Widget _buildReportTab(String title, Widget content, String exportType) {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildPaginationBar(
+    int currentPage,
+    int totalPages,
+    int totalItems,
+    ValueChanged<int> onPageChanged,
+  ) {
+    if (totalItems == 0) return const SizedBox.shrink();
+
+    final startItem = (currentPage * _itemsPerPage) + 1;
+    final endItem = ((currentPage + 1) * _itemsPerPage) > totalItems
+        ? totalItems
+        : (currentPage + 1) * _itemsPerPage;
+    final displayTotalPages = totalPages == 0 ? 1 : totalPages;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
+          Text(
+            'Showing $startItem - $endItem of $totalItems report items',
+            style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-              OutlinedButton.icon(
-                onPressed: () => _exportReport(exportType),
-                icon: const Icon(Icons.download_rounded),
-                label: const Text('Export CSV'),
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                onPressed: currentPage > 0 ? () => onPageChanged(currentPage - 1) : null,
+                tooltip: 'Previous Page',
+              ),
+              Text(
+                'Page ${currentPage + 1} of $displayTotalPages',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                onPressed: currentPage + 1 < displayTotalPages ? () => onPageChanged(currentPage + 1) : null,
+                tooltip: 'Next Page',
               ),
             ],
           ),
-          const SizedBox(height: 24),
-          Expanded(child: Card(child: content)),
         ],
       ),
     );

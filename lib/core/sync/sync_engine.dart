@@ -13,15 +13,28 @@ class SyncEngine {
   Timer? _syncTimer;
   bool _isSyncing = false;
 
+  final List<String> _tablesToSync = [
+    'users',
+    'children',
+    'attendance',
+    'evaluations',
+    'parent_feedback',
+    'triangulations',
+    'development_summaries',
+    'activities',
+    'activity_submissions',
+    'referrals',
+    'audit_logs',
+    'clarifications',
+  ];
+
   void start() {
-    // Sync whenever connection is restored
     _connectivity.onConnectivityChanged.listen((isOnline) {
       if (isOnline) {
         performSync();
       }
     });
 
-    // Also periodic sync every 5 minutes if online
     _syncTimer = Timer.periodic(const Duration(minutes: 5), (timer) async {
       if (await _connectivity.isOnline) {
         performSync();
@@ -40,20 +53,13 @@ class SyncEngine {
     try {
       print("SyncEngine: Starting synchronization...");
       
-      // 0. Sync pending file uploads to Supabase
+      // 0. Sync pending file uploads to Supabase Storage
       await _fileUploadRepo.syncPendingFileUploads();
 
-      // 1. Sync Children
-      await _syncTable('children', 'child_id');
-      
-      // 2. Sync Users
-      await _syncTable('users', 'uid');
-
-      // 3. Sync Evaluations
-      await _syncTable('evaluations', 'id');
-
-      // 4. Sync Referrals
-      await _syncTable('referrals', 'id');
+      // 1. Sync all database tables with Firestore
+      for (var table in _tablesToSync) {
+        await _syncTable(table, _getIdField(table));
+      }
 
       print("SyncEngine: Synchronization complete.");
     } catch (e) {
@@ -66,36 +72,53 @@ class SyncEngine {
   Future<void> _syncTable(String tableName, String idField) async {
     final db = await _dbHelper.database;
 
-    // A. Upstream: Local -> Remote (Unsynced changes)
+    // A. Upstream: Local (SQLite) -> Remote (Cloud Firestore)
     final unsynced = await db.query(tableName, where: 'is_synced = ?', whereArgs: [0]);
     for (var row in unsynced) {
-      final String docId = row[idField].toString();
-      await _firestore.collection(tableName).doc(docId).set(row, SetOptions(merge: true));
-      await db.update(tableName, {'is_synced': 1}, where: '$idField = ?', whereArgs: [row[idField]]);
-    }
+      try {
+        final String docId = row[idField].toString();
+        final uploadData = Map<String, dynamic>.from(row);
+        uploadData.remove('is_synced');
+        uploadData.remove('id');
 
-    // B. Downstream: Remote -> Local (Latest updates)
-    // In a real app, we'd use a 'last_sync_timestamp' to only fetch new things.
-    // For this prototype, we'll fetch based on 'updated_at'.
-    final querySnapshot = await _firestore.collection(tableName).get();
-    for (var doc in querySnapshot.docs) {
-      final remoteData = doc.data();
-      final String docId = doc.id;
-
-      final localData = await db.query(tableName, where: '$idField = ?', whereArgs: [docId]);
-
-      if (localData.isEmpty) {
-        // New record from cloud
-        await db.insert(tableName, {...remoteData, 'is_synced': 1});
-      } else {
-        // Conflict resolution: Latest update wins
-        final remoteUpdatedAt = DateTime.parse(remoteData['updated_at']);
-        final localUpdatedAt = DateTime.parse(localData.first['updated_at'] as String);
-
-        if (remoteUpdatedAt.isAfter(localUpdatedAt)) {
-          await db.update(tableName, {...remoteData, 'is_synced': 1}, where: '$idField = ?', whereArgs: [docId]);
-        }
+        await _firestore.collection(tableName).doc(docId).set(uploadData, SetOptions(merge: true));
+        await db.update(tableName, {'is_synced': 1}, where: '$idField = ?', whereArgs: [row[idField]]);
+      } catch (e) {
+        print("Upstream Sync Error [$tableName]: $e");
       }
     }
+
+    // B. Downstream: Remote (Cloud Firestore) -> Local (SQLite) with Conflict Resolution
+    try {
+      final querySnapshot = await _firestore.collection(tableName).get();
+      for (var doc in querySnapshot.docs) {
+        final remoteData = doc.data();
+        final String docId = doc.id;
+
+        final localData = await db.query(tableName, where: '$idField = ?', whereArgs: [docId]);
+
+        if (localData.isEmpty) {
+          // New record from cloud
+          await db.insert(tableName, {...remoteData, idField: docId, 'is_synced': 1});
+        } else {
+          // Conflict Resolution: Latest 'updated_at' wins (LWW)
+          final remoteUpdatedAt = DateTime.tryParse(remoteData['updated_at'] as String? ?? '') ?? DateTime(1970);
+          final localUpdatedAt = DateTime.tryParse(localData.first['updated_at'] as String? ?? localData.first['created_at'] as String? ?? '') ?? DateTime(1970);
+
+          if (remoteUpdatedAt.isAfter(localUpdatedAt)) {
+            await db.update(tableName, {...remoteData, 'is_synced': 1}, where: '$idField = ?', whereArgs: [docId]);
+          }
+        }
+      }
+    } catch (e) {
+      print("Downstream Sync Error [$tableName]: $e");
+    }
+  }
+
+  String _getIdField(String table) {
+    if (table == 'children') return 'child_id';
+    if (table == 'users') return 'uid';
+    if (table == 'file_uploads') return 'file_id';
+    return 'id';
   }
 }

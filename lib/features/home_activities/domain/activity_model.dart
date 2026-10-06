@@ -9,6 +9,7 @@ class ActivityModel {
   final String status; // Assigned, Completed, Overdue
   final String updatedAt;
   final bool isSynced;
+  final int maxScore;
 
   ActivityModel({
     this.id,
@@ -21,6 +22,7 @@ class ActivityModel {
     required this.status,
     required this.updatedAt,
     this.isSynced = false,
+    this.maxScore = 20,
   });
 
   Map<String, dynamic> toMap() {
@@ -35,6 +37,7 @@ class ActivityModel {
       'status': status,
       'updated_at': updatedAt,
       'is_synced': isSynced ? 1 : 0,
+      'max_score': maxScore,
     };
   }
 
@@ -50,6 +53,7 @@ class ActivityModel {
       status: map['status'] ?? 'Assigned',
       updatedAt: map['updated_at'] ?? DateTime.now().toIso8601String(),
       isSynced: (map['is_synced'] ?? 0) == 1,
+      maxScore: map['max_score'] as int? ?? 20,
     );
   }
 
@@ -64,6 +68,7 @@ class ActivityModel {
     String? status,
     String? updatedAt,
     bool? isSynced,
+    int? maxScore,
   }) {
     return ActivityModel(
       id: id ?? this.id,
@@ -76,6 +81,7 @@ class ActivityModel {
       status: status ?? this.status,
       updatedAt: updatedAt ?? this.updatedAt,
       isSynced: isSynced ?? this.isSynced,
+      maxScore: maxScore ?? this.maxScore,
     );
   }
 }

@@ -17,6 +17,8 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
   String? _selectedActionFilter;
   int? _sortColumnIndex;
   bool _sortAscending = false; // Default timestamp descending
+  int _currentPage = 0;
+  static const int _itemsPerPage = 10;
 
   final List<String> _trackedActions = [
     'User Created',
@@ -96,47 +98,65 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
                   return const Center(child: Text('No audit logs found.'));
                 }
 
-                final logs = _filterAndSortLogs(snapshot.data!);
+                final filteredLogs = _filterAndSortLogs(snapshot.data!);
+                final totalItems = filteredLogs.length;
+                final totalPages = (totalItems / _itemsPerPage).ceil();
 
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Card(
-                    clipBehavior: Clip.antiAlias,
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: DataTable(
-                        sortColumnIndex: _sortColumnIndex,
-                        sortAscending: _sortAscending,
-                        headingRowColor: WidgetStateProperty.all(Theme.of(context).colorScheme.surfaceContainerHighest),
-                        columns: [
-                          DataColumn(
-                            label: const Text('Timestamp', style: TextStyle(fontWeight: FontWeight.bold)),
-                            onSort: (index, ascending) => _sort(index, ascending),
+                if (_currentPage >= totalPages && totalPages > 0) {
+                  _currentPage = totalPages - 1;
+                }
+
+                final paginatedLogs = filteredLogs
+                    .skip(_currentPage * _itemsPerPage)
+                    .take(_itemsPerPage)
+                    .toList();
+
+                return Column(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(16),
+                        child: Card(
+                          clipBehavior: Clip.antiAlias,
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: DataTable(
+                              sortColumnIndex: _sortColumnIndex,
+                              sortAscending: _sortAscending,
+                              headingRowColor: WidgetStateProperty.all(Theme.of(context).colorScheme.surfaceContainerHighest),
+                              columns: [
+                                DataColumn(
+                                  label: const Text('Timestamp', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  onSort: (index, ascending) => _sort(index, ascending),
+                                ),
+                                DataColumn(
+                                  label: const Text('Action', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  onSort: (index, ascending) => _sort(index, ascending),
+                                ),
+                                DataColumn(
+                                  label: const Text('Performed By', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  onSort: (index, ascending) => _sort(index, ascending),
+                                ),
+                                DataColumn(
+                                  label: const Text('Target Record', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  onSort: (index, ascending) => _sort(index, ascending),
+                                ),
+                              ],
+                              rows: paginatedLogs.map((log) {
+                                return DataRow(cells: [
+                                  DataCell(Text(DateFormat('yyyy-MM-dd HH:mm:ss').format(log.timestamp))),
+                                  DataCell(_buildActionBadge(log.action)),
+                                  DataCell(Text(log.performedBy, style: const TextStyle(fontWeight: FontWeight.w500))),
+                                  DataCell(Text(log.targetRecord)),
+                                ]);
+                              }).toList(),
+                            ),
                           ),
-                          DataColumn(
-                            label: const Text('Action', style: TextStyle(fontWeight: FontWeight.bold)),
-                            onSort: (index, ascending) => _sort(index, ascending),
-                          ),
-                          DataColumn(
-                            label: const Text('Performed By', style: TextStyle(fontWeight: FontWeight.bold)),
-                            onSort: (index, ascending) => _sort(index, ascending),
-                          ),
-                          DataColumn(
-                            label: const Text('Target Record', style: TextStyle(fontWeight: FontWeight.bold)),
-                            onSort: (index, ascending) => _sort(index, ascending),
-                          ),
-                        ],
-                        rows: logs.map((log) {
-                          return DataRow(cells: [
-                            DataCell(Text(DateFormat('yyyy-MM-dd HH:mm:ss').format(log.timestamp))),
-                            DataCell(_buildActionBadge(log.action)),
-                            DataCell(Text(log.performedBy, style: const TextStyle(fontWeight: FontWeight.w500))),
-                            DataCell(Text(log.targetRecord)),
-                          ]);
-                        }).toList(),
+                        ),
                       ),
                     ),
-                  ),
+                    _buildPaginationControls(totalItems, totalPages),
+                  ],
                 );
               },
             ),
@@ -158,7 +178,10 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
               controller: _searchController,
               hintText: 'Search logs by Action, Performed By, or Target Record...',
               leading: const Icon(Icons.search),
-              onChanged: (value) => setState(() => _searchQuery = value),
+              onChanged: (value) => setState(() {
+                _searchQuery = value;
+                _currentPage = 0;
+              }),
             ),
           ),
           const SizedBox(width: 16),
@@ -176,7 +199,10 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
                 const DropdownMenuItem(value: null, child: Text('All Actions')),
                 ..._trackedActions.map((a) => DropdownMenuItem(value: a, child: Text(a))),
               ],
-              onChanged: (val) => setState(() => _selectedActionFilter = val),
+              onChanged: (val) => setState(() {
+                _selectedActionFilter = val;
+                _currentPage = 0;
+              }),
             ),
           ),
         ],
@@ -202,6 +228,48 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
       child: Text(
         action,
         style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 11),
+      ),
+    );
+  }
+
+  Widget _buildPaginationControls(int totalItems, int totalPages) {
+    if (totalItems == 0) return const SizedBox.shrink();
+
+    final startItem = (_currentPage * _itemsPerPage) + 1;
+    final endItem = ((_currentPage + 1) * _itemsPerPage) > totalItems
+        ? totalItems
+        : (_currentPage + 1) * _itemsPerPage;
+    final displayTotalPages = totalPages == 0 ? 1 : totalPages;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'Showing $startItem - $endItem of $totalItems records',
+            style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                onPressed: _currentPage > 0 ? () => setState(() => _currentPage--) : null,
+                tooltip: 'Previous Page',
+              ),
+              Text(
+                'Page ${_currentPage + 1} of $displayTotalPages',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                onPressed: _currentPage + 1 < displayTotalPages ? () => setState(() => _currentPage++) : null,
+                tooltip: 'Next Page',
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

@@ -20,6 +20,8 @@ class _UserManagementPageState extends State<UserManagementPage> {
   UserRole? _selectedRoleFilter;
   int? _sortColumnIndex;
   bool _sortAscending = true;
+  int _currentPage = 0;
+  static const int _itemsPerPage = 10;
 
   void _deleteUser(UserModel user) async {
     final confirmed = await ConfirmationDialog.showDelete(
@@ -28,12 +30,23 @@ class _UserManagementPageState extends State<UserManagementPage> {
     );
 
     if (confirmed) {
-      int id = user.id ?? 0;
-      await _repository.deleteUser(id, user.uid);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Account for ${user.name} deleted')),
-        );
+      try {
+        int id = user.id ?? 0;
+        await _repository.deleteUser(id, user.uid);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Account for ${user.name} deleted successfully')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to delete user account: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     }
   }
@@ -50,13 +63,24 @@ class _UserManagementPageState extends State<UserManagementPage> {
     );
 
     if (confirmed) {
-      await _repository.toggleUserStatus(user);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Account for ${user.name} is now ${isActivating ? "active" : "deactivated"}'),
-          ),
-        );
+      try {
+        await _repository.toggleUserStatus(user);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Account for ${user.name} is now ${isActivating ? "active" : "deactivated"}'),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to update user status: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     }
   }
@@ -114,7 +138,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('MSWD User Management'),
+        title: const Text('MSWD User Management (Add User)'),
         scrolledUnderElevation: 0,
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -135,7 +159,10 @@ class _UserManagementPageState extends State<UserManagementPage> {
               controller: _searchController,
               hintText: 'Search users by Name, Email, or Role...',
               leading: const Icon(Icons.search),
-              onChanged: (val) => setState(() => _searchQuery = val),
+              onChanged: (val) => setState(() {
+                _searchQuery = val;
+                _currentPage = 0;
+              }),
             ),
           ),
           _buildRoleFilterBar(),
@@ -150,8 +177,11 @@ class _UserManagementPageState extends State<UserManagementPage> {
                       if (futureSnapshot.connectionState == ConnectionState.waiting) {
                         return const Center(child: CircularProgressIndicator());
                       }
+                      if (futureSnapshot.hasError) {
+                        return _buildErrorView(futureSnapshot.error.toString());
+                      }
                       final users = _filterAndSortUsers(futureSnapshot.data ?? []);
-                      return _buildResponsiveList(users, isWide);
+                      return _buildPaginatedView(users, isWide);
                     },
                   );
                 }
@@ -160,16 +190,37 @@ class _UserManagementPageState extends State<UserManagementPage> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.hasError) {
-                  return Center(child: Text('Error: ${snapshot.error}'));
+                  return _buildErrorView('Cloud database connection issue: ${snapshot.error}');
                 }
 
                 final users = _filterAndSortUsers(snapshot.data ?? []);
-                return _buildResponsiveList(users, isWide);
+                return _buildPaginatedView(users, isWide);
               },
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPaginatedView(List<UserModel> users, bool isWide) {
+    final totalItems = users.length;
+    final totalPages = (totalItems / _itemsPerPage).ceil();
+
+    if (_currentPage >= totalPages && totalPages > 0) {
+      _currentPage = totalPages - 1;
+    }
+
+    final paginatedUsers = users
+        .skip(_currentPage * _itemsPerPage)
+        .take(_itemsPerPage)
+        .toList();
+
+    return Column(
+      children: [
+        Expanded(child: _buildResponsiveList(users, paginatedUsers, isWide)),
+        _buildPaginationControls(totalItems, totalPages),
+      ],
     );
   }
 
@@ -193,7 +244,12 @@ class _UserManagementPageState extends State<UserManagementPage> {
                       label: const Text('All Roles'),
                       selected: _selectedRoleFilter == null,
                       onSelected: (selected) {
-                        if (selected) setState(() => _selectedRoleFilter = null);
+                        if (selected) {
+                          setState(() {
+                            _selectedRoleFilter = null;
+                            _currentPage = 0;
+                          });
+                        }
                       },
                     ),
                   ),
@@ -208,6 +264,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
                         onSelected: (selected) {
                           setState(() {
                             _selectedRoleFilter = selected ? role : null;
+                            _currentPage = 0;
                           });
                         },
                       ),
@@ -222,8 +279,81 @@ class _UserManagementPageState extends State<UserManagementPage> {
     );
   }
 
-  Widget _buildResponsiveList(List<UserModel> users, bool isWide) {
-    if (users.isEmpty) return const Center(child: Text('No matching user records found.'));
+  Widget _buildErrorView(String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.cloud_off_rounded, size: 64, color: Colors.orange),
+            const SizedBox(height: 16),
+            const Text(
+              'Database Connection Issue',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () => setState(() {}),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry Connection'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResponsiveList(List<UserModel> allUsers, List<UserModel> paginatedUsers, bool isWide) {
+    if (allUsers.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.search_off_rounded, size: 64, color: Colors.grey),
+              const SizedBox(height: 16),
+              Text(
+                _searchQuery.isNotEmpty || _selectedRoleFilter != null
+                    ? 'No users match your filter criteria'
+                    : 'No user accounts registered yet',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _searchQuery.isNotEmpty
+                    ? 'Try searching with a different keyword or resetting filters.'
+                    : 'Click "Create Account" to add center staff or parent accounts.',
+                style: const TextStyle(color: Colors.grey),
+                textAlign: TextAlign.center,
+              ),
+              if (_searchQuery.isNotEmpty || _selectedRoleFilter != null) ...[
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() {
+                      _searchQuery = '';
+                      _selectedRoleFilter = null;
+                      _currentPage = 0;
+                    });
+                  },
+                  icon: const Icon(Icons.clear_all),
+                  label: const Text('Reset Search & Filters'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
 
     if (isWide && kIsWeb) {
       return SingleChildScrollView(
@@ -260,7 +390,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
                   ),
                   const DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold))),
                 ],
-                rows: users.map((user) => DataRow(cells: [
+                rows: paginatedUsers.map((user) => DataRow(cells: [
                   DataCell(Row(
                     children: [
                       CircleAvatar(
@@ -301,9 +431,9 @@ class _UserManagementPageState extends State<UserManagementPage> {
 
     return ListView.builder(
       padding: const EdgeInsets.all(24),
-      itemCount: users.length,
+      itemCount: paginatedUsers.length,
       itemBuilder: (context, index) {
-        final user = users[index];
+        final user = paginatedUsers[index];
         final isActive = user.status == 'active';
 
         return Card(
@@ -341,6 +471,48 @@ class _UserManagementPageState extends State<UserManagementPage> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildPaginationControls(int totalItems, int totalPages) {
+    if (totalItems == 0) return const SizedBox.shrink();
+
+    final startItem = (_currentPage * _itemsPerPage) + 1;
+    final endItem = ((_currentPage + 1) * _itemsPerPage) > totalItems
+        ? totalItems
+        : (_currentPage + 1) * _itemsPerPage;
+    final displayTotalPages = totalPages == 0 ? 1 : totalPages;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'Showing $startItem - $endItem of $totalItems accounts',
+            style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                onPressed: _currentPage > 0 ? () => setState(() => _currentPage--) : null,
+                tooltip: 'Previous Page',
+              ),
+              Text(
+                'Page ${_currentPage + 1} of $displayTotalPages',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                onPressed: _currentPage + 1 < displayTotalPages ? () => setState(() => _currentPage++) : null,
+                tooltip: 'Next Page',
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

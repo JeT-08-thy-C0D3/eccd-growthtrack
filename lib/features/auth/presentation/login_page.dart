@@ -35,31 +35,39 @@ class _LoginPageState extends State<LoginPage> {
 
     setState(() => _isLoading = true);
     
-    final user = await _authRepo.login(
-      _emailController.text.trim(),
-      _passwordController.text,
-    );
-
-    setState(() => _isLoading = false);
-
-    if (user != null && mounted) {
-      if (kIsWeb && user.role != UserRole.admin) {
-        await _authRepo.logout();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Access Denied: The Web Portal is restricted to Administrators only. Please use the mobile app.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        return;
-      }
-      _navigateToDashboard(user.role);
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid email address or password')),
+    try {
+      final user = await _authRepo.login(
+        _emailController.text.trim(),
+        _passwordController.text,
       );
+
+      setState(() => _isLoading = false);
+
+      if (user != null && mounted) {
+        if (kIsWeb && user.role != UserRole.admin) {
+          await _authRepo.logout();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Access Denied: The Web Portal is restricted to Administrators only. Please use the mobile app.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+        _navigateToDashboard(user.role);
+      }
+    } catch (error) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString()),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
     }
   }
 

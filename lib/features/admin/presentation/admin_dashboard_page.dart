@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../data/repositories/audit_repository.dart';
 import '../../reports/data/reports_repository.dart';
 import '../../reports/domain/reports_model.dart';
 import '../../auth/data/auth_repository_impl.dart';
@@ -199,7 +198,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           selectedIcon: Icons.settings,
           label: 'System Settings',
           isSelected: false,
-          onTap: () {},
+          onTap: () => Navigator.pushNamed(context, '/admin/settings'),
         ),
         const SizedBox(height: 24),
       ],
@@ -345,7 +344,10 @@ class _ProfileMenu extends StatelessWidget {
       ),
       itemBuilder: (context) => <PopupMenuEntry<dynamic>>[
         const PopupMenuItem(child: ListTile(leading: Icon(Icons.person), title: Text('My Profile'))),
-        const PopupMenuItem(child: ListTile(leading: Icon(Icons.settings), title: Text('Settings'))),
+        PopupMenuItem(
+          onTap: () => Navigator.pushNamed(context, '/admin/settings'),
+          child: const ListTile(leading: Icon(Icons.settings), title: Text('Settings')),
+        ),
         const PopupMenuDivider(),
         PopupMenuItem(
           onTap: onLogout,

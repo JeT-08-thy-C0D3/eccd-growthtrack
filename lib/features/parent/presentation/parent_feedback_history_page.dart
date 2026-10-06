@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../shared/models/child_model.dart';
+import '../../../shared/widgets/confirmation_dialog.dart';
 import '../../auth/data/auth_repository_impl.dart';
 import '../data/parent_feedback_repository.dart';
 import '../domain/parent_feedback_model.dart';
@@ -15,9 +16,13 @@ class ParentFeedbackHistoryPage extends StatefulWidget {
 
 class _ParentFeedbackHistoryPageState extends State<ParentFeedbackHistoryPage> {
   final _repository = ParentFeedbackRepositoryImpl();
-  List<ParentFeedbackModel> _history = [];
+  final TextEditingController _searchController = TextEditingController();
+  
+  List<ParentFeedbackModel> _allHistory = [];
+  List<ParentFeedbackModel> _filteredHistory = [];
   List<ChildModel> _children = [];
-  ChildModel? _filterChild;
+  ChildModel? _selectedFilterChild; // null means 'All Children'
+  String _searchQuery = '';
   bool _isLoading = true;
 
   @override
@@ -31,41 +36,69 @@ class _ParentFeedbackHistoryPageState extends State<ParentFeedbackHistoryPage> {
     final user = await AuthRepositoryImpl().getCurrentUser();
     if (user != null) {
       _children = await DatabaseHelper.instance.readChildrenByParent(user.uid);
-      if (_children.isNotEmpty) {
-        _filterChild = _children.first;
-        await _loadHistory();
-      } else {
-        setState(() => _isLoading = false);
-      }
+      await _loadHistory();
+    } else {
+      setState(() => _isLoading = false);
     }
   }
 
   Future<void> _loadHistory() async {
-    if (_filterChild == null) return;
-    final data = await _repository.getFeedbackHistory(_filterChild!.childId);
+    List<ParentFeedbackModel> combined = [];
+    if (_children.isNotEmpty) {
+      for (final child in _children) {
+        final data = await _repository.getFeedbackHistory(child.childId);
+        combined.addAll(data);
+      }
+    }
+    
+    // Sort by submission date (newest first)
+    combined.sort((a, b) => b.submissionDate.compareTo(a.submissionDate));
+
     setState(() {
-      _history = data;
+      _allHistory = combined;
+      _applyFilterAndSearch();
       _isLoading = false;
     });
   }
 
-  void _deleteFeedback(int id) async {
-    final confirmed = await showDialog<bool>(
+  void _applyFilterAndSearch() {
+    setState(() {
+      final q = _searchQuery.toLowerCase();
+      _filteredHistory = _allHistory.where((item) {
+        final matchesChild = _selectedFilterChild == null || item.childId == _selectedFilterChild!.childId;
+        final obs = item.parentObservation.toLowerCase();
+        final notes = item.notes.toLowerCase();
+        final level = item.assistanceLevel.toLowerCase();
+        final date = item.submissionDate.toLowerCase();
+
+        final matchesSearch = obs.contains(q) || notes.contains(q) || level.contains(q) || date.contains(q);
+
+        return matchesChild && matchesSearch;
+      }).toList();
+    });
+  }
+
+  void _deleteFeedback(ParentFeedbackModel item) async {
+    final confirmed = await ConfirmationDialog.showDelete(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirm Delete'),
-        content: const Text('Are you sure you want to delete this feedback?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
-        ],
-      ),
+      itemName: 'Feedback submission from ${item.submissionDate}',
     );
 
-    if (confirmed == true) {
-      await _repository.deleteFeedback(id);
+    if (confirmed) {
+      await _repository.deleteFeedback(item.id!);
       _loadHistory();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Feedback deleted successfully')),
+        );
+      }
     }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -76,29 +109,68 @@ class _ParentFeedbackHistoryPageState extends State<ParentFeedbackHistoryPage> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  child: SearchBar(
+                    controller: _searchController,
+                    hintText: 'Search observation, notes, or date...',
+                    leading: const Icon(Icons.search),
+                    onChanged: (val) {
+                      _searchQuery = val;
+                      _applyFilterAndSearch();
+                    },
+                  ),
+                ),
                 if (_children.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: DropdownButtonFormField<ChildModel>(
-                      initialValue: _filterChild,
-                      decoration: const InputDecoration(labelText: 'Filter by Child', border: OutlineInputBorder()),
-                      items: _children.map((c) => DropdownMenuItem(value: c, child: Text("${c.firstName} ${c.lastName}"))).toList(),
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                    child: DropdownButtonFormField<ChildModel?>(
+                      value: _selectedFilterChild,
+                      decoration: const InputDecoration(
+                        labelText: 'Filter by Child',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.filter_list),
+                      ),
+                      items: [
+                        const DropdownMenuItem<ChildModel?>(
+                          value: null,
+                          child: Text('All Children'),
+                        ),
+                        ..._children.map(
+                          (c) => DropdownMenuItem<ChildModel?>(
+                            value: c,
+                            child: Text("${c.firstName} ${c.lastName}"),
+                          ),
+                        ),
+                      ],
                       onChanged: (val) {
-                        setState(() => _filterChild = val);
-                        _loadHistory();
+                        setState(() {
+                          _selectedFilterChild = val;
+                          _applyFilterAndSearch();
+                        });
                       },
                     ),
                   ),
+                const SizedBox(height: 8),
                 Expanded(
-                  child: _history.isEmpty
-                      ? const Center(child: Text('No feedback records found.'))
+                  child: _filteredHistory.isEmpty
+                      ? const Center(child: Text('No matching feedback records found.'))
                       : ListView.builder(
                           padding: const EdgeInsets.all(16),
-                          itemCount: _history.length,
+                          itemCount: _filteredHistory.length,
                           itemBuilder: (context, index) {
-                            final item = _history[index];
+                            final item = _filteredHistory[index];
+                            ChildModel? child;
+                            for (final c in _children) {
+                              if (c.childId == item.childId) {
+                                child = c;
+                                break;
+                              }
+                            }
+
                             return Card(
                               margin: const EdgeInsets.only(bottom: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                               child: Padding(
                                 padding: const EdgeInsets.all(16.0),
                                 child: Column(
@@ -107,7 +179,10 @@ class _ParentFeedbackHistoryPageState extends State<ParentFeedbackHistoryPage> {
                                     Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
-                                        Text(item.submissionDate, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                                        Text(
+                                          child != null ? '${child.firstName} ${child.lastName}' : item.childId,
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue),
+                                        ),
                                         Row(
                                           children: [
                                             IconButton(
@@ -122,12 +197,13 @@ class _ParentFeedbackHistoryPageState extends State<ParentFeedbackHistoryPage> {
                                             ),
                                             IconButton(
                                               icon: const Icon(Icons.delete, size: 20, color: Colors.red),
-                                              onPressed: () => _deleteFeedback(item.id!),
+                                              onPressed: () => _deleteFeedback(item),
                                             ),
                                           ],
                                         ),
                                       ],
                                     ),
+                                    Text('Submitted on: ${item.submissionDate}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
                                     const Divider(),
                                     _buildInfoText('Observation:', item.parentObservation),
                                     const SizedBox(height: 8),

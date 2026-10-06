@@ -11,12 +11,16 @@ class ReferralMonitoringPage extends StatefulWidget {
 
 class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
   final ReferralRepository _repository = ReferralRepositoryImpl();
+  final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> _allReferrals = [];
   List<Map<String, dynamic>> _filteredReferrals = [];
+  String _searchQuery = '';
   String _selectedFilter = 'All';
   bool _isLoading = true;
   int? _sortColumnIndex;
   bool _sortAscending = true;
+  int _currentPage = 0;
+  static const int _itemsPerPage = 10;
 
   final List<String> _statusFilters = [
     'All',
@@ -45,13 +49,18 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
 
   void _applyFilterAndSort() {
     setState(() {
-      if (_selectedFilter == 'All') {
-        _filteredReferrals = List.from(_allReferrals);
-      } else {
-        _filteredReferrals = _allReferrals
-            .where((r) => r['status'] == _selectedFilter)
-            .toList();
-      }
+      final q = _searchQuery.toLowerCase();
+      
+      _filteredReferrals = _allReferrals.where((r) {
+        final childName = "${r['first_name']} ${r['last_name']}".toLowerCase();
+        final concern = (r['concern'] as String? ?? '').toLowerCase();
+        final status = (r['status'] as String? ?? '').toLowerCase();
+
+        final matchesSearch = childName.contains(q) || concern.contains(q) || status.contains(q);
+        final matchesStatus = _selectedFilter == 'All' || r['status'] == _selectedFilter;
+
+        return matchesSearch && matchesStatus;
+      }).toList();
 
       if (_sortColumnIndex != null) {
         _filteredReferrals.sort((a, b) {
@@ -63,16 +72,16 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
               result = nameA.compareTo(nameB);
               break;
             case 1:
-              result = (a['concern'] as String).compareTo(b['concern'] as String);
+              result = (a['concern'] as String? ?? '').compareTo(b['concern'] as String? ?? '');
               break;
             case 2:
-              result = (a['referral_date'] as String).compareTo(b['referral_date'] as String);
+              result = (a['referral_date'] as String? ?? '').compareTo(b['referral_date'] as String? ?? '');
               break;
             case 3:
-              result = (a['follow_up_date'] as String).compareTo(b['follow_up_date'] as String);
+              result = (a['follow_up_date'] as String? ?? '').compareTo(b['follow_up_date'] as String? ?? '');
               break;
             case 4:
-              result = (a['status'] as String).compareTo(b['status'] as String);
+              result = (a['status'] as String? ?? '').compareTo(b['status'] as String? ?? '');
               break;
           }
           return _sortAscending ? result : -result;
@@ -121,7 +130,25 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
   }
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final totalItems = _filteredReferrals.length;
+    final totalPages = (totalItems / _itemsPerPage).ceil();
+
+    if (_currentPage >= totalPages && totalPages > 0) {
+      _currentPage = totalPages - 1;
+    }
+
+    final paginatedReferrals = _filteredReferrals
+        .skip(_currentPage * _itemsPerPage)
+        .take(_itemsPerPage)
+        .toList();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('MSWD Referral Monitoring'),
@@ -131,13 +158,31 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
       ),
       body: Column(
         children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: SearchBar(
+              controller: _searchController,
+              hintText: 'Search referrals by Child Name, Concern, or Status...',
+              leading: const Icon(Icons.search),
+              onChanged: (val) {
+                _searchQuery = val;
+                _currentPage = 0;
+                _applyFilterAndSort();
+              },
+            ),
+          ),
           _buildFilterBar(),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _filteredReferrals.isEmpty
-                    ? const Center(child: Text('No referrals found for this status.'))
-                    : _buildReferralTable(),
+                    ? const Center(child: Text('No matching referral records found.'))
+                    : Column(
+                        children: [
+                          Expanded(child: _buildReferralTable(paginatedReferrals)),
+                          _buildPaginationControls(totalItems, totalPages),
+                        ],
+                      ),
           ),
         ],
       ),
@@ -169,6 +214,7 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
                         if (selected) {
                           setState(() {
                             _selectedFilter = status;
+                            _currentPage = 0;
                             _applyFilterAndSort();
                           });
                         }
@@ -184,7 +230,7 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
     );
   }
 
-  Widget _buildReferralTable() {
+  Widget _buildReferralTable(List<Map<String, dynamic>> paginatedReferrals) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Card(
@@ -218,7 +264,7 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
               ),
               const DataColumn(label: Text('Action', style: TextStyle(fontWeight: FontWeight.bold))),
             ],
-            rows: _filteredReferrals.map((r) {
+            rows: paginatedReferrals.map((r) {
               final statusColor = _getStatusColor(r['status']);
               return DataRow(cells: [
                 DataCell(Text('${r['first_name']} ${r['last_name']}')),
@@ -250,6 +296,48 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
             }).toList(),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildPaginationControls(int totalItems, int totalPages) {
+    if (totalItems == 0) return const SizedBox.shrink();
+
+    final startItem = (_currentPage * _itemsPerPage) + 1;
+    final endItem = ((_currentPage + 1) * _itemsPerPage) > totalItems
+        ? totalItems
+        : (_currentPage + 1) * _itemsPerPage;
+    final displayTotalPages = totalPages == 0 ? 1 : totalPages;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'Showing $startItem - $endItem of $totalItems referrals',
+            style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                onPressed: _currentPage > 0 ? () => setState(() => _currentPage--) : null,
+                tooltip: 'Previous Page',
+              ),
+              Text(
+                'Page ${_currentPage + 1} of $displayTotalPages',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                onPressed: _currentPage + 1 < displayTotalPages ? () => setState(() => _currentPage++) : null,
+                tooltip: 'Next Page',
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

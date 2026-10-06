@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../shared/models/child_model.dart';
 import '../../../shared/models/assessment_model.dart';
+import '../../../shared/widgets/confirmation_dialog.dart';
 
 class EccdAssessmentForm extends StatefulWidget {
   final ChildModel child;
@@ -66,32 +67,60 @@ class _EccdAssessmentFormState extends State<EccdAssessmentForm> {
   }
 
   Future<void> _saveAssessment() async {
+    int totalChecked = 0;
+    _responses.forEach((domain, map) {
+      map.forEach((index, isChecked) {
+        if (isChecked) totalChecked++;
+      });
+    });
+
+    if (totalChecked == 0) {
+      final confirmSave = await ConfirmationDialog.show(
+        context: context,
+        title: 'Zero Items Selected',
+        message: 'No developmental indicators were selected for ${widget.child.firstName}. Do you still wish to submit an evaluation with 0 scores?',
+        confirmLabel: 'Submit Anyway',
+        confirmColor: Colors.orange,
+        icon: Icons.warning_amber_rounded,
+      );
+      if (!confirmSave) return;
+    }
+
     setState(() => _isSaving = true);
     final dateStr = DateTime.now().toIso8601String().split('T')[0];
 
-    for (var domain in _domains.keys) {
-      int score = 0;
-      _responses[domain]!.forEach((key, value) {
-        if (value) score++;
-      });
+    try {
+      for (var domain in _domains.keys) {
+        int score = 0;
+        _responses[domain]!.forEach((key, value) {
+          if (value) score++;
+        });
 
-      final assessment = AssessmentModel(
-        childId: widget.child.id!,
-        date: dateStr,
-        domain: domain,
-        score: score,
-        remarks: 'Assessment completed for $domain',
-      );
+        final assessment = AssessmentModel(
+          childId: widget.child.id!,
+          date: dateStr,
+          domain: domain,
+          score: score,
+          remarks: 'Assessment completed for $domain ($score/4)',
+        );
 
-      await DatabaseHelper.instance.createAssessment(assessment);
-    }
+        await DatabaseHelper.instance.createAssessment(assessment);
+      }
 
-    setState(() => _isSaving = false);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Assessment saved successfully!')),
-      );
-      Navigator.pop(context);
+      setState(() => _isSaving = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Assessment saved successfully!')),
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      setState(() => _isSaving = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save assessment: $e'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 

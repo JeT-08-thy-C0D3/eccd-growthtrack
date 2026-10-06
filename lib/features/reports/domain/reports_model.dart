@@ -136,6 +136,7 @@ class ChildProgressReportItem {
   final String domain;
   final int? previousScore;
   final int currentScore;
+  final int maxScore;
   final String? developmentStatus;
   final String? triangulatedSummary;
 
@@ -145,6 +146,7 @@ class ChildProgressReportItem {
     required this.domain,
     this.previousScore,
     required this.currentScore,
+    this.maxScore = 20,
     this.developmentStatus,
     this.triangulatedSummary,
   });
@@ -156,6 +158,7 @@ class ChildProgressReportItem {
       domain: map['domain'] ?? '',
       previousScore: map['previous_score'],
       currentScore: map['current_score'] ?? 0,
+      maxScore: map['max_score'] ?? 20,
       developmentStatus: map['development_status'],
       triangulatedSummary: map['triangulated_summary'],
     );
