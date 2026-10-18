@@ -133,27 +133,12 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: const Text('Child Monitoring & Case Review (Admin)'),
-        actions: [
-          IconButton(onPressed: _loadChildren, icon: const Icon(Icons.refresh)),
-        ],
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: SearchBar(
-              controller: _searchController,
-              hintText: 'Search by Name, Child ID, Teacher, or Parent...',
-              leading: const Icon(Icons.search),
-              onChanged: (val) {
-                _searchQuery = val;
-                _currentPage = 0;
-                _applyFilterAndSort();
-              },
-            ),
-          ),
-          _buildFilterBar(),
+          _buildSearchAndFilterBar(),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -171,44 +156,47 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
     );
   }
 
-  Widget _buildFilterBar() {
-    final genderFilters = ['All', 'Male', 'Female'];
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          const Icon(Icons.filter_list, size: 20),
-          const SizedBox(width: 8),
-          const Text('Filter Gender:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: genderFilters.map((gender) {
-                  final isSelected = _selectedGenderFilter == gender;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(gender == 'All' ? 'All Genders' : gender),
-                      selected: isSelected,
-                      onSelected: (selected) {
-                        if (selected) {
-                          setState(() {
-                            _selectedGenderFilter = gender;
-                            _currentPage = 0;
-                            _applyFilterAndSort();
-                          });
-                        }
-                      },
-                    ),
-                  );
-                }).toList(),
-              ),
+  Widget _buildSearchAndFilterBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final search = SearchBar(
+            controller: _searchController,
+            hintText: 'Search by name, child ID, teacher, or parent...',
+            leading: const Icon(Icons.search),
+            onChanged: (val) {
+              _searchQuery = val;
+              _currentPage = 0;
+              _applyFilterAndSort();
+            },
+          );
+          final filter = DropdownButtonFormField<String>(
+            initialValue: _selectedGenderFilter,
+            decoration: const InputDecoration(
+              labelText: 'Filter gender',
+              prefixIcon: Icon(Icons.filter_list),
+              border: OutlineInputBorder(),
+              isDense: true,
             ),
-          ),
-        ],
+            items: const [
+              DropdownMenuItem(value: 'All', child: Text('All genders')),
+              DropdownMenuItem(value: 'Male', child: Text('Male')),
+              DropdownMenuItem(value: 'Female', child: Text('Female')),
+            ],
+            onChanged: (value) {
+              setState(() {
+                _selectedGenderFilter = value ?? 'All';
+                _currentPage = 0;
+              });
+              _applyFilterAndSort();
+            },
+          );
+          if (constraints.maxWidth < 680) {
+            return Column(children: [search, const SizedBox(height: 10), filter]);
+          }
+          return Row(children: [Expanded(child: search), const SizedBox(width: 16), SizedBox(width: 210, child: filter)]);
+        },
       ),
     );
   }
@@ -218,8 +206,8 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
       return SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Center(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 1200),
+          child: SizedBox(
+            width: 1200,
             child: Card(
               clipBehavior: Clip.antiAlias,
               shape: RoundedRectangleBorder(
@@ -419,6 +407,7 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
     return Dialog.fullscreen(
       child: Scaffold(
         appBar: AppBar(
+          automaticallyImplyLeading: false,
           title: Text('Record: ${widget.child.firstName} ${widget.child.lastName}'),
           leading: IconButton(
             icon: const Icon(Icons.close),

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../shared/models/child_model.dart';
@@ -42,9 +44,17 @@ class _ParentClarificationPageState extends State<ParentClarificationPage> {
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
-    final user = await AuthRepositoryImpl().getCurrentUser();
-    if (user != null) {
-      final children = await DatabaseHelper.instance.readChildrenByParent(user.uid);
+    try {
+      final user = await AuthRepositoryImpl().getCurrentUser();
+      if (user == null) {
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+
+      final children = kIsWeb
+          ? await _readChildrenFromFirestore(user.uid, user.name)
+          : await DatabaseHelper.instance.readChildrenByParent(user.uid);
+      if (!mounted) return;
       if (children.isNotEmpty) {
         _children = children;
         _selectedChild = children.first;
@@ -52,6 +62,25 @@ class _ParentClarificationPageState extends State<ParentClarificationPage> {
       } else {
         setState(() => _isLoading = false);
       }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to load linked children: $error')),
+      );
+    }
+  }
+
+  Future<List<ChildModel>> _readChildrenFromFirestore(String parentUid, String parentName) async {
+    final firestore = FirebaseFirestore.instance;
+    try {
+      var snapshot = await firestore.collection('children').where('parent_uid', isEqualTo: parentUid).get();
+      if (snapshot.docs.isEmpty && parentName.trim().isNotEmpty) {
+        snapshot = await firestore.collection('children').where('parent_name', isEqualTo: parentName).get();
+      }
+      return snapshot.docs.map((doc) => ChildModel.fromMap(doc.data())).toList();
+    } on FirebaseException catch (error) {
+      throw error.message ?? 'Unable to read linked children from Firestore.';
     }
   }
 
@@ -84,16 +113,21 @@ class _ParentClarificationPageState extends State<ParentClarificationPage> {
         isSynced: false,
       );
 
-      await _repository.sendRequest(request);
-
-      _messageController.clear();
-      setState(() => _isSaving = false);
-
-      if (mounted) {
+      try {
+        await _repository.sendRequest(request);
+        _messageController.clear();
+        if (!mounted) return;
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Clarification request submitted to teacher!')),
         );
         _loadRequests();
+      } catch (error) {
+        if (!mounted) return;
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Unable to submit clarification request: $error')),
+        );
       }
     }
   }
@@ -137,6 +171,7 @@ class _ParentClarificationPageState extends State<ParentClarificationPage> {
                                 const SizedBox(height: 16),
                                 DropdownButtonFormField<ChildModel>(
                                   value: _selectedChild,
+                                  isExpanded: true,
                                   decoration: const InputDecoration(
                                     labelText: 'Select Child',
                                     border: OutlineInputBorder(),
@@ -144,7 +179,7 @@ class _ParentClarificationPageState extends State<ParentClarificationPage> {
                                   ),
                                   items: _children.map((c) => DropdownMenuItem(
                                     value: c,
-                                    child: Text("${c.firstName} ${c.lastName} (${c.childId})"),
+                                    child: Text("${c.firstName} ${c.lastName} (${c.childId})", overflow: TextOverflow.ellipsis),
                                   )).toList(),
                                   onChanged: (val) {
                                     setState(() => _selectedChild = val);
@@ -154,6 +189,7 @@ class _ParentClarificationPageState extends State<ParentClarificationPage> {
                                 const SizedBox(height: 16),
                                 DropdownButtonFormField<String>(
                                   value: _selectedCategory,
+                                  isExpanded: true,
                                   decoration: const InputDecoration(
                                     labelText: 'Category',
                                     border: OutlineInputBorder(),
@@ -161,7 +197,7 @@ class _ParentClarificationPageState extends State<ParentClarificationPage> {
                                   ),
                                   items: _categories.map((cat) => DropdownMenuItem(
                                     value: cat,
-                                    child: Text(cat),
+                                    child: Text(cat, overflow: TextOverflow.ellipsis),
                                   )).toList(),
                                   onChanged: (val) => setState(() => _selectedCategory = val!),
                                 ),
@@ -229,8 +265,10 @@ class _ParentClarificationPageState extends State<ParentClarificationPage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    Wrap(
+                                      alignment: WrapAlignment.spaceBetween,
+                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      runSpacing: 6,
                                       children: [
                                         Chip(
                                           label: Text(item.category, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),

@@ -150,7 +150,7 @@ class ReferralRepositoryImpl implements ReferralRepository {
     return await _fileUploadRepo.uploadFile(
       bucket: SupabaseConfig.referralAttachments,
       entityId: referralId,
-      category: 'referral_attachment',
+      category: SupabaseConfig.referralCategory,
       filePath: filePath,
       docCollection: 'referrals',
       urlFieldName: 'attachment_url',

@@ -4,6 +4,7 @@ import '../../domain/repositories/user_repository.dart';
 import '../datasources/user_remote_datasource.dart';
 import '../../../../core/network/connectivity_service.dart';
 import 'audit_repository.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class UserRepositoryImpl implements UserRepository {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
@@ -13,6 +14,12 @@ class UserRepositoryImpl implements UserRepository {
 
   @override
   Future<void> createUser(UserModel user) async {
+    if (user.isProtectedAdmin) {
+      throw StateError('The system ADMIN account is protected.');
+    }
+    if (await emailExists(user.email)) {
+      throw StateError('An account with this email address already exists.');
+    }
     String finalUid = user.uid;
     
     // 1. If online, create Firebase Auth account
@@ -44,7 +51,19 @@ class UserRepositoryImpl implements UserRepository {
 
   @override
   Future<List<UserModel>> getUsers() async {
+    if (kIsWeb) {
+      return _remoteDataSource.fetchUsersFromFirestore();
+    }
     return await _dbHelper.readAllUsers();
+  }
+
+  @override
+  Future<bool> emailExists(String email, {String? excludingUid}) async {
+    final normalizedEmail = email.trim().toLowerCase();
+    final users = await getUsers();
+    return users.any((user) =>
+        user.email.trim().toLowerCase() == normalizedEmail &&
+        (excludingUid == null || user.uid != excludingUid));
   }
 
   @override
@@ -54,6 +73,13 @@ class UserRepositoryImpl implements UserRepository {
 
   @override
   Future<void> updateUser(UserModel user) async {
+    final existingUser = await _findUserByUid(user.uid);
+    if (user.isProtectedAdmin || existingUser?.isProtectedAdmin == true) {
+      throw StateError('The system ADMIN account is protected.');
+    }
+    if (await emailExists(user.email, excludingUid: user.uid)) {
+      throw StateError('An account with this email address already exists.');
+    }
     final updatedUser = user.copyWith(isSynced: await _connectivity.isOnline);
     
     // 1. Update locally
@@ -73,6 +99,10 @@ class UserRepositoryImpl implements UserRepository {
 
   @override
   Future<void> deleteUser(int id, String uid) async {
+    final user = await _findUserByUid(uid);
+    if (user?.isProtectedAdmin == true) {
+      throw StateError('The system ADMIN account cannot be deleted.');
+    }
     // 1. Delete locally
     await _dbHelper.delete('users', id);
 
@@ -90,8 +120,18 @@ class UserRepositoryImpl implements UserRepository {
 
   @override
   Future<void> toggleUserStatus(UserModel user) async {
+    if (user.isProtectedAdmin) {
+      throw StateError('The system ADMIN account cannot be deactivated.');
+    }
     final newStatus = user.status == 'active' ? 'deactivated' : 'active';
     final updatedUser = user.copyWith(status: newStatus);
     await updateUser(updatedUser);
+  }
+
+  Future<UserModel?> _findUserByUid(String uid) async {
+    for (final item in await getUsers()) {
+      if (item.uid == uid) return item;
+    }
+    return null;
   }
 }

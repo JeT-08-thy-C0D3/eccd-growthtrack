@@ -154,12 +154,16 @@ class _TeacherClarificationsPageState extends State<TeacherClarificationsPage> {
                             child: ListTile(
                               contentPadding: const EdgeInsets.all(16),
                               title: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text(
-                                    '${item['first_name']} ${item['last_name']} (${item['child_id']})',
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                  Expanded(
+                                    child: Text(
+                                      '${item['first_name']} ${item['last_name']} (${item['child_id']})',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                    ),
                                   ),
+                                  const SizedBox(width: 8),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                     decoration: BoxDecoration(
@@ -209,78 +213,68 @@ class _TeacherClarificationsPageState extends State<TeacherClarificationsPage> {
   }
 
   Widget _buildFilterBar() {
-    return Container(
+    return Padding(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          Row(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth < 460
+              ? constraints.maxWidth
+              : (constraints.maxWidth - 12) / 2;
+          return Wrap(
+            spacing: 12,
+            runSpacing: 12,
             children: [
-              const Icon(Icons.filter_list, size: 18),
-              const SizedBox(width: 8),
-              const Text('Status:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: _statusFilters.map((status) {
-                      final isSelected = _selectedStatusFilter == status;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: ChoiceChip(
-                          label: Text(status, style: const TextStyle(fontSize: 11)),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            if (selected) {
-                              setState(() {
-                                _selectedStatusFilter = status;
-                                _applyFilters();
-                              });
-                            }
-                          },
-                        ),
-                      );
-                    }).toList(),
+              SizedBox(
+                width: width,
+                child: DropdownButtonFormField<String>(
+                  initialValue: _selectedStatusFilter,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Status',
+                    prefixIcon: Icon(Icons.filter_list),
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 11),
                   ),
+                  items: _statusFilters
+                      .map((value) => DropdownMenuItem(
+                            value: value,
+                            child: Text(value, overflow: TextOverflow.ellipsis),
+                          ))
+                      .toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _selectedStatusFilter = value);
+                    _applyFilters();
+                  },
+                ),
+              ),
+              SizedBox(
+                width: width,
+                child: DropdownButtonFormField<String>(
+                  initialValue: _selectedCategoryFilter,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Category',
+                    prefixIcon: Icon(Icons.category),
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                  ),
+                  items: _categoryFilters
+                      .map((value) => DropdownMenuItem(
+                            value: value,
+                            child: Text(value, overflow: TextOverflow.ellipsis),
+                          ))
+                      .toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _selectedCategoryFilter = value);
+                    _applyFilters();
+                  },
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Icon(Icons.category, size: 18),
-              const SizedBox(width: 8),
-              const Text('Category:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: _categoryFilters.map((cat) {
-                      final isSelected = _selectedCategoryFilter == cat;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: ChoiceChip(
-                          label: Text(cat, style: const TextStyle(fontSize: 11)),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            if (selected) {
-                              setState(() {
-                                _selectedCategoryFilter = cat;
-                                _applyFilters();
-                              });
-                            }
-                          },
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }

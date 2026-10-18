@@ -29,6 +29,7 @@ import 'features/admin/presentation/audit_trail_page.dart';
 import 'features/admin/presentation/admin_reports_page.dart';
 import 'features/admin/presentation/system_settings_page.dart';
 import 'shared/models/user_model.dart';
+import 'shared/widgets/brand_widgets.dart';
 
 class GrowthTrackApp extends StatelessWidget {
   final UserModel? initialUser;
@@ -75,15 +76,14 @@ class GrowthTrackApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           title: 'ECCD GrowthTrack',
           themeMode: currentThemeMode,
-          theme: ThemeData(
-            useMaterial3: true,
-            colorSchemeSeed: Colors.blue,
-            brightness: Brightness.light,
-          ),
-          darkTheme: ThemeData(
-            useMaterial3: true,
-            colorSchemeSeed: Colors.blue,
-            brightness: Brightness.dark,
+          theme: _buildTheme(Brightness.light),
+          darkTheme: _buildTheme(Brightness.dark),
+          // Keep every teacher/parent page above the Android system navigation
+          // area, including pages with bottom actions or scrolling forms.
+          builder: (context, child) => SafeArea(
+            top: false,
+            bottom: true,
+            child: child ?? const SizedBox.shrink(),
           ),
           initialRoute: initialUser == null ? '/login' : _getInitialRoute(initialUser!.role),
           onGenerateRoute: (settings) {
@@ -109,6 +109,83 @@ class GrowthTrackApp extends StatelessWidget {
           },
         );
       },
+    );
+  }
+
+  ThemeData _buildTheme(Brightness brightness) {
+    final isDark = brightness == Brightness.dark;
+    final scheme = ColorScheme.fromSeed(
+      seedColor: BrandColors.navy,
+      brightness: brightness,
+    ).copyWith(
+      primary: isDark ? BrandColors.sky : BrandColors.navy,
+      secondary: BrandColors.green,
+      tertiary: BrandColors.sunshine,
+      surface: isDark ? const Color(0xFF101C24) : BrandColors.canvas,
+    );
+
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: scheme,
+      scaffoldBackgroundColor: scheme.surface,
+      appBarTheme: AppBarTheme(
+        backgroundColor: scheme.surface,
+        foregroundColor: isDark ? Colors.white : BrandColors.navy,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: false,
+      ),
+      cardTheme: CardThemeData(
+        color: isDark ? const Color(0xFF172731) : Colors.white,
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        // Use the compact outlined field style consistently across every form.
+        // Labels stay above the border so they never cover entered values.
+        filled: false,
+        floatingLabelBehavior: FloatingLabelBehavior.always,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        labelStyle: const TextStyle(fontSize: 12),
+        floatingLabelStyle: TextStyle(
+          color: scheme.onSurfaceVariant,
+          fontSize: 12,
+          height: 1.0,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: scheme.outlineVariant),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: scheme.outlineVariant),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: scheme.primary, width: 2),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: scheme.error),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: scheme.error, width: 2),
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: BrandColors.green,
+          foregroundColor: Colors.white,
+          minimumSize: const Size(0, 52),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(foregroundColor: scheme.primary),
+      ),
     );
   }
 

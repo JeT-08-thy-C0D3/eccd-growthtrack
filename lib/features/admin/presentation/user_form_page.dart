@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../../../shared/models/user_model.dart';
 import '../domain/repositories/user_repository.dart';
@@ -19,7 +20,9 @@ class _UserFormPageState extends State<UserFormPage> {
   final _formKey = GlobalKey<FormState>();
   final UserRepository _repository = UserRepositoryImpl();
 
-  late TextEditingController _nameController;
+  late TextEditingController _firstNameController;
+  late TextEditingController _middleNameController;
+  late TextEditingController _lastNameController;
   late TextEditingController _emailController;
   late TextEditingController _passwordController;
   UserRole _selectedRole = UserRole.teacher;
@@ -29,7 +32,13 @@ class _UserFormPageState extends State<UserFormPage> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.user?.name);
+    final nameParts = (widget.user?.name ?? '').trim().split(RegExp(r'\s+'));
+    final firstName = nameParts.isEmpty || nameParts.first.isEmpty ? '' : nameParts.first;
+    final lastName = nameParts.length > 1 ? nameParts.last : '';
+    final middleName = nameParts.length > 2 ? nameParts.sublist(1, nameParts.length - 1).join(' ') : '';
+    _firstNameController = TextEditingController(text: firstName);
+    _middleNameController = TextEditingController(text: middleName);
+    _lastNameController = TextEditingController(text: lastName);
     _emailController = TextEditingController(text: widget.user?.email);
     _passwordController = TextEditingController(text: widget.user?.password);
     if (widget.user != null) {
@@ -39,6 +48,42 @@ class _UserFormPageState extends State<UserFormPage> {
 
   void _saveUser() async {
     if (_formKey.currentState!.validate()) {
+      final standardizedName = _standardizeName([
+        _firstNameController.text,
+        _middleNameController.text,
+        _lastNameController.text,
+      ].where((part) => part.trim().isNotEmpty).join(' '));
+      final normalizedEmail = _emailController.text.trim().toLowerCase();
+      final emailAlreadyUsed = await _repository.emailExists(
+        normalizedEmail,
+        excludingUid: widget.user?.uid,
+      );
+      if (emailAlreadyUsed) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('An account with this email address already exists.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      if (widget.user?.isProtectedAdmin == true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('The system ADMIN account is protected and cannot be changed.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      if (standardizedName.isEmpty) return;
+
       if (!_agreedToTerms) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -50,12 +95,21 @@ class _UserFormPageState extends State<UserFormPage> {
       }
 
       final isEdit = widget.user != null;
-      if (isEdit) {
-        final confirmed = await ConfirmationDialog.showEdit(
-          context: context,
-          itemName: _nameController.text,
-        );
-        if (!confirmed) return;
+      final confirmed = isEdit
+          ? await ConfirmationDialog.showEdit(
+              context: context,
+              itemName: standardizedName,
+            )
+          : await ConfirmationDialog.show(
+              context: context,
+              title: 'Confirm Create Account',
+              message: 'Create a new ${_selectedRole.name.toUpperCase()} account for $standardizedName?',
+              confirmLabel: 'Create Account',
+              confirmColor: Colors.green,
+              icon: Icons.person_add,
+            );
+      if (!confirmed) {
+        return;
       }
 
       setState(() => _isLoading = true);
@@ -66,8 +120,8 @@ class _UserFormPageState extends State<UserFormPage> {
         final user = UserModel(
           id: widget.user?.id,
           uid: widget.user?.uid ?? 'temp-${DateTime.now().millisecondsSinceEpoch}',
-          name: _nameController.text.trim(),
-          email: _emailController.text.trim(),
+          name: standardizedName,
+          email: normalizedEmail,
           password: _passwordController.text,
           role: _selectedRole,
           status: widget.user?.status ?? 'active',
@@ -106,16 +160,30 @@ class _UserFormPageState extends State<UserFormPage> {
 
   @override
   void dispose() {
-    _nameController.dispose();
+    _firstNameController.dispose();
+    _middleNameController.dispose();
+    _lastNameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  String _standardizeName(String value) {
+    return value
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .map((part) => part.length == 1
+            ? part.toUpperCase()
+            : '${part[0].toUpperCase()}${part.substring(1).toLowerCase()}')
+        .join(' ');
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: Text(widget.user == null ? 'Create Account' : 'Edit Account'),
       ),
       body: Center(
@@ -136,13 +204,35 @@ class _UserFormPageState extends State<UserFormPage> {
                   const Text('Assign proper roles and verify email addresses under RA 10173 & RA 12199 compliance.'),
                   const SizedBox(height: 32),
                   TextFormField(
-                    controller: _nameController,
+                    controller: _firstNameController,
                     decoration: const InputDecoration(
-                      labelText: 'Full Name',
+                      labelText: 'First Name',
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.person),
                     ),
-                    validator: (v) => Validators.validateRequired(v, 'Full Name'),
+                    textCapitalization: TextCapitalization.words,
+                    validator: (v) => Validators.validateRequired(v, 'First Name'),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _middleNameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Middle Name (Optional)',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.badge_outlined),
+                    ),
+                    textCapitalization: TextCapitalization.words,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _lastNameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Last Name',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.person_outline),
+                    ),
+                    textCapitalization: TextCapitalization.words,
+                    validator: (v) => Validators.validateRequired(v, 'Last Name'),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -165,6 +255,7 @@ class _UserFormPageState extends State<UserFormPage> {
                       prefixIcon: Icon(Icons.lock),
                     ),
                     obscureText: true,
+                    inputFormatters: [FilteringTextInputFormatter.deny(RegExp(r'\s'))],
                     validator: (v) => widget.user == null ? Validators.validatePassword(v, minLength: 6) : null,
                   ),
                   const SizedBox(height: 16),

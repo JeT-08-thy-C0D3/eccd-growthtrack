@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
 import '../../../core/database/database_helper.dart';
@@ -35,14 +36,22 @@ class ClarificationRepositoryImpl implements ClarificationRepository {
 
     int id = 0;
     if (kIsWeb) {
-      final docRef = await _firestore.collection('clarifications').add(newRequest.toMap());
+      final cloudData = newRequest.toMap()
+        ..['parent_uid'] = FirebaseAuth.instance.currentUser?.uid;
+      final docRef = await _firestore.collection('clarifications').add(cloudData);
       id = docRef.id.hashCode.abs();
     } else {
-      id = await _local.saveRecord('clarifications', newRequest.toMap());
+      // SQLite keeps teacher_id as NOT NULL. A pending parent request has no
+      // assigned teacher yet, so use the existing neutral sentinel value 0
+      // locally; the cloud record can still keep teacher_id null.
+      final localData = newRequest.toMap()..['teacher_id'] = newRequest.teacherId ?? 0;
+      id = await _local.saveRecord('clarifications', localData);
       
       if (await _connectivity.isOnline) {
         try {
-          await _remote.uploadRecord('clarifications', id.toString(), newRequest.toMap());
+          final cloudData = newRequest.toMap()
+            ..['parent_uid'] = FirebaseAuth.instance.currentUser?.uid;
+          await _remote.uploadRecord('clarifications', id.toString(), cloudData);
           await _local.markAsSynced('clarifications', id);
         } catch (e) {
           print("Cloud Sync Failed: $e");
@@ -62,9 +71,11 @@ class ClarificationRepositoryImpl implements ClarificationRepository {
   @override
   Future<List<ClarificationModel>> getRequestsByChild(String childId) async {
     if (kIsWeb) {
+      final parentUid = FirebaseAuth.instance.currentUser?.uid;
       final snapshot = await _firestore
           .collection('clarifications')
           .where('child_id', isEqualTo: childId)
+          .where('parent_uid', isEqualTo: parentUid)
           .get();
       return snapshot.docs.map((doc) => ClarificationModel.fromMap(doc.data())).toList();
     }

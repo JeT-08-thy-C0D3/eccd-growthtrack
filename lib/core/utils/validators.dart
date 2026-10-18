@@ -24,12 +24,24 @@ class Validators {
     if (value.length < minLength) {
       return 'Password must be at least $minLength characters';
     }
+    if (RegExp(r'\s').hasMatch(value)) {
+      return 'Password must not contain spaces';
+    }
     return null;
   }
 
   static String? validateRequired(String? value, [String fieldName = 'This field']) {
     if (value == null || value.trim().isEmpty) {
       return '$fieldName is required';
+    }
+    return null;
+  }
+
+  static String? validatePersonName(String? value, String fieldName) {
+    final name = value?.trim() ?? '';
+    if (name.isEmpty) return '$fieldName is required';
+    if (!RegExp(r'^[A-Za-z]+(?: [A-Za-z]+)*$').hasMatch(name)) {
+      return '$fieldName may contain letters and spaces only';
     }
     return null;
   }

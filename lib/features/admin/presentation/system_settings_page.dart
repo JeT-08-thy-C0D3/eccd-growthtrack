@@ -17,6 +17,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: const Text('System Settings'),
         scrolledUnderElevation: 0,
       ),

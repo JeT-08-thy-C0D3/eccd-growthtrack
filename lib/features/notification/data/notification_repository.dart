@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:intl/intl.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../core/network/connectivity_service.dart';
@@ -52,15 +52,22 @@ class NotificationRepositoryImpl implements NotificationRepository {
         if (childDocs.docs.isNotEmpty) {
           final childData = childDocs.docs.first.data();
           childName = "${childData['first_name'] ?? ''} ${childData['last_name'] ?? ''}".trim();
+          // Prefer a stored parent UID when it is available; older child
+          // records are linked through the registered parent's name.
+          recipientUid = childData['parent_uid'] as String? ?? '';
           final parentName = childData['parent_name'] as String? ?? '';
 
-          if (parentName.isNotEmpty) {
+          if (recipientUid.isEmpty && parentName.isNotEmpty) {
             final parentDocs = await _firestore
                 .collection('users')
                 .where('name', isEqualTo: parentName)
                 .get();
-            if (parentDocs.docs.isNotEmpty) {
-              recipientUid = parentDocs.docs.first.data()['uid'] as String? ?? '';
+            final linkedParents = parentDocs.docs.where(
+              (doc) => doc.data()['role'] == 'parent',
+            );
+            if (linkedParents.isNotEmpty) {
+              final parent = linkedParents.first;
+              recipientUid = parent.data()['uid'] as String? ?? parent.id;
             }
           }
         }
@@ -70,12 +77,27 @@ class NotificationRepositoryImpl implements NotificationRepository {
         if (childMatch.isNotEmpty) {
           final c = childMatch.first;
           childName = "${c.firstName} ${c.lastName}".trim();
-          final users = await _dbHelper.readAllUsers();
-          final parentMatch = users.where((u) => u.name.toLowerCase() == c.parentName.toLowerCase());
-          if (parentMatch.isNotEmpty) {
-            recipientUid = parentMatch.first.uid;
+          recipientUid = c.parentUid ?? '';
+          if (recipientUid.isEmpty) {
+            final users = await _dbHelper.readAllUsers();
+            final linkedParentName = c.parentName.trim().toLowerCase();
+            final parentMatch = users.where(
+              (u) =>
+                  u.role.name == 'parent' &&
+                  u.name.trim().toLowerCase() == linkedParentName,
+            );
+            if (parentMatch.isNotEmpty) {
+              recipientUid = parentMatch.first.uid;
+            }
           }
         }
+      }
+
+      // A notification must always belong to the parent linked to the child.
+      // Do not create an unaddressed record when that link cannot be resolved.
+      if (recipientUid.isEmpty) {
+        debugPrint('Notification skipped: no parent linked to child $childId.');
+        return;
       }
 
       final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());

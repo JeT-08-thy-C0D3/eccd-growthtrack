@@ -10,6 +10,8 @@ class ActivitySubmissionModel {
   final String updatedAt;
   final bool isSynced;
   final int? score;
+  final String? evidenceUrl;
+  final String? evidenceMediaType;
 
   ActivitySubmissionModel({
     this.id,
@@ -23,6 +25,8 @@ class ActivitySubmissionModel {
     required this.updatedAt,
     this.isSynced = false,
     this.score,
+    this.evidenceUrl,
+    this.evidenceMediaType,
   });
 
   Map<String, dynamic> toMap() {
@@ -38,6 +42,8 @@ class ActivitySubmissionModel {
       'updated_at': updatedAt,
       'is_synced': isSynced ? 1 : 0,
       'storage_placeholder': null,
+      'evidence_url': evidenceUrl,
+      'evidence_media_type': evidenceMediaType,
       'score': score,
     };
   }
@@ -55,6 +61,8 @@ class ActivitySubmissionModel {
       updatedAt: map['updated_at'] ?? DateTime.now().toIso8601String(),
       isSynced: (map['is_synced'] ?? 0) == 1,
       score: map['score'] as int?,
+      evidenceUrl: map['evidence_url'] as String?,
+      evidenceMediaType: map['evidence_media_type'] as String?,
     );
   }
 
@@ -70,6 +78,8 @@ class ActivitySubmissionModel {
     String? updatedAt,
     bool? isSynced,
     int? score,
+    String? evidenceUrl,
+    String? evidenceMediaType,
   }) {
     return ActivitySubmissionModel(
       id: id ?? this.id,
@@ -83,6 +93,8 @@ class ActivitySubmissionModel {
       updatedAt: updatedAt ?? this.updatedAt,
       isSynced: isSynced ?? this.isSynced,
       score: score ?? this.score,
+      evidenceUrl: evidenceUrl ?? this.evidenceUrl,
+      evidenceMediaType: evidenceMediaType ?? this.evidenceMediaType,
     );
   }
 }

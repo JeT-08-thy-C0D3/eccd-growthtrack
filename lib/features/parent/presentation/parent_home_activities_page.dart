@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../../core/database/database_helper.dart';
 import '../../../shared/models/child_model.dart';
+import '../../home_activities/data/activity_repository.dart';
+import '../../home_activities/domain/activity_model.dart';
 
 class ParentHomeActivitiesPage extends StatefulWidget {
   final ChildModel child;
@@ -11,7 +12,8 @@ class ParentHomeActivitiesPage extends StatefulWidget {
 }
 
 class _ParentHomeActivitiesPageState extends State<ParentHomeActivitiesPage> {
-  List<Map<String, dynamic>> _activities = [];
+  final ActivityRepository _repository = ActivityRepositoryImpl();
+  List<ActivityModel> _activities = [];
   bool _isLoading = true;
 
   @override
@@ -22,7 +24,7 @@ class _ParentHomeActivitiesPageState extends State<ParentHomeActivitiesPage> {
 
   Future<void> _loadActivities() async {
     setState(() => _isLoading = true);
-    final data = await DatabaseHelper.instance.getHomeActivitiesByChild(widget.child.id!);
+    final data = await _repository.getActivitiesForChild(widget.child.childId);
     setState(() {
       _activities = data;
       _isLoading = false;
@@ -30,7 +32,7 @@ class _ParentHomeActivitiesPageState extends State<ParentHomeActivitiesPage> {
   }
 
   Future<void> _markAsDone(int activityId) async {
-    await DatabaseHelper.instance.updateHomeActivityStatus(activityId, 'Completed');
+    await _repository.updateActivityStatus(activityId, 'Completed');
     _loadActivities();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -61,7 +63,7 @@ class _ParentHomeActivitiesPageState extends State<ParentHomeActivitiesPage> {
                   itemCount: _activities.length,
                   itemBuilder: (context, index) {
                     final activity = _activities[index];
-                    final isCompleted = activity['status'] == 'Completed';
+                    final isCompleted = activity.status == 'Completed';
 
                     return Card(
                       margin: const EdgeInsets.only(bottom: 16),
@@ -71,12 +73,16 @@ class _ParentHomeActivitiesPageState extends State<ParentHomeActivitiesPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(
-                                  activity['title'],
-                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                Expanded(
+                                  child: Text(
+                                  activity.activityTitle,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  ),
                                 ),
+                                const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
@@ -84,7 +90,7 @@ class _ParentHomeActivitiesPageState extends State<ParentHomeActivitiesPage> {
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
-                                    activity['status'],
+                                    activity.status,
                                     style: TextStyle(
                                       color: isCompleted ? Colors.green : Colors.orange,
                                       fontWeight: FontWeight.bold,
@@ -95,10 +101,10 @@ class _ParentHomeActivitiesPageState extends State<ParentHomeActivitiesPage> {
                               ],
                             ),
                             const SizedBox(height: 8),
-                            Text(activity['description']),
+                            Text(activity.instructions),
                             const SizedBox(height: 16),
                             Text(
-                              'Assigned on: ${activity['date_assigned']}',
+                              'Assigned on: ${activity.createdDate}\nDue: ${activity.dueDate}',
                               style: const TextStyle(fontSize: 12, color: Colors.grey),
                             ),
                             if (!isCompleted) ...[
@@ -106,7 +112,7 @@ class _ParentHomeActivitiesPageState extends State<ParentHomeActivitiesPage> {
                               SizedBox(
                                 width: double.infinity,
                                 child: ElevatedButton.icon(
-                                  onPressed: () => _markAsDone(activity['id']),
+                                  onPressed: activity.id == null ? null : () => _markAsDone(activity.id!),
                                   icon: const Icon(Icons.check),
                                   label: const Text('Mark as Done'),
                                   style: ElevatedButton.styleFrom(

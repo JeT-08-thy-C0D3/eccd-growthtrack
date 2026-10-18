@@ -76,7 +76,7 @@ class ChildRepositoryImpl implements ChildRepository {
     return await _fileUploadRepo.uploadFile(
       bucket: SupabaseConfig.childProfilePhotos,
       entityId: childId,
-      category: 'profile_photo',
+      category: SupabaseConfig.childProfileCategory,
       filePath: filePath,
       docCollection: 'children',
       urlFieldName: 'photo_url',

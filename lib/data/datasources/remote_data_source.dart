@@ -8,6 +8,13 @@ class RemoteDataSource {
     final uploadData = Map<String, dynamic>.from(data);
     uploadData.remove('is_synced');
     uploadData.remove('id'); // Remove local auto-increment ID if it's not the primary identifier
+    // Activities and submissions use the local integer ID as their Firestore
+    // document ID. Keep that value in the document so a later download can
+    // update the existing SQLite row instead of inserting a duplicate.
+    if (collection == 'activities' || collection == 'activity_submissions') {
+      final localId = int.tryParse(docId);
+      if (localId != null) uploadData['id'] = localId;
+    }
 
     await _firestore.collection(collection).doc(docId).set(uploadData, SetOptions(merge: true));
   }

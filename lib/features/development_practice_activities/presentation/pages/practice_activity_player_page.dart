@@ -26,6 +26,8 @@ class _PracticeActivityPlayerPageState extends State<PracticeActivityPlayerPage>
   int _stepIndex = 0;
   String? _selectedOption;
   bool _isSaving = false;
+  int _score = 0;
+  int _streak = 0;
 
   @override
   void initState() {
@@ -34,8 +36,17 @@ class _PracticeActivityPlayerPageState extends State<PracticeActivityPlayerPage>
   }
 
   Future<void> _next() async {
+    if (_selectedOption == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Choose one way to try this step first!')),
+      );
+      return;
+    }
+
     if (_stepIndex < _steps.length - 1) {
       setState(() {
+        _score += 10 + (_streak * 2);
+        _streak++;
         _stepIndex++;
         _selectedOption = null;
       });
@@ -43,19 +54,51 @@ class _PracticeActivityPlayerPageState extends State<PracticeActivityPlayerPage>
     }
 
     setState(() => _isSaving = true);
+    final finalScore = _score + 10 + (_streak * 2);
     await widget.controller.complete(
       activity: widget.activity,
       parentUid: widget.parentUid,
       childId: widget.childId,
     );
     if (!mounted) return;
+    await _showCompletionDialog(finalScore);
+    if (!mounted) return;
     Navigator.pop(context, true);
   }
 
-  void _retryStep() {
-    setState(() => _selectedOption = null);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Try again - there is no penalty or retry limit.')),
+  Future<void> _showCompletionDialog(int finalScore) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Column(
+          children: [
+            Text('🎉', style: TextStyle(fontSize: 48)),
+            SizedBox(height: 8),
+            Text('Great job, explorer!', textAlign: TextAlign.center),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('You finished this practice adventure.', textAlign: TextAlign.center),
+            const SizedBox(height: 16),
+            Text('⭐  ${_steps.length} stars    •    $finalScore points', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 10),
+            const Text('Every try helps your child grow!', textAlign: TextAlign.center),
+          ],
+        ),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Done'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -63,6 +106,8 @@ class _PracticeActivityPlayerPageState extends State<PracticeActivityPlayerPage>
     setState(() {
       _stepIndex = 0;
       _selectedOption = null;
+      _score = 0;
+      _streak = 0;
     });
   }
 
@@ -93,6 +138,16 @@ class _PracticeActivityPlayerPageState extends State<PracticeActivityPlayerPage>
                   Text('${_stepIndex + 1}/${_steps.length}', style: const TextStyle(fontWeight: FontWeight.bold)),
                 ],
               ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  _GameStat(icon: Icons.star_rounded, label: '${_stepIndex + (_selectedOption == null ? 0 : 1)} stars', color: Colors.amber.shade700),
+                  const SizedBox(width: 8),
+                  _GameStat(icon: Icons.bolt_rounded, label: '$_score pts', color: colors.primary),
+                  const SizedBox(width: 8),
+                  _GameStat(icon: Icons.local_fire_department_rounded, label: '$_streak streak', color: Colors.deepOrange),
+                ],
+              ),
               const SizedBox(height: 24),
               Text(
                 widget.activity.title,
@@ -118,32 +173,29 @@ class _PracticeActivityPlayerPageState extends State<PracticeActivityPlayerPage>
               const SizedBox(height: 24),
               Text('Choose a way to try it', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
-              ...step.options.map(
-                (option) => Padding(
+              ...step.options.asMap().entries.map(
+                (entry) => Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: ChoiceChip(
-                    label: Text(option),
-                    selected: _selectedOption == option,
-                    onSelected: (_) => setState(() => _selectedOption = option),
-                    showCheckmark: true,
-                    labelStyle: const TextStyle(fontSize: 16),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  child: _GameChoiceCard(
+                    index: entry.key,
+                    label: entry.value,
+                    selected: _selectedOption == entry.value,
+                    onTap: () {
+                      setState(() {
+                        _selectedOption = entry.value;
+                        if (_streak == 0) _streak = 1;
+                      });
+                    },
                   ),
                 ),
               ),
               const SizedBox(height: 12),
               Text(
-                'There is no right or wrong answer. Let the child explore, talk, move, and try again as many times as needed.',
+                'Every choice earns a star. Let the child explore, talk, move, and try again as many times as needed.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: colors.onSurfaceVariant, fontStyle: FontStyle.italic),
               ),
               const SizedBox(height: 24),
-              OutlinedButton.icon(
-                onPressed: _isSaving ? null : _retryStep,
-                icon: const Icon(Icons.replay),
-                label: const Text('Try this step again'),
-              ),
-              const SizedBox(height: 10),
               OutlinedButton.icon(
                 onPressed: _isSaving ? null : _startOver,
                 icon: const Icon(Icons.restart_alt),
@@ -155,6 +207,78 @@ class _PracticeActivityPlayerPageState extends State<PracticeActivityPlayerPage>
                 icon: Icon(isLastStep ? Icons.check : Icons.arrow_forward),
                 label: Text(_isSaving ? 'Saving…' : (isLastStep ? 'Finish and mark completed' : 'Next step')),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GameStat extends StatelessWidget {
+  const _GameStat({required this.icon, required this.label, required this.color});
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.11),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 4),
+            Flexible(child: Text(label, overflow: TextOverflow.ellipsis, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12))),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GameChoiceCard extends StatelessWidget {
+  const _GameChoiceCard({required this.index, required this.label, required this.selected, required this.onTap});
+
+  final int index;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: selected ? colors.secondaryContainer : colors.surface,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: selected ? colors.primary : colors.outlineVariant, width: selected ? 2 : 1),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: selected ? colors.primary : colors.surfaceContainerHighest,
+                foregroundColor: selected ? colors.onPrimary : colors.onSurfaceVariant,
+                child: selected ? const Icon(Icons.check, size: 18) : Text('${index + 1}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600))),
+              Icon(selected ? Icons.emoji_events : Icons.touch_app_outlined, color: selected ? Colors.amber.shade700 : colors.onSurfaceVariant),
             ],
           ),
         ),

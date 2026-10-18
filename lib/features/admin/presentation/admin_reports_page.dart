@@ -114,43 +114,26 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return DefaultTabController(
-      length: 5,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
+          automaticallyImplyLeading: false,
           title: const Text('Municipal Reports & Analytics'),
           bottom: const TabBar(
             isScrollable: true,
             tabs: [
-              Tab(text: 'Overview', icon: Icon(Icons.dashboard_customize)),
               Tab(text: 'Progress', icon: Icon(Icons.trending_up)),
               Tab(text: 'Attendance', icon: Icon(Icons.calendar_month)),
               Tab(text: 'Evaluations', icon: Icon(Icons.assignment)),
               Tab(text: 'Referrals', icon: Icon(Icons.assignment_late)),
             ],
           ),
-          actions: [
-            ElevatedButton.icon(
-              onPressed: () => _exportReport('Complete Statistical'),
-              icon: const Icon(Icons.download),
-              label: const Text('Export Data'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: colorScheme.primary,
-                foregroundColor: colorScheme.onPrimary,
-              ),
-            ),
-            const SizedBox(width: 8),
-            IconButton(onPressed: _loadData, icon: const Icon(Icons.refresh)),
-            const SizedBox(width: 12),
-          ],
         ),
         body: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : TabBarView(
                 children: [
-                  _buildOverviewTab(),
                   _buildProgressTab(),
                   _buildAttendanceTab(),
                   _buildEvaluationTab(),
@@ -178,8 +161,10 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
           const SizedBox(height: 16),
           _buildStatsCards(),
           const SizedBox(height: 40),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            runSpacing: 8,
             children: [
               Text(
                 'Recent Progress Summary (Top 10)',
@@ -211,6 +196,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       currentPage: _progressPage,
       totalPages: totalPages,
       totalItems: totalItems,
+      alwaysShowPagination: true,
       onPageChanged: (newPage) => setState(() => _progressPage = newPage),
     );
   }
@@ -270,6 +256,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     required int currentPage,
     required int totalPages,
     required int totalItems,
+    bool alwaysShowPagination = false,
     required ValueChanged<int> onPageChanged,
   }) {
     return Padding(
@@ -278,14 +265,23 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-              OutlinedButton.icon(
-                onPressed: () => _exportReport(exportType),
-                icon: const Icon(Icons.download_rounded),
-                label: const Text('Export CSV'),
+              Expanded(
+                child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
               ),
+              const SizedBox(width: 12),
+              if (MediaQuery.sizeOf(context).width < 520)
+                IconButton(
+                  tooltip: 'Export CSV',
+                  onPressed: () => _exportReport(exportType),
+                  icon: const Icon(Icons.download_rounded),
+                )
+              else
+                OutlinedButton.icon(
+                  onPressed: () => _exportReport(exportType),
+                  icon: const Icon(Icons.download_rounded),
+                  label: const Text('Export CSV'),
+                ),
             ],
           ),
           const SizedBox(height: 24),
@@ -295,7 +291,13 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
               child: Column(
                 children: [
                   Expanded(child: content),
-                  _buildPaginationBar(currentPage, totalPages, totalItems, onPageChanged),
+                  _buildPaginationBar(
+                    currentPage: currentPage,
+                    totalPages: totalPages,
+                    totalItems: totalItems,
+                    onPageChanged: onPageChanged,
+                    alwaysShow: alwaysShowPagination,
+                  ),
                 ],
               ),
             ),
@@ -315,62 +317,49 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       ),
       child: Padding(
         padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: SearchBar(
-                    controller: _searchController,
-                    hintText: 'Search report data by Child Name, ID, or Domain...',
-                    leading: const Icon(Icons.search),
-                    onChanged: (val) {
-                      _searchQuery = val;
-                      _applyFilters();
-                    },
-                  ),
-                ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final search = SearchBar(
+              controller: _searchController,
+              hintText: 'Search report data by child name, ID, or domain...',
+              leading: const Icon(Icons.search),
+              onChanged: (val) {
+                _searchQuery = val;
+                _applyFilters();
+              },
+            );
+            final filter = DropdownButtonFormField<ChildModel?>(
+              initialValue: _selectedFilterChild,
+              decoration: const InputDecoration(
+                labelText: 'Filter child',
+                prefixIcon: Icon(Icons.filter_alt_outlined),
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: [
+                const DropdownMenuItem(value: null, child: Text('All children')),
+                ..._allChildren.map((c) => DropdownMenuItem(value: c, child: Text("${c.firstName} ${c.lastName} (${c.childId})"))),
               ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                const Icon(Icons.filter_alt_outlined, color: Colors.blue),
-                const SizedBox(width: 12),
-                const Text('Filter Child:', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(width: 24),
-                Expanded(
-                  child: DropdownButtonFormField<ChildModel?>(
-                    initialValue: _selectedFilterChild,
-                    decoration: const InputDecoration(
-                      labelText: 'Filter by Specific Child',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    items: [
-                      const DropdownMenuItem(value: null, child: Text('Show All Municipal Records')),
-                      ..._allChildren.map((c) => DropdownMenuItem(value: c, child: Text("${c.firstName} ${c.lastName} (${c.childId})"))),
-                    ],
-                    onChanged: (val) {
-                      setState(() => _selectedFilterChild = val);
-                      _applyFilters();
-                    },
-                  ),
-                ),
-                const SizedBox(width: 16),
-                OutlinedButton.icon(
-                  onPressed: () {
-                    _searchController.clear();
-                    _searchQuery = '';
-                    setState(() => _selectedFilterChild = null);
-                    _applyFilters();
-                  },
-                  icon: const Icon(Icons.clear_all),
-                  label: const Text('Reset Filters'),
-                ),
-              ],
-            ),
-          ],
+              onChanged: (val) {
+                setState(() => _selectedFilterChild = val);
+                _applyFilters();
+              },
+            );
+            final reset = IconButton(
+              tooltip: 'Reset filters',
+              onPressed: () {
+                _searchController.clear();
+                _searchQuery = '';
+                setState(() => _selectedFilterChild = null);
+                _applyFilters();
+              },
+              icon: const Icon(Icons.clear_all),
+            );
+            if (constraints.maxWidth < 760) {
+              return Column(children: [search, const SizedBox(height: 10), Row(children: [Expanded(child: filter), reset])]);
+            }
+            return Row(children: [Expanded(child: search), const SizedBox(width: 16), SizedBox(width: 280, child: filter), reset]);
+          },
         ),
       ),
     );
@@ -428,15 +417,16 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     );
   }
 
-  Widget _buildPaginationBar(
-    int currentPage,
-    int totalPages,
-    int totalItems,
-    ValueChanged<int> onPageChanged,
-  ) {
-    if (totalItems == 0) return const SizedBox.shrink();
+  Widget _buildPaginationBar({
+    required int currentPage,
+    required int totalPages,
+    required int totalItems,
+    required ValueChanged<int> onPageChanged,
+    bool alwaysShow = false,
+  }) {
+    if (totalItems == 0 && !alwaysShow) return const SizedBox.shrink();
 
-    final startItem = (currentPage * _itemsPerPage) + 1;
+    final startItem = totalItems == 0 ? 0 : (currentPage * _itemsPerPage) + 1;
     final endItem = ((currentPage + 1) * _itemsPerPage) > totalItems
         ? totalItems
         : (currentPage + 1) * _itemsPerPage;
@@ -445,8 +435,10 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        runSpacing: 4,
         children: [
           Text(
             'Showing $startItem - $endItem of $totalItems report items',

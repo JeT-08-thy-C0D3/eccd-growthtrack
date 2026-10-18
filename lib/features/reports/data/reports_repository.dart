@@ -146,7 +146,7 @@ class ReportsRepositoryImpl implements ReportsRepository {
     return await _fileUploadRepo.uploadBytes(
       bucket: SupabaseConfig.pdfReports,
       entityId: reportId,
-      category: 'pdf_report',
+      category: SupabaseConfig.pdfReportsCategory,
       bytes: pdfBytes,
       fileName: fileName,
       contentType: 'application/pdf',

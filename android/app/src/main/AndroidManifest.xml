@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="eccd_growthtrack"
+        android:label="ECCD GrowTrack"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

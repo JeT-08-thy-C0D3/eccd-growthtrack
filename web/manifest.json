@@ -1,11 +1,11 @@
 {
-    "name": "eccd_growthtrack",
-    "short_name": "eccd_growthtrack",
+    "name": "ECCD GrowTrack",
+    "short_name": "ECCD GrowTrack",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Child Development Monitoring and Parent Engagement System",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

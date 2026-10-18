@@ -16,7 +16,11 @@ class StorageDataSource {
     return _storageService.uploadBytes(bucket: bucket, path: path, bytes: bytes, contentType: contentType);
   }
 
-  String getPublicUrl(String bucket, String path) {
-    return _storageService.getPublicUrl(bucket: bucket, path: path);
+  Future<String> createSignedUrl(String bucket, String path, {int expiresIn = 3600}) {
+    return _storageService.createSignedUrl(
+      bucket: bucket,
+      path: path,
+      expiresIn: expiresIn,
+    );
   }
 }

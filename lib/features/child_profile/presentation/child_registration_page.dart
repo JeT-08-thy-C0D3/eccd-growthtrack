@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:math';
 import '../../../core/database/database_helper.dart';
 import '../data/child_repository.dart';
@@ -32,12 +33,14 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
   late TextEditingController _teacherNameController;
 
   String _selectedGender = 'Male';
+  String? _selectedAffix;
   UserModel? _selectedParent;
+  UserModel? _currentTeacher;
   List<UserModel> _parents = [];
   String? _parentLoadError;
   bool _isLoadingParents = true;
   bool _isEditMode = false;
-  bool _agreedToPrivacyConsent = true;
+  bool _agreedToPrivacyConsent = false;
 
   @override
   void initState() {
@@ -53,6 +56,7 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
     _lastNameController = TextEditingController(
       text: _isEditMode ? widget.child!.lastName : '',
     );
+    _selectedAffix = _isEditMode ? widget.child!.affix : null;
     _birthDateController = TextEditingController(
       text: _isEditMode ? widget.child!.birthDate : '',
     );
@@ -71,11 +75,8 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
 
     _loadParents();
 
-    if (_isEditMode) {
-      _selectedGender = widget.child!.gender;
-    } else {
-      _loadCurrentTeacher();
-    }
+    if (_isEditMode) _selectedGender = widget.child!.gender;
+    _loadCurrentTeacher();
   }
 
   Future<void> _loadParents() async {
@@ -133,6 +134,7 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
       if (!mounted) return;
       setState(() {
         _teacherNameController.text = user.name;
+        _currentTeacher = user;
       });
     }
   }
@@ -186,25 +188,32 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
 
       final childName = "${_firstNameController.text} ${_lastNameController.text}";
 
-      if (_isEditMode) {
-        final confirmed = await ConfirmationDialog.showEdit(
-          context: context,
-          itemName: childName,
-        );
-        if (!confirmed) return;
-      }
+      final confirmed = await ConfirmationDialog.show(
+        context: context,
+        title: _isEditMode ? 'Confirm Child–Parent Update' : 'Confirm Child–Parent Link',
+        message: _isEditMode
+            ? 'Save the updated child profile and parent link for $childName?'
+            : 'Link $childName to parent ${_selectedParent!.name}?',
+        confirmLabel: _isEditMode ? 'Save Update' : 'Link Child',
+        confirmColor: Colors.green,
+        icon: Icons.link,
+      );
+      if (!confirmed) return;
 
       final child = ChildModel(
         id: widget.child?.id,
         childId: _childIdController.text,
         firstName: _firstNameController.text.trim(),
         lastName: _lastNameController.text.trim(),
+        affix: _selectedAffix,
         birthDate: _birthDateController.text,
         age: int.tryParse(_ageController.text) ?? 0,
         gender: _selectedGender,
         address: _addressController.text.trim(),
         parentName: _selectedParent!.name,
         teacherName: _teacherNameController.text.trim(),
+        parentUid: _selectedParent!.uid,
+        teacherUid: _currentTeacher?.uid ?? widget.child?.teacherUid,
         updatedAt: DateTime.now().toIso8601String(),
       );
 
@@ -264,62 +273,84 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
                 ),
               ),
               const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final fields = [
+                    TextFormField(
                       controller: _firstNameController,
-                      decoration: const InputDecoration(
-                        labelText: 'First Name',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (v) => Validators.validateRequired(v, 'First name'),
+                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z ]'))],
+                      decoration: const InputDecoration(labelText: 'First Name', border: OutlineInputBorder()),
+                      validator: (v) => Validators.validatePersonName(v, 'First name'),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: TextFormField(
+                    TextFormField(
                       controller: _lastNameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Last Name',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (v) => Validators.validateRequired(v, 'Last name'),
+                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z ]'))],
+                      decoration: const InputDecoration(labelText: 'Last Name', border: OutlineInputBorder()),
+                      validator: (v) => Validators.validatePersonName(v, 'Last name'),
                     ),
-                  ),
-                ],
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedAffix,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Affix (Optional)', border: OutlineInputBorder()),
+                      items: const [
+                        DropdownMenuItem(value: 'Jr.', child: Text('Jr.')),
+                        DropdownMenuItem(value: 'Sr.', child: Text('Sr.')),
+                        DropdownMenuItem(value: 'II', child: Text('II')),
+                        DropdownMenuItem(value: 'III', child: Text('III')),
+                        DropdownMenuItem(value: 'IV', child: Text('IV')),
+                      ],
+                      onChanged: (value) => setState(() => _selectedAffix = value),
+                    ),
+                  ];
+                  if (constraints.maxWidth < 620) {
+                    return Column(
+                      children: [
+                        fields[0], const SizedBox(height: 16), fields[1], const SizedBox(height: 16), fields[2],
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      Expanded(child: fields[0]),
+                      const SizedBox(width: 16),
+                      Expanded(child: fields[1]),
+                      const SizedBox(width: 16),
+                      SizedBox(width: 150, child: fields[2]),
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: TextFormField(
-                      controller: _birthDateController,
-                      readOnly: true,
-                      onTap: _selectDate,
-                      decoration: const InputDecoration(
-                        labelText: 'Birth Date',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.calendar_today),
-                      ),
-                      validator: (v) => Validators.validateRequired(v, 'Birth date'),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final birthDate = TextFormField(
+                    controller: _birthDateController,
+                    readOnly: true,
+                    onTap: _selectDate,
+                    decoration: const InputDecoration(
+                      labelText: 'Birth Date',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.calendar_today),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    flex: 1,
-                    child: TextFormField(
-                      controller: _ageController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Age',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (v) => Validators.validateAge(v, min: 0, max: 12),
-                    ),
-                  ),
-                ],
+                    validator: (v) => Validators.validateRequired(v, 'Birth date'),
+                  );
+                  final age = TextFormField(
+                    controller: _ageController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Age', border: OutlineInputBorder()),
+                    validator: (v) => Validators.validateAge(v, min: 0, max: 12),
+                  );
+                  if (constraints.maxWidth < 420) {
+                    return Column(children: [birthDate, const SizedBox(height: 16), age]);
+                  }
+                  return Row(
+                    children: [
+                      Expanded(flex: 2, child: birthDate),
+                      const SizedBox(width: 16),
+                      Expanded(child: age),
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
@@ -391,12 +422,15 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: _teacherNameController,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z ]')),
+                ],
                 decoration: const InputDecoration(
                   labelText: 'Teacher/ECCD Worker Name',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.school),
                 ),
-                validator: (v) => Validators.validateRequired(v, 'Teacher name'),
+                validator: (v) => Validators.validatePersonName(v, 'Teacher name'),
               ),
               const SizedBox(height: 16),
               Row(

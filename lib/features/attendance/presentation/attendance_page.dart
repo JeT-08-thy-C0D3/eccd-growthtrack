@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../shared/models/child_model.dart';
+import '../../auth/data/auth_repository_impl.dart';
 import '../data/attendance_repository.dart';
 import '../domain/attendance_model.dart';
 import 'attendance_history_page.dart';
@@ -26,7 +27,10 @@ class _AttendancePageState extends State<AttendancePage> {
   }
 
   Future<void> _loadChildren() async {
-    final data = await DatabaseHelper.instance.getAllChildren();
+    final teacher = await AuthRepositoryImpl().getCurrentUser();
+    final data = teacher == null
+        ? <ChildModel>[]
+        : await DatabaseHelper.instance.readChildrenByTeacher(teacher.uid);
     setState(() {
       _children = data;
       _isLoading = false;
@@ -123,34 +127,34 @@ class _AttendancePageState extends State<AttendancePage> {
                     onChanged: (val) => setState(() => _selectedChild = val),
                   ),
                   const SizedBox(height: 32),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () => _markAttendance('Present'),
-                          icon: const Icon(Icons.check_circle),
-                          label: const Text('Mark Present'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () => _markAttendance('Absent'),
-                          icon: const Icon(Icons.cancel),
-                          label: const Text('Mark Absent'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
-                        ),
-                      ),
-                    ],
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final present = ElevatedButton.icon(
+                        onPressed: () => _markAttendance('Present'),
+                        icon: const Icon(Icons.check_circle),
+                        label: const Text('Mark Present'),
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                      );
+                      final absent = ElevatedButton.icon(
+                        onPressed: () => _markAttendance('Absent'),
+                        icon: const Icon(Icons.cancel),
+                        label: const Text('Mark Absent'),
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                      );
+                      if (constraints.maxWidth < 360) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [present, const SizedBox(height: 12), absent],
+                        );
+                      }
+                      return Row(
+                        children: [
+                          Expanded(child: present),
+                          const SizedBox(width: 16),
+                          Expanded(child: absent),
+                        ],
+                      );
+                    },
                   ),
                   const SizedBox(height: 48),
                   const Text(

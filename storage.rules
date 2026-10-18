@@ -1,0 +1,287 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // ============================================================================
+    // UTILITY FUNCTIONS
+    // ============================================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+             get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    function isTeacher() {
+      return isAuthenticated() && 
+             get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'teacher';
+    }
+    
+    function isParent() {
+      return isAuthenticated() && 
+             get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'parent';
+    }
+    
+    function getUserCenterId() {
+      return get(/databases/(default)/documents/users/$(request.auth.uid)).data.centerId;
+    }
+    
+    function userOwnsFile() {
+      return request.auth.uid == resource.metadata.uploadedBy;
+    }
+    
+    function isValidImageSize() {
+      return request.resource.size <= 5 * 1024 * 1024; // 5 MB max
+    }
+    
+    function isValidDocumentSize() {
+      return request.resource.size <= 10 * 1024 * 1024; // 10 MB max
+    }
+    
+    function isImageFile(filename) {
+      return filename.matches('.*\\.(jpg|jpeg|png|gif|webp)$');
+    }
+    
+    function isPdfFile(filename) {
+      return filename.matches('.*\\.pdf$');
+    }
+    
+    function isAllowedContentType(contentType) {
+      return contentType in [
+        'image/jpeg',
+        'image/png',
+        'image/gif',
+        'image/webp',
+        'application/pdf'
+      ];
+    }
+    
+    // ============================================================================
+    // CHILD PHOTOS (Private, role-based access)
+    // ============================================================================
+    
+    match /child-photos/{childId}/{allPaths=**} {
+      // Read: Parents (linked child), teachers (assigned), admins
+      allow read: if isAuthenticated() && (
+        (isParent()) ||
+        (isTeacher() && get(/databases/(default)/documents/children/$(childId)).data.centerId == getUserCenterId()) ||
+        (isAdmin())
+      );
+      
+      // Create: Teachers only (uploading child photos during evaluation)
+      allow create: if isTeacher() && 
+                       isValidImageSize() &&
+                       isImageFile(request.resource.name) &&
+                       isAllowedContentType(request.resource.contentType);
+      
+      // Update: Never (delete and re-upload)
+      allow update: if false;
+      
+      // Delete: Teachers (own center), admins only
+      allow delete: if isTeacher() || isAdmin();
+    }
+    
+    // ============================================================================
+    // REFERRAL ATTACHMENTS (Confidential, private)
+    // ============================================================================
+    
+    match /referral-attachments/{referralId}/{allPaths=**} {
+      // Read: Only the referring teacher + admins
+      allow read: if isAuthenticated() && (
+        (isTeacher() && get(/databases/(default)/documents/referrals/$(referralId)).data.referrerId == request.auth.uid) ||
+        (isAdmin())
+      );
+      
+      // Create: Referring teacher only
+      allow create: if isTeacher() && 
+                       isValidDocumentSize() &&
+                       (isPdfFile(request.resource.name) || isImageFile(request.resource.name)) &&
+                       isAllowedContentType(request.resource.contentType);
+      
+      // Update: Never
+      allow update: if false;
+      
+      // Delete: Referring teacher, admin
+      allow delete: if isTeacher() || isAdmin();
+    }
+    
+    // ============================================================================
+    // EVALUATION EVIDENCE (Private, linked to session)
+    // ============================================================================
+    
+    match /evaluation-evidence/{evaluationSessionId}/{allPaths=**} {
+      // Read: Teacher (creator), admin, parent (child's parent)
+      allow read: if isAuthenticated() && (
+        (isTeacher() && get(/databases/(default)/documents/evaluation_sessions/$(evaluationSessionId)).data.evaluatorId == request.auth.uid) ||
+        (isParent()) ||
+        (isAdmin())
+      );
+      
+      // Create: Teachers during evaluation
+      allow create: if isTeacher() && 
+                       isValidImageSize() &&
+                       isImageFile(request.resource.name) &&
+                       isAllowedContentType(request.resource.contentType);
+      
+      // Update: Never
+      allow update: if false;
+      
+      // Delete: Creator, admin
+      allow delete: if isTeacher() || isAdmin();
+    }
+    
+    // ============================================================================
+    // ACTIVITY RESULTS (Automated activity evidence)
+    // ============================================================================
+    
+    match /activity-results/{activityAttemptId}/{allPaths=**} {
+      // Read: Teacher (child's teacher), admin, parent
+      allow read: if isAuthenticated() && (
+        (isTeacher()) ||
+        (isParent()) ||
+        (isAdmin())
+      );
+      
+      // Create: Automated by app
+      allow create: if isAuthenticated() &&
+                       isValidImageSize() &&
+                       (isImageFile(request.resource.name) || isPdfFile(request.resource.name)) &&
+                       isAllowedContentType(request.resource.contentType);
+      
+      // Update: Never
+      allow update: if false;
+      
+      // Delete: Never (audit trail)
+      allow delete: if false;
+    }
+    
+    // ============================================================================
+    // PRIVATE PROFILE DOCUMENTS (Teacher files, etc.)
+    // ============================================================================
+    
+    match /private-documents/{userId}/{allPaths=**} {
+      // Read: Own documents only
+      allow read: if request.auth.uid == userId;
+      
+      // Create: Own documents only
+      allow create: if request.auth.uid == userId &&
+                       isValidDocumentSize() &&
+                       isAllowedContentType(request.resource.contentType);
+      
+      // Update: Never
+      allow update: if false;
+      
+      // Delete: Own documents
+      allow delete: if request.auth.uid == userId;
+    }
+    
+    // ============================================================================
+    // REPORTS & EXPORTS (Temporarily public with signed URLs)
+    // ============================================================================
+    
+    match /reports/{reportId}/{allPaths=**} {
+      // Read: Admin, report creator
+      allow read: if isAuthenticated() && (
+        (isAdmin()) ||
+        (resource.metadata.createdBy == request.auth.uid)
+      );
+      
+      // Create: Admins, teachers (own reports)
+      allow create: if (isAdmin() || isTeacher()) &&
+                       isValidDocumentSize() &&
+                       (isPdfFile(request.resource.name) || isImageFile(request.resource.name)) &&
+                       isAllowedContentType(request.resource.contentType);
+      
+      // Update: Never
+      allow update: if false;
+      
+      // Delete: Admin only after retention period (30 days default)
+      allow delete: if isAdmin();
+    }
+    
+    // ============================================================================
+    // DATA EXPORT FILES (Temporary, auto-delete)
+    // ============================================================================
+    
+    match /data-exports/{exportId}/{allPaths=**} {
+      // Read: Owner + admins (with signed URL)
+      allow read: if isAuthenticated() && (
+        (resource.metadata.requesterId == request.auth.uid) ||
+        (isAdmin())
+      );
+      
+      // Create: Backend only (Cloud Function)
+      allow create: if false;
+      
+      // Update: Never
+      allow update: if false;
+      
+      // Delete: Automatic after 7 days (TTL via Cloud Task)
+      allow delete: if isAdmin();
+    }
+    
+    // ============================================================================
+    // AUDIT TRAIL (Immutable)
+    // ============================================================================
+    
+    match /audit-logs/{logId}/{allPaths=**} {
+      // Read: Admin only
+      allow read: if isAdmin();
+      
+      // Create: Backend only (Cloud Function)
+      allow create: if false;
+      
+      // Update: Never
+      allow update: if false;
+      
+      // Delete: Never
+      allow delete: if false;
+    }
+    
+    // ============================================================================
+    // TEMPORARY UPLOADS (For processing)
+    // ============================================================================
+    
+    match /temp-uploads/{userId}/{allPaths=**} {
+      // Read: Owner only
+      allow read: if request.auth.uid == userId;
+      
+      // Create: Owner only
+      allow create: if request.auth.uid == userId &&
+                       isValidImageSize() &&
+                       isAllowedContentType(request.resource.contentType);
+      
+      // Update: Never
+      allow update: if false;
+      
+      // Delete: Owner (cleanup after processing)
+      allow delete: if request.auth.uid == userId;
+    }
+    
+    // ============================================================================
+    // CATCH-ALL (DENY BY DEFAULT)
+    // ============================================================================
+    
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+// ============================================================================
+// DEPLOYMENT NOTES
+// ============================================================================
+// 
+// 1. Deploy this file as: storage.rules
+// 2. Enable versioning for important buckets
+// 3. Configure lifecycle rules:
+//    - data-exports/: Delete after 7 days
+//    - temp-uploads/: Delete after 24 hours
+//    - audit-logs/: Keep indefinitely
+// 4. Enable audit logging for sensitive paths
+// 5. Monitor rule violations via Firebase Console
+// 6. Use signed URLs for temporary file access

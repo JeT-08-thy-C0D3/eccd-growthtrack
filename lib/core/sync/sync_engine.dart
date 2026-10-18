@@ -80,6 +80,10 @@ class SyncEngine {
         final uploadData = Map<String, dynamic>.from(row);
         uploadData.remove('is_synced');
         uploadData.remove('id');
+        if (tableName == 'activities' || tableName == 'activity_submissions') {
+          final localId = int.tryParse(docId);
+          if (localId != null) uploadData['id'] = localId;
+        }
 
         await _firestore.collection(tableName).doc(docId).set(uploadData, SetOptions(merge: true));
         await db.update(tableName, {'is_synced': 1}, where: '$idField = ?', whereArgs: [row[idField]]);
@@ -94,19 +98,20 @@ class SyncEngine {
       for (var doc in querySnapshot.docs) {
         final remoteData = doc.data();
         final String docId = doc.id;
+        final localKey = idField == 'id' ? (int.tryParse(docId) ?? docId) : docId;
 
-        final localData = await db.query(tableName, where: '$idField = ?', whereArgs: [docId]);
+        final localData = await db.query(tableName, where: '$idField = ?', whereArgs: [localKey]);
 
         if (localData.isEmpty) {
           // New record from cloud
-          await db.insert(tableName, {...remoteData, idField: docId, 'is_synced': 1});
+          await db.insert(tableName, {...remoteData, idField: localKey, 'is_synced': 1});
         } else {
           // Conflict Resolution: Latest 'updated_at' wins (LWW)
           final remoteUpdatedAt = DateTime.tryParse(remoteData['updated_at'] as String? ?? '') ?? DateTime(1970);
           final localUpdatedAt = DateTime.tryParse(localData.first['updated_at'] as String? ?? localData.first['created_at'] as String? ?? '') ?? DateTime(1970);
 
           if (remoteUpdatedAt.isAfter(localUpdatedAt)) {
-            await db.update(tableName, {...remoteData, 'is_synced': 1}, where: '$idField = ?', whereArgs: [docId]);
+            await db.update(tableName, {...remoteData, 'is_synced': 1}, where: '$idField = ?', whereArgs: [localKey]);
           }
         }
       }

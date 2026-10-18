@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 6,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -37,6 +37,20 @@ class DatabaseHelper {
       await db.execute(
         'ALTER TABLE users ADD COLUMN terms_accepted_at TEXT',
       );
+    }
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE activity_submissions ADD COLUMN evidence_url TEXT');
+      await db.execute('ALTER TABLE activity_submissions ADD COLUMN evidence_media_type TEXT');
+    }
+    if (oldVersion < 4) {
+      await db.execute('ALTER TABLE children ADD COLUMN parent_uid TEXT');
+      await db.execute('ALTER TABLE children ADD COLUMN teacher_uid TEXT');
+    }
+    if (oldVersion < 5) {
+      await db.execute('ALTER TABLE children ADD COLUMN affix TEXT');
+    }
+    if (oldVersion < 6) {
+      await db.execute("ALTER TABLE activities ADD COLUMN developmental_domain TEXT NOT NULL DEFAULT 'General Development'");
     }
   }
 
@@ -70,12 +84,15 @@ class DatabaseHelper {
         child_id $textUniqueType,
         first_name $textType,
         last_name $textType,
+        affix $textNullable,
         birth_date $textType,
         age $integerType,
         gender $textType,
         address $textType,
         parent_name $textType,
         teacher_name $textType,
+        parent_uid $textNullable,
+        teacher_uid $textNullable,
         updated_at $textType,
         is_synced $integerType
       )
@@ -165,6 +182,7 @@ class DatabaseHelper {
         id $idType,
         child_id $textType,
         activity_title $textType,
+        developmental_domain $textType,
         instructions $textType,
         due_date $textType,
         assigned_by $textType,
@@ -190,6 +208,8 @@ class DatabaseHelper {
         updated_at $textType,
         is_synced $integerType,
         storage_placeholder $textNullable,
+        evidence_url $textNullable,
+        evidence_media_type $textNullable,
         score INTEGER,
         FOREIGN KEY (activity_id) REFERENCES activities (id) ON DELETE CASCADE,
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
@@ -354,7 +374,11 @@ class DatabaseHelper {
     final userMaps = await db.query('users', where: 'uid = ?', whereArgs: [parentUid]);
     if (userMaps.isEmpty) return [];
     final userName = userMaps.first['name'] as String;
-    final result = await db.query('children', where: 'parent_name = ?', whereArgs: [userName]);
+    final result = await db.query(
+      'children',
+      where: 'parent_uid = ? OR (parent_uid IS NULL AND parent_name = ?)',
+      whereArgs: [parentUid, userName],
+    );
     return result.map((json) => ChildModel.fromMap(json)).toList();
   }
 
@@ -364,7 +388,11 @@ class DatabaseHelper {
     final userMaps = await db.query('users', where: 'uid = ?', whereArgs: [teacherUid]);
     if (userMaps.isEmpty) return [];
     final teacherName = userMaps.first['name'] as String;
-    final result = await db.query('children', where: 'teacher_name = ?', whereArgs: [teacherName]);
+    final result = await db.query(
+      'children',
+      where: 'teacher_uid = ? OR (teacher_uid IS NULL AND teacher_name = ?)',
+      whereArgs: [teacherUid, teacherName],
+    );
     return result.map((json) => ChildModel.fromMap(json)).toList();
   }
 
@@ -477,6 +505,7 @@ class DatabaseHelper {
     return await db.update('activities', {
       'status': status,
       'updated_at': DateTime.now().toIso8601String(),
+      'is_synced': 0,
     }, where: 'id = ?', whereArgs: [id]);
   }
 
@@ -491,6 +520,25 @@ class DatabaseHelper {
     final db = await instance.database;
     final maps = await db.query('activity_submissions', where: 'activity_id = ?', whereArgs: [activityId]);
     return maps.isNotEmpty ? maps.first : null;
+  }
+
+  Future<int> updateActivitySubmissionEvidence(
+    int submissionId, {
+    required String evidenceUrl,
+    required String evidenceMediaType,
+  }) async {
+    if (kIsWeb) return 0;
+    final db = await instance.database;
+    return db.update(
+      'activity_submissions',
+      {
+        'evidence_url': evidenceUrl,
+        'evidence_media_type': evidenceMediaType,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [submissionId],
+    );
   }
 
   Future<List<Map<String, dynamic>>> getAllSubmissions() async {

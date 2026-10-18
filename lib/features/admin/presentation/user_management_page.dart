@@ -18,12 +18,17 @@ class _UserManagementPageState extends State<UserManagementPage> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   UserRole? _selectedRoleFilter;
+  String? _selectedStatusFilter;
   int? _sortColumnIndex;
   bool _sortAscending = true;
   int _currentPage = 0;
   static const int _itemsPerPage = 10;
 
   void _deleteUser(UserModel user) async {
+    if (user.isProtectedAdmin) {
+      _showProtectedAdminMessage();
+      return;
+    }
     final confirmed = await ConfirmationDialog.showDelete(
       context: context,
       itemName: user.name,
@@ -52,6 +57,10 @@ class _UserManagementPageState extends State<UserManagementPage> {
   }
 
   void _toggleStatus(UserModel user) async {
+    if (user.isProtectedAdmin) {
+      _showProtectedAdminMessage();
+      return;
+    }
     final isActivating = user.status != 'active';
     final confirmed = await ConfirmationDialog.show(
       context: context,
@@ -85,6 +94,15 @@ class _UserManagementPageState extends State<UserManagementPage> {
     }
   }
 
+  void _showProtectedAdminMessage() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('The system ADMIN account is protected from CRUD changes.'),
+        backgroundColor: Colors.orange,
+      ),
+    );
+  }
+
   void _sort<T>(Comparable<T> Function(UserModel u) getField, int columnIndex, bool ascending) {
     setState(() {
       _sortColumnIndex = columnIndex;
@@ -99,7 +117,8 @@ class _UserManagementPageState extends State<UserManagementPage> {
           u.email.toLowerCase().contains(q) ||
           u.role.name.toLowerCase().contains(q);
       final matchesRole = _selectedRoleFilter == null || u.role == _selectedRoleFilter;
-      return matchesSearch && matchesRole;
+      final matchesStatus = _selectedStatusFilter == null || u.status == _selectedStatusFilter;
+      return matchesSearch && matchesRole && matchesStatus;
     }).toList();
 
     if (_sortColumnIndex != null) {
@@ -138,6 +157,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: const Text('MSWD User Management (Add User)'),
         scrolledUnderElevation: 0,
       ),
@@ -153,19 +173,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: SearchBar(
-              controller: _searchController,
-              hintText: 'Search users by Name, Email, or Role...',
-              leading: const Icon(Icons.search),
-              onChanged: (val) => setState(() {
-                _searchQuery = val;
-                _currentPage = 0;
-              }),
-            ),
-          ),
-          _buildRoleFilterBar(),
+          _buildSearchAndFilterBar(),
           Expanded(
             child: StreamBuilder<List<UserModel>>(
               stream: kIsWeb ? _repository.getUsersStream() : null,
@@ -224,57 +232,63 @@ class _UserManagementPageState extends State<UserManagementPage> {
     );
   }
 
-  Widget _buildRoleFilterBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          const Icon(Icons.filter_list, size: 20),
-          const SizedBox(width: 8),
-          const Text('Filter by Role:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: const Text('All Roles'),
-                      selected: _selectedRoleFilter == null,
-                      onSelected: (selected) {
-                        if (selected) {
-                          setState(() {
-                            _selectedRoleFilter = null;
-                            _currentPage = 0;
-                          });
-                        }
-                      },
-                    ),
-                  ),
-                  ...UserRole.values.map((role) {
-                    final isSelected = _selectedRoleFilter == role;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text(role.name.toUpperCase()),
-                        selected: isSelected,
-                        selectedColor: _getRoleColor(role).withValues(alpha: 0.2),
-                        onSelected: (selected) {
-                          setState(() {
-                            _selectedRoleFilter = selected ? role : null;
-                            _currentPage = 0;
-                          });
-                        },
-                      ),
-                    );
-                  }),
-                ],
-              ),
+  Widget _buildSearchAndFilterBar() {
+    final filterValue = _selectedRoleFilter != null
+        ? 'role:${_selectedRoleFilter!.name}'
+        : _selectedStatusFilter != null
+            ? 'status:$_selectedStatusFilter'
+            : 'all';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isCompact = constraints.maxWidth < 620;
+          final search = SearchBar(
+            controller: _searchController,
+            hintText: 'Search users by name, email, or role...',
+            leading: const Icon(Icons.search),
+            onChanged: (val) => setState(() {
+              _searchQuery = val;
+              _currentPage = 0;
+            }),
+          );
+          final filter = DropdownButtonFormField<String>(
+            initialValue: filterValue,
+            decoration: const InputDecoration(
+              labelText: 'Filter users',
+              prefixIcon: Icon(Icons.filter_list),
+              border: OutlineInputBorder(),
+              isDense: true,
             ),
-          ),
-        ],
+            items: [
+              const DropdownMenuItem(value: 'all', child: Text('All users')),
+              ...UserRole.values.map((role) => DropdownMenuItem(
+                    value: 'role:${role.name}',
+                    child: Text('${role.name[0].toUpperCase()}${role.name.substring(1)}s'),
+                  )),
+              const DropdownMenuItem(value: 'status:active', child: Text('Active users')),
+              const DropdownMenuItem(value: 'status:deactivated', child: Text('Deactivated users')),
+            ],
+            onChanged: (value) {
+              setState(() {
+                _selectedRoleFilter = value?.startsWith('role:') == true
+                    ? UserRole.values.firstWhere((role) => role.name == value!.substring(5))
+                    : null;
+                _selectedStatusFilter = value?.startsWith('status:') == true ? value!.substring(7) : null;
+                _currentPage = 0;
+              });
+            },
+          );
+
+          if (isCompact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [search, const SizedBox(height: 10), filter],
+            );
+          }
+          return Row(children: [Expanded(child: search), const SizedBox(width: 16), SizedBox(width: 230, child: filter)]);
+        },
       ),
     );
   }
@@ -298,12 +312,8 @@ class _UserManagementPageState extends State<UserManagementPage> {
               textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.grey),
             ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () => setState(() {}),
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry Connection'),
-            ),
+            const SizedBox(height: 12),
+            const Text('Refresh the browser to retry the connection.', style: TextStyle(color: Colors.grey)),
           ],
         ),
       ),
@@ -321,7 +331,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
               const Icon(Icons.search_off_rounded, size: 64, color: Colors.grey),
               const SizedBox(height: 16),
               Text(
-                _searchQuery.isNotEmpty || _selectedRoleFilter != null
+                _searchQuery.isNotEmpty || _selectedRoleFilter != null || _selectedStatusFilter != null
                     ? 'No users match your filter criteria'
                     : 'No user accounts registered yet',
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -334,7 +344,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
                 style: const TextStyle(color: Colors.grey),
                 textAlign: TextAlign.center,
               ),
-              if (_searchQuery.isNotEmpty || _selectedRoleFilter != null) ...[
+              if (_searchQuery.isNotEmpty || _selectedRoleFilter != null || _selectedStatusFilter != null) ...[
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
                   onPressed: () {
@@ -342,6 +352,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
                     setState(() {
                       _searchQuery = '';
                       _selectedRoleFilter = null;
+                      _selectedStatusFilter = null;
                       _currentPage = 0;
                     });
                   },
@@ -359,8 +370,8 @@ class _UserManagementPageState extends State<UserManagementPage> {
       return SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Center(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 1200),
+          child: SizedBox(
+            width: 1200,
             child: Card(
               clipBehavior: Clip.antiAlias,
               shape: RoundedRectangleBorder(
@@ -404,21 +415,30 @@ class _UserManagementPageState extends State<UserManagementPage> {
                   )),
                   DataCell(Text(user.email)),
                   DataCell(Text(user.role.name.toUpperCase(), style: const TextStyle(fontSize: 12))),
-                  DataCell(Switch(
-                    value: user.status == 'active',
-                    onChanged: (_) => _toggleStatus(user),
-                    activeThumbColor: Colors.green,
-                  )),
+                  DataCell(user.isProtectedAdmin
+                      ? const Chip(label: Text('Protected'))
+                      : Switch(
+                          value: user.status == 'active',
+                          onChanged: (_) => _toggleStatus(user),
+                          activeThumbColor: Colors.green,
+                        )),
                   DataCell(Row(
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined, color: Colors.blue, size: 20),
-                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => UserFormPage(user: user))),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                        onPressed: () => _deleteUser(user),
-                      ),
+                      if (user.isProtectedAdmin)
+                        const Tooltip(
+                          message: 'System ADMIN is protected',
+                          child: Icon(Icons.lock_outline, color: Colors.grey, size: 20),
+                        )
+                      else ...[
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, color: Colors.blue, size: 20),
+                          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => UserFormPage(user: user))),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                          onPressed: () => _deleteUser(user),
+                        ),
+                      ],
                     ],
                   )),
                 ])).toList(),
@@ -453,19 +473,26 @@ class _UserManagementPageState extends State<UserManagementPage> {
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Switch(
-                  value: isActive,
-                  onChanged: (_) => _toggleStatus(user),
-                  activeThumbColor: Colors.green,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.edit, color: Colors.blue),
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => UserFormPage(user: user))),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red),
-                  onPressed: () => _deleteUser(user),
-                ),
+                if (user.isProtectedAdmin)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Chip(label: Text('Protected')),
+                  )
+                else ...[
+                  Switch(
+                    value: isActive,
+                    onChanged: (_) => _toggleStatus(user),
+                    activeThumbColor: Colors.green,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.edit, color: Colors.blue),
+                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => UserFormPage(user: user))),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    onPressed: () => _deleteUser(user),
+                  ),
+                ],
               ],
             ),
           ),

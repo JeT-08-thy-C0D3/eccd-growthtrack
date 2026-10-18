@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../shared/models/child_model.dart';
+import '../../auth/data/auth_repository_impl.dart';
 import '../data/evaluation_repository.dart';
 import '../domain/evaluation_model.dart';
 import 'evaluation_history_page.dart';
@@ -20,15 +21,15 @@ class _EvaluationPageState extends State<EvaluationPage> {
   bool _isLoading = true;
 
   final List<String> _domains = [
-    'Physical',
-    'Cognitive',
+    'Gross Motor',
+    'Fine Motor',
+    'Self-Help',
     'Language',
-    'Social Emotional',
-    'Self Help'
+    'Cognitive',
+    'Social-Emotional',
   ];
 
-  String _selectedDomain = 'Physical';
-  final _scoreController = TextEditingController();
+  String _selectedDomain = 'Gross Motor';
   final _remarksController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
@@ -39,7 +40,10 @@ class _EvaluationPageState extends State<EvaluationPage> {
   }
 
   Future<void> _loadChildren() async {
-    final data = await DatabaseHelper.instance.getAllChildren();
+    final teacher = await AuthRepositoryImpl().getCurrentUser();
+    final data = teacher == null
+        ? <ChildModel>[]
+        : await DatabaseHelper.instance.readChildrenByTeacher(teacher.uid);
     setState(() {
       _children = data;
       _isLoading = false;
@@ -56,7 +60,10 @@ class _EvaluationPageState extends State<EvaluationPage> {
       final evaluation = EvaluationModel(
         childId: _selectedChild!.childId,
         domain: _selectedDomain,
-        score: int.parse(_scoreController.text),
+        // Activity records carry the numeric score. Evaluations now use
+        // teacher remarks as the qualitative basis, while retaining the
+        // legacy model field for existing reports and database compatibility.
+        score: 0,
         remarks: _remarksController.text,
         evaluationDate: DateFormat('yyyy-MM-dd').format(DateTime.now()),
         updatedAt: DateTime.now().toIso8601String(),
@@ -68,7 +75,6 @@ class _EvaluationPageState extends State<EvaluationPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Evaluation saved successfully!')),
         );
-        _scoreController.clear();
         _remarksController.clear();
       }
     }
@@ -136,21 +142,6 @@ class _EvaluationPageState extends State<EvaluationPage> {
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
-                      controller: _scoreController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Score',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.score),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) return 'Required';
-                        if (int.tryParse(value) == null) return 'Enter a number';
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
                       controller: _remarksController,
                       maxLines: 3,
                       decoration: const InputDecoration(
@@ -158,6 +149,9 @@ class _EvaluationPageState extends State<EvaluationPage> {
                         border: OutlineInputBorder(),
                         prefixIcon: Icon(Icons.comment),
                       ),
+                      validator: (value) => value == null || value.trim().isEmpty
+                          ? 'Remarks are required'
+                          : null,
                     ),
                     const SizedBox(height: 32),
                     ElevatedButton(
@@ -211,7 +205,15 @@ class _EvaluationPageState extends State<EvaluationPage> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: const TextStyle(color: Colors.grey)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Flexible(
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
         ],
       ),
     );

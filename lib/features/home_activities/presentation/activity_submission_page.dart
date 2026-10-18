@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:image_picker/image_picker.dart';
 import '../data/activity_repository.dart';
 import '../domain/activity_model.dart';
 import '../domain/activity_submission_model.dart';
@@ -19,6 +20,8 @@ class _ActivitySubmissionPageState extends State<ActivitySubmissionPage> {
   String _selectedAssistance = 'Independent';
   bool _isSubmitting = false;
   ActivitySubmissionModel? _existingSubmission;
+  XFile? _selectedEvidence;
+  String? _selectedEvidenceType;
 
   final List<String> _assistanceLevels = [
     'Independent',
@@ -65,7 +68,14 @@ class _ActivitySubmissionPageState extends State<ActivitySubmissionPage> {
         isSynced: false,
       );
 
-      await _repository.submitActivity(submission);
+      final submissionId = await _repository.submitActivity(submission);
+      if (_selectedEvidence != null && _selectedEvidenceType != null) {
+        await _repository.uploadSubmissionEvidence(
+          submissionId: submissionId,
+          filePath: _selectedEvidence!.path,
+          mediaType: _selectedEvidenceType!,
+        );
+      }
       await _repository.updateActivityStatus(widget.activity.id!, 'Completed');
 
       setState(() => _isSubmitting = false);
@@ -79,6 +89,18 @@ class _ActivitySubmissionPageState extends State<ActivitySubmissionPage> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     }
+  }
+
+  Future<void> _pickEvidence(ImageSource source, {required bool isVideo}) async {
+    final picker = ImagePicker();
+    final file = isVideo
+        ? await picker.pickVideo(source: source)
+        : await picker.pickImage(source: source, imageQuality: 85);
+    if (file == null || !mounted) return;
+    setState(() {
+      _selectedEvidence = file;
+      _selectedEvidenceType = isVideo ? 'video' : 'image';
+    });
   }
 
   @override
@@ -137,10 +159,52 @@ class _ActivitySubmissionPageState extends State<ActivitySubmissionPage> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
-              'Hardware Note: Image/Video evidence features are currently disabled for this text-only prototype.',
-              style: TextStyle(fontSize: 11, color: Colors.grey, fontStyle: FontStyle.italic),
-            ),
+            if (!isSubmitted) ...[
+              Text('Optional evidence', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              const Text('Add one photo or video of the child completing the activity. It will be uploaded to Supabase Storage.'),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () => _pickEvidence(ImageSource.gallery, isVideo: false),
+                    icon: const Icon(Icons.image_outlined),
+                    label: const Text('Add photo'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => _pickEvidence(ImageSource.gallery, isVideo: true),
+                    icon: const Icon(Icons.videocam_outlined),
+                    label: const Text('Add video'),
+                  ),
+                ],
+              ),
+              if (_selectedEvidence != null) ...[
+                const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(_selectedEvidenceType == 'video' ? Icons.videocam : Icons.image),
+                  title: Text(_selectedEvidence!.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text('${_selectedEvidenceType == 'video' ? 'Video' : 'Photo'} ready to upload'),
+                  trailing: IconButton(
+                    tooltip: 'Remove evidence',
+                    onPressed: () => setState(() {
+                      _selectedEvidence = null;
+                      _selectedEvidenceType = null;
+                    }),
+                    icon: const Icon(Icons.close),
+                  ),
+                ),
+              ],
+            ] else if (_existingSubmission?.evidenceUrl != null) ...[
+              const SizedBox(height: 8),
+              const ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.cloud_done_outlined),
+                title: Text('Evidence uploaded to secure storage'),
+              ),
+            ],
             const SizedBox(height: 32),
             if (!isSubmitted)
               ElevatedButton.icon(

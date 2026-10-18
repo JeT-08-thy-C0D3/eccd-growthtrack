@@ -16,7 +16,7 @@ class StorageService {
           file,
           fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
         );
-    return getPublicUrl(bucket: bucket, path: path);
+    return createSignedUrl(bucket: bucket, path: path);
   }
 
   Future<String> uploadBytes({
@@ -34,13 +34,14 @@ class StorageService {
             contentType: contentType,
           ),
         );
-    return getPublicUrl(bucket: bucket, path: path);
+    return createSignedUrl(bucket: bucket, path: path);
   }
 
-  String getPublicUrl({
+  Future<String> createSignedUrl({
     required String bucket,
     required String path,
+    int expiresIn = 3600,
   }) {
-    return _client.storage.from(bucket).getPublicUrl(path);
+    return _client.storage.from(bucket).createSignedUrl(path, expiresIn);
   }
 }

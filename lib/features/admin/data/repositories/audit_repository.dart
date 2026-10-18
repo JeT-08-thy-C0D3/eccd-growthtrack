@@ -31,24 +31,24 @@ class AuditRepository {
     }
   }
 
-  Future<List<AuditLogModel>> getLogs({int limit = 50}) async {
-    final query = await _firestore
+  Future<List<AuditLogModel>> getLogs({int? limit}) async {
+    Query<Map<String, dynamic>> query = _firestore
         .collection('audit_logs')
-        .orderBy('timestamp', descending: true)
-        .limit(limit)
-        .get();
+        .orderBy('timestamp', descending: true);
+    if (limit != null) query = query.limit(limit);
+    final snapshot = await query.get();
     
-    return query.docs
+    return snapshot.docs
         .map((doc) => AuditLogModel.fromMap(doc.data(), doc.id))
         .toList();
   }
 
-  Stream<List<AuditLogModel>> streamLogs({int limit = 50}) {
-    return _firestore
+  Stream<List<AuditLogModel>> streamLogs({int? limit}) {
+    Query<Map<String, dynamic>> query = _firestore
         .collection('audit_logs')
-        .orderBy('timestamp', descending: true)
-        .limit(limit)
-        .snapshots()
+        .orderBy('timestamp', descending: true);
+    if (limit != null) query = query.limit(limit);
+    return query.snapshots()
         .map((snapshot) => snapshot.docs
             .map((doc) => AuditLogModel.fromMap(doc.data(), doc.id))
             .toList());

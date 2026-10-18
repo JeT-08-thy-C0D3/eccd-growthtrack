@@ -1,0 +1,282 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ============================================================================
+    // UTILITY FUNCTIONS
+    // ============================================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    function isTeacher() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
+    }
+    
+    function isParent() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'parent';
+    }
+    
+    function getUserCenterId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.centerId;
+    }
+    
+    function userOwnsDocument() {
+      return request.auth.uid == resource.data.uid;
+    }
+    
+    // ============================================================================
+    // USERS COLLECTION (CRITICAL: No passwords)
+    // ============================================================================
+    
+    match /users/{userId} {
+      // Read: Users can read their own profile; admins read all
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      
+      // Create: Only admin via Cloud Function (never from client)
+      allow create: if false;
+      
+      // Update: User can update own profile (except role/status); admin can update all
+      allow update: if (request.auth.uid == userId && 
+                        !('role' in request.writeFields) && 
+                        !('status' in request.writeFields)) || isAdmin();
+      
+      // Delete: Never from client (only backend deactivates users)
+      allow delete: if false;
+      
+      // Verify no password field exists
+      allow read: if !('password' in resource.data);
+      
+      // Subcollection: User sessions (for timeout tracking)
+      match /sessions/{sessionId} {
+        allow read, write: if request.auth.uid == userId;
+      }
+    }
+    
+    // ============================================================================
+    // CHILDREN COLLECTION
+    // ============================================================================
+    
+    match /children/{childId} {
+      // Read: Teachers (assigned), Parents (linked), Admins
+      allow read: if isAdmin() || 
+                      (isTeacher() && getUserCenterId() == resource.data.centerId) ||
+                      isParent(); // Parents verified via ConsentRecord
+      
+      // Create: Admin only
+      allow create: if isAdmin();
+      
+      // Update: Admin and assigned teachers
+      allow update: if isAdmin() || 
+                       (isTeacher() && getUserCenterId() == resource.data.centerId);
+      
+      // Delete: Never (soft-delete via audit)
+      allow delete: if false;
+      
+      // Subcollection: Child assignments
+      match /assignments/{assignmentId} {
+        allow read: if isAdmin() || isTeacher();
+        allow write: if isAdmin();
+      }
+    }
+    
+    // ============================================================================
+    // EVALUATION SESSIONS & OBSERVATIONS (CORE FUNCTIONALITY)
+    // ============================================================================
+    
+    match /evaluation_sessions/{sessionId} {
+      // Read: Teachers (own), Parents (linked child), Admins
+      allow read: if isAdmin() || 
+                      (isTeacher() && resource.data.evaluatorId == request.auth.uid) ||
+                      (isTeacher() && resource.data.centerId == getUserCenterId()) ||
+                      isParent();
+      
+      // Create: Teachers only (must be assigned to child)
+      allow create: if isTeacher() && 
+                       request.resource.data.evaluatorId == request.auth.uid &&
+                       request.resource.data.centerId == getUserCenterId();
+      
+      // Update: Teacher (own), Admin with verification
+      allow update: if (isTeacher() && resource.data.evaluatorId == request.auth.uid) ||
+                       (isAdmin() && 'humanVerified' in request.writeFields);
+      
+      // Delete: Soft-delete via status, never hard-delete
+      allow delete: if false;
+      
+      // Subcollection: Observations (score details)
+      match /observations/{observationId} {
+        allow read: if isAdmin() || isTeacher() || isParent();
+        allow create, update: if isTeacher();
+        allow delete: if false;
+      }
+    }
+    
+    // ============================================================================
+    // REFERRALS (CONFIDENTIAL)
+    // ============================================================================
+    
+    match /referrals/{referralId} {
+      // Read: Admin, referring teacher
+      allow read: if isAdmin() || 
+                      (isTeacher() && resource.data.referrerId == request.auth.uid);
+      
+      // Create: Teachers only
+      allow create: if isTeacher() && 
+                       request.resource.data.referrerId == request.auth.uid;
+      
+      // Update: Teacher (own), Admin
+      allow update: if (isTeacher() && resource.data.referrerId == request.auth.uid) ||
+                       isAdmin();
+      
+      // Delete: Never (audit trail)
+      allow delete: if false;
+    }
+    
+    // ============================================================================
+    // CONSENT RECORDS (GDPR/PRIVACY CRITICAL)
+    // ============================================================================
+    
+    match /consent_records/{recordId} {
+      // Read: Admin, relevant parent/user
+      allow read: if isAdmin() || request.auth.uid == resource.data.parentId;
+      
+      // Create: Only by backend Cloud Function (parent initiates, backend verifies)
+      allow create: if false;
+      
+      // Update: Never (immutable audit trail)
+      allow update: if false;
+      
+      // Delete: Never
+      allow delete: if false;
+    }
+    
+    // ============================================================================
+    // ATTENDANCE EVENTS
+    // ============================================================================
+    
+    match /attendance_events/{eventId} {
+      // Read: Teachers (center), Admins
+      allow read: if isAdmin() || 
+                      (isTeacher() && resource.data.centerId == getUserCenterId());
+      
+      // Create: Teachers (RFID device or manual)
+      allow create: if isTeacher();
+      
+      // Update: Limited to status corrections by teachers
+      allow update: if isTeacher() && 
+                       only(['status'], request.writeFields);
+      
+      // Delete: Never
+      allow delete: if false;
+    }
+    
+    // ============================================================================
+    // AUDIT LOGS (IMMUTABLE)
+    // ============================================================================
+    
+    match /audit_logs/{logId} {
+      // Read: Admin only
+      allow read: if isAdmin();
+      
+      // Create: Only by backend Cloud Function
+      allow create: if false;
+      
+      // Update/Delete: Never
+      allow update, delete: if false;
+    }
+    
+    // ============================================================================
+    // NOTIFICATIONS
+    // ============================================================================
+    
+    match /notifications/{notificationId} {
+      // Read: Own notifications
+      allow read: if request.auth.uid == resource.data.userId;
+      
+      // Create: Backend only
+      allow create: if false;
+      
+      // Update: User can mark as read
+      allow update: if request.auth.uid == resource.data.userId &&
+                       only(['read', 'readAt'], request.writeFields);
+      
+      // Delete: User can delete own
+      allow delete: if request.auth.uid == resource.data.userId;
+    }
+
+    // ============================================================================
+    // CLARIFICATION REQUESTS
+    // ============================================================================
+
+    match /clarifications/{clarificationId} {
+      // Parents may only create requests that are tagged with their own UID.
+      allow create: if isParent() &&
+                       request.resource.data.parent_uid == request.auth.uid;
+
+      // Parents can read their own requests; staff can process requests.
+      allow read: if isAdmin() || isTeacher() ||
+                     (isParent() && resource.data.parent_uid == request.auth.uid);
+
+      // Only staff may add a response/status update.
+      allow update: if isAdmin() || isTeacher();
+      allow delete: if false;
+    }
+    
+    // ============================================================================
+    // CATEGORIES (ADMIN MANAGED)
+    // ============================================================================
+    
+    match /categories/{categoryId} {
+      // Read: All authenticated users
+      allow read: if isAuthenticated();
+      
+      // Create/Update: Admin only
+      allow create, update: if isAdmin();
+      
+      // Delete: Never (soft-delete via status)
+      allow delete: if false;
+    }
+    
+    // ============================================================================
+    // ECCD DOMAINS (REFERENCE DATA)
+    // ============================================================================
+    
+    match /eccd_domains/{domainId} {
+      // Read: All authenticated users
+      allow read: if isAuthenticated();
+      
+      // Write: Admin only via backend
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // ============================================================================
+    // CATCH-ALL (DENY BY DEFAULT)
+    // ============================================================================
+    
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+// ============================================================================
+// DEPLOYMENT NOTES
+// ============================================================================
+// 
+// 1. Deploy this file as: firestore.rules
+// 2. Test with Firebase Emulator Suite before production
+// 3. Create Firestore indexes for:
+//    - evaluation_sessions: (centerId, sessionDate DESC)
+//    - referrals: (centerId, referralDate DESC)
+//    - attendance_events: (childId, attendanceDate DESC)
+//    - notifications: (userId, createdAt DESC)
+// 4. Enable audit logging in Firestore
+// 5. Monitor rule violations via Firebase Console

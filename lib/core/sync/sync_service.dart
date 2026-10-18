@@ -81,6 +81,14 @@ class SyncService {
       final updates = await _remote.fetchUpdates(table, lastSyncDate); 
       for (var doc in updates) {
         final remoteData = doc.data();
+        // The Firestore document ID is the stable local ID for activities and
+        // submissions. Older documents may not contain an `id` field because
+        // it was previously stripped before upload, so restore it here before
+        // LocalDataSource performs its upsert.
+        if ((table == 'activities' || table == 'activity_submissions') && !remoteData.containsKey('id')) {
+          final localId = int.tryParse(doc.id);
+          if (localId != null) remoteData['id'] = localId;
+        }
         await _local.saveRecord(table, remoteData, isFromRemote: true);
       }
 

@@ -21,7 +21,11 @@ abstract class ActivityRepository {
   Future<ActivitySubmissionModel?> getSubmission(int activityId);
   Future<List<Map<String, dynamic>>> getAllSubmissions();
   Future<int> reviewSubmission(int submissionId, String review, String status, {int? score});
-  Future<String?> uploadSubmissionEvidence(String submissionId, String filePath);
+  Future<String?> uploadSubmissionEvidence({
+    required int submissionId,
+    required String filePath,
+    required String mediaType,
+  });
 
   // Added for Teacher Home Activities workflow
   Future<List<ActivityModel>> getHomeActivitiesByTeacher(int teacherId);
@@ -84,10 +88,12 @@ class ActivityRepositoryImpl implements ActivityRepository {
 
   @override
   Future<int> createActivity(ActivityModel activity) async {
-    final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
+    // Keep timestamps in the same ISO format used by the incremental cloud sync query.
+    final now = DateTime.now().toIso8601String();
     final newActivity = activity.copyWith(
       updatedAt: now,
-      isSynced: await _connectivity.isOnline,
+      // Only mark synced after the cloud upload succeeds below.
+      isSynced: false,
     );
 
     final id = await _local.saveRecord('activities', newActivity.toMap());
@@ -133,7 +139,29 @@ class ActivityRepositoryImpl implements ActivityRepository {
 
   @override
   Future<int> updateActivityStatus(int id, String status) async {
-    return await _dbHelper.updateActivityStatus(id, status);
+    final result = await _dbHelper.updateActivityStatus(id, status);
+    if (result == 0) return result;
+
+    if (await _connectivity.isOnline) {
+      try {
+        final activities = await _dbHelper.getAllActivities();
+        Map<String, dynamic>? activity;
+        for (final item in activities) {
+          if (item['id'] == id) {
+            activity = item;
+            break;
+          }
+        }
+        if (activity != null) {
+          await _remote.uploadRecord('activities', id.toString(), activity);
+          await _local.markAsSynced('activities', id);
+        }
+      } catch (e) {
+        // The sync service will retry this unsynced update when online.
+        print('Activity status sync failed: $e');
+      }
+    }
+    return result;
   }
 
   @override
@@ -190,14 +218,26 @@ class ActivityRepositoryImpl implements ActivityRepository {
   }
 
   @override
-  Future<String?> uploadSubmissionEvidence(String submissionId, String filePath) async {
-    return await _fileUploadRepo.uploadFile(
+  Future<String?> uploadSubmissionEvidence({
+    required int submissionId,
+    required String filePath,
+    required String mediaType,
+  }) async {
+    final url = await _fileUploadRepo.uploadFile(
       bucket: SupabaseConfig.homeActivityEvidence,
-      entityId: submissionId,
-      category: 'activity_evidence',
+      entityId: submissionId.toString(),
+      category: SupabaseConfig.homeActivityCategory,
       filePath: filePath,
       docCollection: 'activity_submissions',
       urlFieldName: 'evidence_url',
     );
+    if (url != null) {
+      await _dbHelper.updateActivitySubmissionEvidence(
+        submissionId,
+        evidenceUrl: url,
+        evidenceMediaType: mediaType,
+      );
+    }
+    return url;
   }
 }

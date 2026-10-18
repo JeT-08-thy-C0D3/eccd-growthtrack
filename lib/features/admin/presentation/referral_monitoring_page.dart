@@ -151,27 +151,12 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: const Text('MSWD Referral Monitoring'),
-        actions: [
-          IconButton(onPressed: _loadReferrals, icon: const Icon(Icons.refresh)),
-        ],
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: SearchBar(
-              controller: _searchController,
-              hintText: 'Search referrals by Child Name, Concern, or Status...',
-              leading: const Icon(Icons.search),
-              onChanged: (val) {
-                _searchQuery = val;
-                _currentPage = 0;
-                _applyFilterAndSort();
-              },
-            ),
-          ),
-          _buildFilterBar(),
+          _buildSearchAndFilterBar(),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -189,58 +174,62 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
     );
   }
 
-  Widget _buildFilterBar() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-      child: Row(
-        children: [
-          const Icon(Icons.filter_list, size: 20),
-          const SizedBox(width: 12),
-          const Text('Filter Status:', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(width: 16),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: _statusFilters.map((status) {
-                  final isSelected = _selectedFilter == status;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(status),
-                      selected: isSelected,
-                      onSelected: (selected) {
-                        if (selected) {
-                          setState(() {
-                            _selectedFilter = status;
-                            _currentPage = 0;
-                            _applyFilterAndSort();
-                          });
-                        }
-                      },
-                    ),
-                  );
-                }).toList(),
-              ),
+  Widget _buildSearchAndFilterBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final search = SearchBar(
+            controller: _searchController,
+            hintText: 'Search referrals by child, concern, or status...',
+            leading: const Icon(Icons.search),
+            onChanged: (val) {
+              _searchQuery = val;
+              _currentPage = 0;
+              _applyFilterAndSort();
+            },
+          );
+          final filter = DropdownButtonFormField<String>(
+            initialValue: _selectedFilter,
+            decoration: const InputDecoration(
+              labelText: 'Filter status',
+              prefixIcon: Icon(Icons.filter_list),
+              border: OutlineInputBorder(),
+              isDense: true,
             ),
-          ),
-        ],
+            items: _statusFilters.map((status) => DropdownMenuItem(value: status, child: Text(status))).toList(),
+            onChanged: (value) {
+              setState(() {
+                _selectedFilter = value ?? 'All';
+                _currentPage = 0;
+              });
+              _applyFilterAndSort();
+            },
+          );
+          if (constraints.maxWidth < 680) {
+            return Column(children: [search, const SizedBox(height: 10), filter]);
+          }
+          return Row(children: [Expanded(child: search), const SizedBox(width: 16), SizedBox(width: 220, child: filter)]);
+        },
       ),
     );
   }
 
   Widget _buildReferralTable(List<Map<String, dynamic>> paginatedReferrals) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Card(
-        clipBehavior: Clip.antiAlias,
-        child: SizedBox(
-          width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      child: SizedBox(
+        width: 1200,
+        child: Card(
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: DataTable(
             sortColumnIndex: _sortColumnIndex,
             sortAscending: _sortAscending,
-            headingRowColor: WidgetStateProperty.all(Theme.of(context).colorScheme.primaryContainer),
+            headingRowColor: WidgetStateProperty.all(Theme.of(context).colorScheme.surfaceContainer),
             columns: [
               DataColumn(
                 label: const Text('Child Name', style: TextStyle(fontWeight: FontWeight.bold)),

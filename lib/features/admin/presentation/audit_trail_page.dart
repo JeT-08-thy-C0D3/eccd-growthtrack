@@ -18,9 +18,10 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
   int? _sortColumnIndex;
   bool _sortAscending = false; // Default timestamp descending
   int _currentPage = 0;
-  static const int _itemsPerPage = 10;
+  static const int _itemsPerPage = 25;
 
   final List<String> _trackedActions = [
+    'Login',
     'User Created',
     'User Updated',
     'User Deleted',
@@ -79,6 +80,7 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: const Text('System Audit Trail'),
       ),
       body: Column(
@@ -213,6 +215,7 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
   Widget _buildActionBadge(String action) {
     Color color = Colors.grey;
     if (action.contains('User Created')) color = Colors.blue;
+    if (action.contains('Login')) color = Colors.teal;
     if (action.contains('User Updated')) color = Colors.orange;
     if (action.contains('User Deleted')) color = Colors.red;
     if (action.contains('Referral Updated')) color = Colors.purple;
@@ -248,7 +251,7 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            'Showing $startItem - $endItem of $totalItems records',
+            'Showing $startItem to $endItem of $totalItems records',
             style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
           Row(

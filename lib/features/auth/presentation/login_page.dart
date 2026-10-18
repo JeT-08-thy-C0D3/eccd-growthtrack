@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../data/auth_repository_impl.dart';
 import '../../../shared/models/user_model.dart';
 import '../../../core/utils/validators.dart';
 import '../../../shared/widgets/terms_privacy_dialog.dart';
+import '../../../shared/widgets/brand_widgets.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -18,7 +21,85 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   final _authRepo = AuthRepositoryImpl();
   bool _isLoading = false;
-  bool _agreedToTerms = true;
+  bool _agreedToTerms = false;
+  bool _rememberMe = false;
+
+  static const _rememberMeKey = 'remember_login';
+  static const _rememberedEmailKey = 'remembered_email';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRememberedLogin();
+  }
+
+  Future<void> _loadRememberedLogin() async {
+    final prefs = await SharedPreferences.getInstance();
+    final remember = prefs.getBool(_rememberMeKey) ?? false;
+    final email = prefs.getString(_rememberedEmailKey) ?? '';
+    if (!mounted) return;
+    setState(() {
+      _rememberMe = remember;
+      if (remember) _emailController.text = email;
+    });
+  }
+
+  Future<void> _saveRememberedLogin() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_rememberMe) {
+      await prefs.setBool(_rememberMeKey, true);
+      await prefs.setString(_rememberedEmailKey, _emailController.text.trim());
+    } else {
+      await prefs.remove(_rememberMeKey);
+      await prefs.remove(_rememberedEmailKey);
+    }
+  }
+
+  Future<void> _forgotPassword() async {
+    final email = _emailController.text.trim();
+    final validationMessage = Validators.validateEmail(email);
+    if (validationMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Enter your email address first. $validationMessage')),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reset Password'),
+        content: Text('Send a password reset link to $email?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Send Link'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await _authRepo.sendPasswordResetEmail(email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password reset link sent. Check your email.'),
+          backgroundColor: BrandColors.green,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString()), backgroundColor: Colors.red.shade700),
+      );
+    }
+  }
 
   void _login() async {
     if (!_formKey.currentState!.validate()) return;
@@ -56,6 +137,17 @@ class _LoginPageState extends State<LoginPage> {
           }
           return;
         }
+        await _saveRememberedLogin();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Login successful!'),
+            backgroundColor: BrandColors.green,
+            duration: Duration(milliseconds: 700),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 700));
+        if (!mounted) return;
         _navigateToDashboard(user.role);
       }
     } catch (error) {
@@ -97,42 +189,41 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 450),
-            child: Form(
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, _) {
+            final form = Form(
               key: _formKey,
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(Icons.auto_graph, size: 80, color: Colors.blue),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 4),
+                  const EccdLogo(height: 145),
+                  const SizedBox(height: 4),
                   Text(
-                    'ECCD GrowthTrack',
+                    'Welcome back',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue,
-                        ),
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      color: BrandColors.navy,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Early Childhood Monitoring System',
+                  const SizedBox(height: 6),
+                  Text(
+                    'Sign in to continue supporting every child’s growth.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey, fontSize: 14),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 28),
                   TextFormField(
                     controller: _emailController,
                     decoration: const InputDecoration(
                       labelText: 'Email Address',
-                      border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.email),
                     ),
                     keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
                     validator: Validators.validateEmail,
                   ),
                   const SizedBox(height: 16),
@@ -140,13 +231,33 @@ class _LoginPageState extends State<LoginPage> {
                     controller: _passwordController,
                     decoration: const InputDecoration(
                       labelText: 'Password',
-                      border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.lock),
                     ),
                     obscureText: true,
+                    inputFormatters: [FilteringTextInputFormatter.deny(RegExp(r'\s'))],
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: (_) {
+                      if (!_isLoading) _login();
+                    },
                     validator: (v) => Validators.validatePassword(v, minLength: 6),
                   ),
                   const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: _rememberMe,
+                        onChanged: (value) => setState(() => _rememberMe = value ?? false),
+                      ),
+                      const Text('Remember me'),
+                    ],
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: _isLoading ? null : _forgotPassword,
+                      child: const Text('Forgot password?'),
+                    ),
+                  ),
                   Row(
                     children: [
                       Checkbox(
@@ -173,9 +284,7 @@ class _LoginPageState extends State<LoginPage> {
                     onPressed: _isLoading ? null : _login,
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      backgroundColor: BrandColors.green,
                     ),
                     child: _isLoading
                         ? const CircularProgressIndicator(color: Colors.white)
@@ -183,8 +292,31 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ],
               ),
-            ),
-          ),
+            );
+
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Center(
+                child: Card(
+                  elevation: 0,
+                  color: Theme.of(context).colorScheme.surface,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(28),
+                    side: BorderSide(
+                      color: BrandColors.green.withValues(alpha: .14),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(28, 20, 28, 28),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 390),
+                      child: form,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );

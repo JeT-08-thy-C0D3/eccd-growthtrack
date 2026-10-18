@@ -44,5 +44,11 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Firebase Functions dependencies/build output and local credentials
+/functions/node_modules/
+/functions/lib/
+functions/*.local.json
+functions/service-account*.json
+
 # Widget Preview related
 .widget_preview/

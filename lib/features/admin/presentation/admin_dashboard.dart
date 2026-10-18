@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../auth/data/auth_repository_impl.dart';
+import '../../../shared/widgets/confirmation_dialog.dart';
 
 class AdminDashboard extends StatelessWidget {
   const AdminDashboard({super.key});
@@ -12,7 +13,17 @@ class AdminDashboard extends StatelessWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
+            tooltip: 'Logout',
             onPressed: () async {
+              final confirmed = await ConfirmationDialog.show(
+                context: context,
+                title: 'Logout',
+                message: 'Are you sure you want to logout from ECCD GrowthTrack?',
+                confirmLabel: 'Logout',
+                confirmColor: Colors.red,
+                icon: Icons.logout,
+              );
+              if (!confirmed) return;
               await AuthRepositoryImpl().logout();
               if (!context.mounted) return;
               Navigator.pushReplacementNamed(context, '/login');

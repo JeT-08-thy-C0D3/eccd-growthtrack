@@ -2,6 +2,7 @@ class ActivityModel {
   final int? id;
   final String childId;
   final String activityTitle;
+  final String developmentalDomain;
   final String instructions;
   final String dueDate;
   final String assignedBy;
@@ -15,6 +16,7 @@ class ActivityModel {
     this.id,
     required this.childId,
     required this.activityTitle,
+    this.developmentalDomain = 'General Development',
     required this.instructions,
     required this.dueDate,
     required this.assignedBy,
@@ -30,6 +32,7 @@ class ActivityModel {
       'id': id,
       'child_id': childId,
       'activity_title': activityTitle,
+      'developmental_domain': developmentalDomain,
       'instructions': instructions,
       'due_date': dueDate,
       'assigned_by': assignedBy,
@@ -46,6 +49,7 @@ class ActivityModel {
       id: map['id'],
       childId: map['child_id'] ?? '',
       activityTitle: map['activity_title'] ?? '',
+      developmentalDomain: map['developmental_domain'] ?? 'General Development',
       instructions: map['instructions'] ?? '',
       dueDate: map['due_date'] ?? '',
       assignedBy: map['assigned_by'] ?? '',
@@ -61,6 +65,7 @@ class ActivityModel {
     int? id,
     String? childId,
     String? activityTitle,
+    String? developmentalDomain,
     String? instructions,
     String? dueDate,
     String? assignedBy,
@@ -74,6 +79,7 @@ class ActivityModel {
       id: id ?? this.id,
       childId: childId ?? this.childId,
       activityTitle: activityTitle ?? this.activityTitle,
+      developmentalDomain: developmentalDomain ?? this.developmentalDomain,
       instructions: instructions ?? this.instructions,
       dueDate: dueDate ?? this.dueDate,
       assignedBy: assignedBy ?? this.assignedBy,

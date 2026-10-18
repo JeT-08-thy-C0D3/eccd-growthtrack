@@ -3,6 +3,14 @@ import 'package:intl/intl.dart';
 import '../../reports/data/reports_repository.dart';
 import '../../reports/domain/reports_model.dart';
 import '../../auth/data/auth_repository_impl.dart';
+import 'admin_reports_page.dart';
+import 'audit_trail_page.dart';
+import 'child_monitoring_page.dart';
+import 'referral_monitoring_page.dart';
+import 'system_settings_page.dart';
+import 'user_management_page.dart';
+import '../../../shared/widgets/brand_widgets.dart';
+import '../../../shared/widgets/confirmation_dialog.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
@@ -45,20 +53,20 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('MSWD GrowthTrack Admin'),
+        automaticallyImplyLeading: false,
+        title: const EccdAppBarTitle(
+          title: 'ECCD GrowthTrack',
+          subtitle: 'MSWD ADMIN PORTAL',
+        ),
         centerTitle: false,
         backgroundColor: colorScheme.surface,
         elevation: 0,
         scrolledUnderElevation: 0,
         shape: Border(bottom: BorderSide(color: colorScheme.outlineVariant, width: 1)),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadStats,
-            tooltip: 'Refresh Data',
+          _ProfileMenu(
+            onLogout: _logout,
           ),
-          const SizedBox(width: 8),
-          _ProfileMenu(onLogout: _logout),
           const SizedBox(width: 16),
         ],
       ),
@@ -74,54 +82,83 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               child: _buildDrawerItems(context),
             ),
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Municipal Overview',
-                                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        color: colorScheme.onSurface,
-                                      ),
-                                ),
-                                Text(
-                                  'Real-time data from all barangays and centers',
-                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
-                                ),
-                              ],
-                            ),
-                            const Spacer(),
-                            Text(
-                              DateFormat('MMMM dd, yyyy').format(DateTime.now()),
-                              style: TextStyle(color: colorScheme.primary, fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 32),
-                        _buildStatsGrid(),
-                        const SizedBox(height: 48),
-                        Text(
-                          'Quick Access Modules',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 20),
-                        _buildQuickActions(context),
-                      ],
-                    ),
-                  ),
+            child: _buildSelectedPage(context),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildSelectedPage(BuildContext context) {
+    switch (_selectedIndex) {
+      case 1:
+        return const UserManagementPage();
+      case 2:
+        return const ChildMonitoringPage();
+      case 3:
+        return const ReferralMonitoringPage();
+      case 4:
+        return const AdminReportsPage();
+      case 5:
+        return const AuditTrailPage();
+      case 6:
+        return const SystemSettingsPage();
+      case 0:
+      default:
+        if (_isLoading) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final colorScheme = Theme.of(context).colorScheme;
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Municipal Overview',
+                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: colorScheme.onSurface,
+                            ),
+                      ),
+                      Text(
+                        'Real-time data from all barangays and centers',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  Text(
+                    DateFormat('MMMM dd, yyyy').format(DateTime.now()),
+                    style: TextStyle(color: colorScheme.primary, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 32),
+              _buildStatsGrid(),
+              const SizedBox(height: 48),
+              Text(
+                'Quick Access Modules',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
+              _buildQuickActions(context),
+            ],
+          ),
+        );
+    }
+  }
+
+  void _selectSection(int index) {
+    setState(() => _selectedIndex = index);
+    if (MediaQuery.of(context).size.width <= 900 && Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
   }
 
   Widget _buildDrawerItems(BuildContext context) {
@@ -138,11 +175,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             ),
             child: Row(
               children: [
-                Icon(Icons.auto_graph, color: Theme.of(context).colorScheme.primary),
+                const EccdLogo(width: 42, height: 42),
                 const SizedBox(width: 12),
-                const Text(
-                  'GrowthTrack Admin',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                const Expanded(
+                  child: Text(
+                    'GrowthTrack Admin',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
                 ),
               ],
             ),
@@ -154,42 +193,42 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           selectedIcon: Icons.dashboard,
           label: 'Dashboard',
           isSelected: _selectedIndex == 0,
-          onTap: () => setState(() => _selectedIndex = 0),
+          onTap: () => _selectSection(0),
         ),
         _DrawerTile(
           icon: Icons.people_outline,
           selectedIcon: Icons.people,
           label: 'User Management',
-          isSelected: false,
-          onTap: () => Navigator.pushNamed(context, '/admin/users'),
+          isSelected: _selectedIndex == 1,
+          onTap: () => _selectSection(1),
         ),
         _DrawerTile(
           icon: Icons.child_care_outlined,
           selectedIcon: Icons.child_care,
           label: 'Child Monitoring',
-          isSelected: false,
-          onTap: () => Navigator.pushNamed(context, '/admin/monitoring'),
+          isSelected: _selectedIndex == 2,
+          onTap: () => _selectSection(2),
         ),
         _DrawerTile(
           icon: Icons.assignment_late_outlined,
           selectedIcon: Icons.assignment_late,
           label: 'Referrals',
-          isSelected: false,
-          onTap: () => Navigator.pushNamed(context, '/admin/referrals'),
+          isSelected: _selectedIndex == 3,
+          onTap: () => _selectSection(3),
         ),
         _DrawerTile(
           icon: Icons.bar_chart_outlined,
           selectedIcon: Icons.bar_chart,
           label: 'Reports & Analytics',
-          isSelected: false,
-          onTap: () => Navigator.pushNamed(context, '/admin/reports'),
+          isSelected: _selectedIndex == 4,
+          onTap: () => _selectSection(4),
         ),
         _DrawerTile(
           icon: Icons.history_outlined,
           selectedIcon: Icons.history,
           label: 'System Audit Trail',
-          isSelected: false,
-          onTap: () => Navigator.pushNamed(context, '/admin/audit'),
+          isSelected: _selectedIndex == 5,
+          onTap: () => _selectSection(5),
         ),
         const Spacer(),
         const Divider(indent: 16, endIndent: 16),
@@ -197,8 +236,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           icon: Icons.settings_outlined,
           selectedIcon: Icons.settings,
           label: 'System Settings',
-          isSelected: false,
-          onTap: () => Navigator.pushNamed(context, '/admin/settings'),
+          isSelected: _selectedIndex == 6,
+          onTap: () => _selectSection(6),
         ),
         const SizedBox(height: 24),
       ],
@@ -228,33 +267,33 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           title: 'Total Teachers',
           value: _stats?.totalTeachers.toString() ?? '0',
           icon: Icons.school,
-          color: Colors.blue,
+          color: BrandColors.sky,
         ),
         _StatCard(
           title: 'Total Parents',
           value: _stats?.totalParents.toString() ?? '0',
           icon: Icons.family_restroom,
-          color: Colors.orange,
+          color: BrandColors.sunshine,
         ),
         _StatCard(
           title: 'Total Children',
           value: _stats?.totalChildren.toString() ?? '0',
           icon: Icons.child_care,
-          color: Colors.green,
-          onTap: () => Navigator.pushNamed(context, '/admin/monitoring'),
+          color: BrandColors.green,
+          onTap: () => _selectSection(2),
         ),
         _StatCard(
           title: 'Pending Referrals',
           value: _stats?.pendingReferrals.toString() ?? '0',
           icon: Icons.assignment_late,
-          color: Colors.red,
-          onTap: () => Navigator.pushNamed(context, '/admin/referrals'),
+          color: const Color(0xFFE76F51),
+          onTap: () => _selectSection(3),
         ),
         _StatCard(
           title: 'Evaluations',
           value: _stats?.completedEvaluations.toString() ?? '0',
           icon: Icons.check_circle,
-          color: Colors.teal,
+          color: BrandColors.navy,
         ),
       ],
     );
@@ -269,22 +308,22 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           title: 'Add User',
           subtitle: 'Create Center Staff Accounts',
           icon: Icons.person_add_alt_1,
-          color: Colors.blue,
-          onTap: () => Navigator.pushNamed(context, '/admin/users'),
+          color: BrandColors.sky,
+          onTap: () => _selectSection(1),
         ),
         _QuickActionCard(
           title: 'Case Review',
           subtitle: 'Check Pending Referrals',
           icon: Icons.assignment_turned_in,
-          color: Colors.red,
-          onTap: () => Navigator.pushNamed(context, '/admin/referrals'),
+          color: const Color(0xFFE76F51),
+          onTap: () => _selectSection(3),
         ),
         _QuickActionCard(
           title: 'Audit Logs',
           subtitle: 'Review System Activity',
           icon: Icons.security,
-          color: Colors.blueGrey,
-          onTap: () => Navigator.pushNamed(context, '/admin/audit'),
+          color: BrandColors.navy,
+          onTap: () => _selectSection(5),
         ),
       ],
     );
@@ -331,27 +370,40 @@ class _DrawerTile extends StatelessWidget {
 
 class _ProfileMenu extends StatelessWidget {
   final VoidCallback onLogout;
+
   const _ProfileMenu({required this.onLogout});
+
+  Future<void> _confirmLogout(BuildContext context) async {
+    final confirmed = await ConfirmationDialog.show(
+      context: context,
+      title: 'Logout',
+      message: 'Are you sure you want to logout from ECCD GrowthTrack?',
+      confirmLabel: 'Logout',
+      confirmColor: Colors.red,
+      icon: Icons.logout,
+    );
+    if (confirmed) onLogout();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton(
+    return PopupMenuButton<String>(
       offset: const Offset(0, 48),
+      onSelected: (value) {
+        if (value == 'logout') _confirmLogout(context);
+      },
       child: const CircleAvatar(
         radius: 18,
-        backgroundColor: Colors.blue,
+        backgroundColor: BrandColors.navy,
         child: Text('A', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
-      itemBuilder: (context) => <PopupMenuEntry<dynamic>>[
-        const PopupMenuItem(child: ListTile(leading: Icon(Icons.person), title: Text('My Profile'))),
-        PopupMenuItem(
-          onTap: () => Navigator.pushNamed(context, '/admin/settings'),
-          child: const ListTile(leading: Icon(Icons.settings), title: Text('Settings')),
-        ),
-        const PopupMenuDivider(),
-        PopupMenuItem(
-          onTap: onLogout,
-          child: const ListTile(leading: Icon(Icons.logout, color: Colors.red), title: Text('Logout', style: TextStyle(color: Colors.red))),
+      itemBuilder: (context) => <PopupMenuEntry<String>>[
+        const PopupMenuItem<String>(
+          value: 'logout',
+          child: ListTile(
+            leading: Icon(Icons.logout, color: Colors.red),
+            title: Text('Logout', style: TextStyle(color: Colors.red)),
+          ),
         ),
       ],
     );

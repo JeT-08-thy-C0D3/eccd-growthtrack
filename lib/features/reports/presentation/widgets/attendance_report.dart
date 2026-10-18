@@ -10,6 +10,8 @@ class AttendanceReportTable extends StatelessWidget {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
+        dataRowMinHeight: 48,
+        dataRowMaxHeight: 72,
         columns: const [
           DataColumn(label: Text('Child ID')),
           DataColumn(label: Text('Child Name')),

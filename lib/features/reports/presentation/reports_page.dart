@@ -72,33 +72,28 @@ class _ReportsPageState extends State<ReportsPage> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Reports & Analytics'),
           bottom: const TabBar(
             isScrollable: true,
             tabs: [
-              Tab(text: 'Dashboard'),
               Tab(text: 'Progress'),
               Tab(text: 'Attendance'),
               Tab(text: 'Evaluations'),
               Tab(text: 'Referrals'),
             ],
           ),
-          actions: [
-            IconButton(onPressed: _loadData, icon: const Icon(Icons.refresh)),
-          ],
         ),
         body: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : TabBarView(
                 children: [
-                  _buildDashboard(),
-                  _buildReportTab('Progress Summary', ChildProgressReportTable(items: _progressItems)),
-                  _buildReportTab('Attendance Summary', AttendanceReportTable(items: _attendanceItems)),
-                  _buildReportTab('Evaluation Summary', EvaluationReportTable(items: _evaluationItems)),
-                  _buildReportTab('Referral Summary', ReferralReportTable(items: _referralItems)),
+                  _buildReportTab('Progress Summary', 'Progress', ChildProgressReportTable(items: _progressItems)),
+                  _buildReportTab('Attendance Summary', 'Attendance', AttendanceReportTable(items: _attendanceItems)),
+                  _buildReportTab('Evaluation Summary', 'Evaluation', EvaluationReportTable(items: _evaluationItems)),
+                  _buildReportTab('Referral Summary', 'Referral', ReferralReportTable(items: _referralItems)),
                 ],
               ),
       ),
@@ -167,15 +162,45 @@ class _ReportsPageState extends State<ReportsPage> {
     );
   }
 
-  Widget _buildReportTab(String title, Widget content) {
+  void _exportReport(String type) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Preparing $type report for export...')),
+    );
+  }
+
+  Widget _buildReportTab(String title, String exportType, Widget content) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          Row(
+            children: [
+              Expanded(
+                child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 12),
+              if (MediaQuery.sizeOf(context).width < 520)
+                IconButton(
+                  tooltip: 'Export CSV',
+                  onPressed: () => _exportReport(exportType),
+                  icon: const Icon(Icons.download_rounded),
+                )
+              else
+                OutlinedButton.icon(
+                  onPressed: () => _exportReport(exportType),
+                  icon: const Icon(Icons.download_rounded),
+                  label: const Text('Export CSV'),
+                ),
+            ],
+          ),
           const SizedBox(height: 16),
-          Expanded(child: content),
+          Expanded(
+            child: Card(
+              clipBehavior: Clip.antiAlias,
+              child: content,
+            ),
+          ),
         ],
       ),
     );
