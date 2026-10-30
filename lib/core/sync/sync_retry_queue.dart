@@ -2,9 +2,9 @@
 /// 
 /// Manages failed sync operations with exponential backoff.
 /// Implements retry logic with configurable limits and strategies.
+library;
 
 import 'dart:async';
-import '../../shared/models/canonical/canonical_entities.dart';
 import '../database/database_helper.dart';
 
 enum RetryStrategy { exponentialBackoff, linear, immediate }

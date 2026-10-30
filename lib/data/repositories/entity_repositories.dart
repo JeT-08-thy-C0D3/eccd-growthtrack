@@ -1,10 +1,13 @@
 /// Concrete Repository Implementations
-/// 
+///
 /// Specific repositories for each entity type using the generic RepositoryBase.
+library;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../../shared/models/canonical/index.dart';
-import 'repository_base.dart';
+import '../../core/database/repository_base.dart';
+import '../../core/database/query_builder.dart';
 
 // ============================================================================
 // EVALUATION REPOSITORY
@@ -16,12 +19,12 @@ class EvaluationRepository extends RepositoryBase<EvaluationSession> {
 
   @override
   EvaluationSession fromJson(Map<String, dynamic> json) {
-    return EvaluationSession.fromJson(json);
+    return EvaluationSession.fromMap(json);
   }
 
   @override
   Map<String, dynamic> toJson(EvaluationSession entity) {
-    return entity.toJson();
+    return entity.toMap();
   }
 
   /// Get evaluations for a specific child
@@ -57,10 +60,10 @@ class EvaluationRepository extends RepositoryBase<EvaluationSession> {
 
     final snapshot = await firestoreQuery.get();
     return snapshot.docs
-        .map((doc) => fromJson({
-              ...doc.data() as Map<String, dynamic>,
-              '__id': doc.id,
-            }))
+        .map(
+          (doc) =>
+              fromJson({...doc.data() as Map<String, dynamic>, '__id': doc.id}),
+        )
         .toList();
   }
 }
@@ -75,12 +78,12 @@ class ReferralRepository extends RepositoryBase<Referral> {
 
   @override
   Referral fromJson(Map<String, dynamic> json) {
-    return Referral.fromJson(json);
+    return Referral.fromMap(json);
   }
 
   @override
   Map<String, dynamic> toJson(Referral entity) {
-    return entity.toJson();
+    return entity.toMap();
   }
 
   /// Get referrals for a specific child
@@ -91,10 +94,10 @@ class ReferralRepository extends RepositoryBase<Referral> {
         .get();
 
     return snapshot.docs
-        .map((doc) => fromJson({
-              ...doc.data() as Map<String, dynamic>,
-              '__id': doc.id,
-            }))
+        .map(
+          (doc) =>
+              fromJson({...doc.data() as Map<String, dynamic>, '__id': doc.id}),
+        )
         .toList();
   }
 
@@ -106,10 +109,10 @@ class ReferralRepository extends RepositoryBase<Referral> {
         .get();
 
     return snapshot.docs
-        .map((doc) => fromJson({
-              ...doc.data() as Map<String, dynamic>,
-              '__id': doc.id,
-            }))
+        .map(
+          (doc) =>
+              fromJson({...doc.data() as Map<String, dynamic>, '__id': doc.id}),
+        )
         .toList();
   }
 
@@ -121,10 +124,10 @@ class ReferralRepository extends RepositoryBase<Referral> {
         .get();
 
     return snapshot.docs
-        .map((doc) => fromJson({
-              ...doc.data() as Map<String, dynamic>,
-              '__id': doc.id,
-            }))
+        .map(
+          (doc) =>
+              fromJson({...doc.data() as Map<String, dynamic>, '__id': doc.id}),
+        )
         .toList();
   }
 }
@@ -139,12 +142,12 @@ class AttendanceRepository extends RepositoryBase<AttendanceEvent> {
 
   @override
   AttendanceEvent fromJson(Map<String, dynamic> json) {
-    return AttendanceEvent.fromJson(json);
+    return AttendanceEvent.fromMap(json);
   }
 
   @override
   Map<String, dynamic> toJson(AttendanceEvent entity) {
-    return entity.toJson();
+    return entity.toMap();
   }
 
   /// Get attendance for a specific child
@@ -155,10 +158,10 @@ class AttendanceRepository extends RepositoryBase<AttendanceEvent> {
         .get();
 
     return snapshot.docs
-        .map((doc) => fromJson({
-              ...doc.data() as Map<String, dynamic>,
-              '__id': doc.id,
-            }))
+        .map(
+          (doc) =>
+              fromJson({...doc.data() as Map<String, dynamic>, '__id': doc.id}),
+        )
         .toList();
   }
 
@@ -169,21 +172,23 @@ class AttendanceRepository extends RepositoryBase<AttendanceEvent> {
     String? childId,
   }) async {
     var query = collection
-        .where('eventTime',
-            isGreaterThanOrEqualTo: start,
-            isLessThanOrEqualTo: end)
+        .where(
+          'eventTime',
+          isGreaterThanOrEqualTo: start,
+          isLessThanOrEqualTo: end,
+        )
         .orderBy('eventTime', descending: true);
 
     if (childId != null) {
-      query = query.where('childId', isEqualTo: childId) as Query;
+      query = query.where('childId', isEqualTo: childId);
     }
 
     final snapshot = await query.get();
     return snapshot.docs
-        .map((doc) => fromJson({
-              ...doc.data() as Map<String, dynamic>,
-              '__id': doc.id,
-            }))
+        .map(
+          (doc) =>
+              fromJson({...doc.data() as Map<String, dynamic>, '__id': doc.id}),
+        )
         .toList();
   }
 }
@@ -198,12 +203,12 @@ class ChildRepository extends RepositoryBase<Child> {
 
   @override
   Child fromJson(Map<String, dynamic> json) {
-    return Child.fromJson(json);
+    return Child.fromMap(json);
   }
 
   @override
   Map<String, dynamic> toJson(Child entity) {
-    return entity.toJson();
+    return entity.toMap();
   }
 
   /// Get children at a center
@@ -215,10 +220,10 @@ class ChildRepository extends RepositoryBase<Child> {
         .get();
 
     return snapshot.docs
-        .map((doc) => fromJson({
-              ...doc.data() as Map<String, dynamic>,
-              '__id': doc.id,
-            }))
+        .map(
+          (doc) =>
+              fromJson({...doc.data() as Map<String, dynamic>, '__id': doc.id}),
+        )
         .toList();
   }
 
@@ -227,14 +232,14 @@ class ChildRepository extends RepositoryBase<Child> {
     // Note: Firestore doesn't support LIKE; this is case-sensitive prefix
     final snapshot = await collection
         .where('name', isGreaterThanOrEqualTo: query)
-        .where('name', isLessThan: query + '\uf8ff')
+        .where('name', isLessThan: '$query\uf8ff')
         .get();
 
     return snapshot.docs
-        .map((doc) => fromJson({
-              ...doc.data() as Map<String, dynamic>,
-              '__id': doc.id,
-            }))
+        .map(
+          (doc) =>
+              fromJson({...doc.data() as Map<String, dynamic>, '__id': doc.id}),
+        )
         .toList();
   }
 }
@@ -249,12 +254,12 @@ class UserRepository extends RepositoryBase<CanonicalUser> {
 
   @override
   CanonicalUser fromJson(Map<String, dynamic> json) {
-    return CanonicalUser.fromJson(json);
+    return CanonicalUser.fromMap(json);
   }
 
   @override
   Map<String, dynamic> toJson(CanonicalUser entity) {
-    return entity.toJson();
+    return entity.toMap();
   }
 
   /// Get user by email
@@ -280,10 +285,10 @@ class UserRepository extends RepositoryBase<CanonicalUser> {
         .get();
 
     return snapshot.docs
-        .map((doc) => fromJson({
-              ...doc.data() as Map<String, dynamic>,
-              '__id': doc.id,
-            }))
+        .map(
+          (doc) =>
+              fromJson({...doc.data() as Map<String, dynamic>, '__id': doc.id}),
+        )
         .toList();
   }
 
@@ -296,10 +301,10 @@ class UserRepository extends RepositoryBase<CanonicalUser> {
         .get();
 
     return snapshot.docs
-        .map((doc) => fromJson({
-              ...doc.data() as Map<String, dynamic>,
-              '__id': doc.id,
-            }))
+        .map(
+          (doc) =>
+              fromJson({...doc.data() as Map<String, dynamic>, '__id': doc.id}),
+        )
         .toList();
   }
 }
@@ -314,12 +319,12 @@ class NotificationRepository extends RepositoryBase<Notification> {
 
   @override
   Notification fromJson(Map<String, dynamic> json) {
-    return Notification.fromJson(json);
+    return Notification.fromMap(json);
   }
 
   @override
   Map<String, dynamic> toJson(Notification entity) {
-    return entity.toJson();
+    return entity.toMap();
   }
 
   /// Get unread notifications for user
@@ -332,10 +337,10 @@ class NotificationRepository extends RepositoryBase<Notification> {
         .get();
 
     return snapshot.docs
-        .map((doc) => fromJson({
-              ...doc.data() as Map<String, dynamic>,
-              '__id': doc.id,
-            }))
+        .map(
+          (doc) =>
+              fromJson({...doc.data() as Map<String, dynamic>, '__id': doc.id}),
+        )
         .toList();
   }
 
@@ -348,10 +353,10 @@ class NotificationRepository extends RepositoryBase<Notification> {
         .get();
 
     return snapshot.docs
-        .map((doc) => fromJson({
-              ...doc.data() as Map<String, dynamic>,
-              '__id': doc.id,
-            }))
+        .map(
+          (doc) =>
+              fromJson({...doc.data() as Map<String, dynamic>, '__id': doc.id}),
+        )
         .toList();
   }
 
@@ -373,12 +378,12 @@ class AuditLogRepository extends RepositoryBase<AuditLog> {
 
   @override
   AuditLog fromJson(Map<String, dynamic> json) {
-    return AuditLog.fromJson(json);
+    return AuditLog.fromMap(json);
   }
 
   @override
   Map<String, dynamic> toJson(AuditLog entity) {
-    return entity.toJson();
+    return entity.toMap();
   }
 
   /// Get logs by actor
@@ -390,10 +395,10 @@ class AuditLogRepository extends RepositoryBase<AuditLog> {
         .get();
 
     return snapshot.docs
-        .map((doc) => fromJson({
-              ...doc.data() as Map<String, dynamic>,
-              '__id': doc.id,
-            }))
+        .map(
+          (doc) =>
+              fromJson({...doc.data() as Map<String, dynamic>, '__id': doc.id}),
+        )
         .toList();
   }
 
@@ -406,27 +411,29 @@ class AuditLogRepository extends RepositoryBase<AuditLog> {
         .get();
 
     return snapshot.docs
-        .map((doc) => fromJson({
-              ...doc.data() as Map<String, dynamic>,
-              '__id': doc.id,
-            }))
+        .map(
+          (doc) =>
+              fromJson({...doc.data() as Map<String, dynamic>, '__id': doc.id}),
+        )
         .toList();
   }
 
   /// Get logs in date range
   Future<List<AuditLog>> getInDateRange(DateTime start, DateTime end) async {
     final snapshot = await collection
-        .where('timestamp',
-            isGreaterThanOrEqualTo: start,
-            isLessThanOrEqualTo: end)
+        .where(
+          'timestamp',
+          isGreaterThanOrEqualTo: start,
+          isLessThanOrEqualTo: end,
+        )
         .orderBy('timestamp', descending: true)
         .get();
 
     return snapshot.docs
-        .map((doc) => fromJson({
-              ...doc.data() as Map<String, dynamic>,
-              '__id': doc.id,
-            }))
+        .map(
+          (doc) =>
+              fromJson({...doc.data() as Map<String, dynamic>, '__id': doc.id}),
+        )
         .toList();
   }
 }

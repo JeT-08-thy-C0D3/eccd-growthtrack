@@ -2,6 +2,7 @@
 /// 
 /// Manages category administration and provides efficient access to categories.
 /// Supports create, read, update, delete, and caching with TTL.
+library;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../shared/models/canonical/category_model.dart';

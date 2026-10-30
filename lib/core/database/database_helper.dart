@@ -1,10 +1,15 @@
+import 'dart:convert';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+
 import '../../shared/models/user_model.dart';
 import '../../shared/models/child_model.dart';
 import '../../shared/models/file_upload_model.dart';
 import '../../shared/models/assessment_model.dart';
+import '../../shared/models/canonical/canonical_entities.dart';
 
 class DatabaseHelper {
   // Singleton instance
@@ -14,7 +19,9 @@ class DatabaseHelper {
   DatabaseHelper._init();
 
   Future<Database> get database async {
-    if (kIsWeb) throw UnsupportedError('SQLite (sqflite) is not supported on Web.');
+    if (kIsWeb) {
+      throw UnsupportedError('SQLite (sqflite) is not supported on Web.');
+    }
     if (_database != null) return _database!;
     _database = await _initDB('eccd_growthtrack.db');
     return _database!;
@@ -26,7 +33,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 6,
+      version: 8,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -34,13 +41,15 @@ class DatabaseHelper {
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      await db.execute(
-        'ALTER TABLE users ADD COLUMN terms_accepted_at TEXT',
-      );
+      await db.execute('ALTER TABLE users ADD COLUMN terms_accepted_at TEXT');
     }
     if (oldVersion < 3) {
-      await db.execute('ALTER TABLE activity_submissions ADD COLUMN evidence_url TEXT');
-      await db.execute('ALTER TABLE activity_submissions ADD COLUMN evidence_media_type TEXT');
+      await db.execute(
+        'ALTER TABLE activity_submissions ADD COLUMN evidence_url TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE activity_submissions ADD COLUMN evidence_media_type TEXT',
+      );
     }
     if (oldVersion < 4) {
       await db.execute('ALTER TABLE children ADD COLUMN parent_uid TEXT');
@@ -50,7 +59,23 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE children ADD COLUMN affix TEXT');
     }
     if (oldVersion < 6) {
-      await db.execute("ALTER TABLE activities ADD COLUMN developmental_domain TEXT NOT NULL DEFAULT 'General Development'");
+      await db.execute(
+        "ALTER TABLE activities ADD COLUMN developmental_domain TEXT NOT NULL DEFAULT 'General Development'",
+      );
+    }
+    if (oldVersion < 7) {
+      await _createSyncTables(db);
+    }
+    if (oldVersion < 8) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS remote_cache (
+          collection_name TEXT NOT NULL,
+          document_id TEXT,
+          payload TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (collection_name, document_id)
+        )
+      ''');
     }
   }
 
@@ -290,6 +315,41 @@ class DatabaseHelper {
         is_synced $integerType
       )
     ''');
+
+    await _createSyncTables(db);
+    await db.execute('''
+      CREATE TABLE remote_cache (
+        collection_name TEXT NOT NULL,
+        document_id TEXT,
+        payload TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (collection_name, document_id)
+      )
+    ''');
+  }
+
+  Future<void> _createSyncTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_outbox (
+        id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        status TEXT NOT NULL,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        synced_at TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS retry_queue (
+        id TEXT PRIMARY KEY,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL,
+        next_retry_at TEXT
+      )
+    ''');
   }
 
   // --- Generic CRUD ---
@@ -297,13 +357,26 @@ class DatabaseHelper {
   Future<int> insertRecord(String table, Map<String, dynamic> row) async {
     if (kIsWeb) return 0;
     final db = await instance.database;
-    return await db.insert(table, row, conflictAlgorithm: ConflictAlgorithm.replace);
+    return await db.insert(
+      table,
+      row,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
-  Future<int> updateRecord(String table, Map<String, dynamic> row, String idField) async {
+  Future<int> updateRecord(
+    String table,
+    Map<String, dynamic> row,
+    String idField,
+  ) async {
     if (kIsWeb) return 0;
     final db = await instance.database;
-    return await db.update(table, row, where: '$idField = ?', whereArgs: [row[idField]]);
+    return await db.update(
+      table,
+      row,
+      where: '$idField = ?',
+      whereArgs: [row[idField]],
+    );
   }
 
   Future<List<Map<String, dynamic>>> getUnsyncedRecords(String table) async {
@@ -312,10 +385,157 @@ class DatabaseHelper {
     return await db.query(table, where: 'is_synced = ?', whereArgs: [0]);
   }
 
-  Future<void> markAsSynced(String table, String idField, dynamic idValue) async {
+  Future<void> markAsSynced(
+    String table,
+    String idField,
+    dynamic idValue,
+  ) async {
     if (kIsWeb) return;
     final db = await instance.database;
-    await db.update(table, {'is_synced': 1}, where: '$idField = ?', whereArgs: [idValue]);
+    await db.update(
+      table,
+      {'is_synced': 1},
+      where: '$idField = ?',
+      whereArgs: [idValue],
+    );
+  }
+
+  // --- Offline sync outbox and retry queue ---
+
+  Future<int> getPendingSyncCount() async {
+    if (kIsWeb) return 0;
+    final db = await database;
+    final result = await db.rawQuery(
+      "SELECT COUNT(*) AS count FROM sync_outbox WHERE status = 'pending'",
+    );
+    return (result.first['count'] as int?) ?? 0;
+  }
+
+  Future<void> insertSyncOutboxItem(dynamic item) async {
+    if (kIsWeb) return;
+    final db = await database;
+    final data = item.toMap() as Map<String, dynamic>;
+    await db.insert('sync_outbox', {
+      'id': item.id as String,
+      'payload': jsonEncode(data),
+      'status': item.status as String,
+      'retry_count': item.retryCount as int,
+      'synced_at': null,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<List<SyncOutboxItem>> getPendingSyncOutboxItems() async {
+    if (kIsWeb) return [];
+    final db = await database;
+    final rows = await db.query('sync_outbox', where: "status = 'pending'");
+    return rows
+        .map(
+          (row) => SyncOutboxItem.fromMap(
+            Map<String, dynamic>.from(
+              jsonDecode(row['payload'] as String) as Map,
+            ),
+          ),
+        )
+        .toList();
+  }
+
+  Future<SyncOutboxItem?> getSyncOutboxItem(String id) async {
+    if (kIsWeb) return null;
+    final db = await database;
+    final rows = await db.query(
+      'sync_outbox',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    if (rows.isEmpty) return null;
+    return SyncOutboxItem.fromMap(
+      Map<String, dynamic>.from(
+        jsonDecode(rows.first['payload'] as String) as Map,
+      ),
+    );
+  }
+
+  Future<void> updateSyncOutboxItemStatus(
+    String id,
+    String status,
+    DateTime? syncedAt,
+  ) async {
+    if (kIsWeb) return;
+    final db = await database;
+    await db.update(
+      'sync_outbox',
+      {'status': status, 'synced_at': syncedAt?.toIso8601String()},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<void> incrementOutboxRetryCount(String id) async {
+    if (kIsWeb) return;
+    final db = await database;
+    await db.rawUpdate(
+      'UPDATE sync_outbox SET retry_count = retry_count + 1 WHERE id = ?',
+      [id],
+    );
+  }
+
+  Future<void> cacheRemoteData(
+    String collection,
+    Map<String, dynamic> data,
+  ) async {
+    if (kIsWeb) return;
+    final db = await database;
+    final id = (data['id'] ?? data['__id'])?.toString();
+    await db.insert('remote_cache', {
+      'collection_name': collection,
+      'document_id': id,
+      'payload': jsonEncode(data),
+      'updated_at': DateTime.now().toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> insertRetryQueueItem(
+    String id,
+    String entityType,
+    String entityId,
+    String operation,
+    Map<String, dynamic> payload,
+    int retryCount,
+    String status,
+  ) async {
+    if (kIsWeb) return;
+    final db = await database;
+    await db.insert('retry_queue', {
+      'id': id,
+      'entity_type': entityType,
+      'entity_id': entityId,
+      'operation': operation,
+      'payload': jsonEncode(payload),
+      'retry_count': retryCount,
+      'status': status,
+      'next_retry_at': null,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> updateRetryQueueItemStatus(
+    String id,
+    String status,
+    DateTime? nextRetryAt,
+  ) async {
+    if (kIsWeb) return;
+    final db = await database;
+    await db.update(
+      'retry_queue',
+      {'status': status, 'next_retry_at': nextRetryAt?.toIso8601String()},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<void> clearRetryQueue() async {
+    if (kIsWeb) return;
+    final db = await database;
+    await db.delete('retry_queue');
   }
 
   // --- User Operations ---
@@ -335,16 +555,65 @@ class DatabaseHelper {
   }
 
   Future<List<UserModel>> readAllUsers() async {
-    if (kIsWeb) return [];
+    if (kIsWeb) {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .get(const GetOptions(source: Source.server));
+      return snapshot.docs
+          .map(
+            (doc) => UserModel.fromMap({
+              ...doc.data(),
+              'uid': doc.data()['uid'] ?? doc.id,
+            }),
+          )
+          .toList();
+    }
+
     final db = await instance.database;
     final result = await db.query('users');
-    return result.map((json) => UserModel.fromMap(json)).toList();
+    if (result.isNotEmpty) {
+      return result.map((json) => UserModel.fromMap(json)).toList();
+    }
+
+    // A new device has no SQLite profile cache yet. Load it once from the
+    // cloud, then keep a local copy for the next read/offline use.
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .get(const GetOptions(source: Source.server));
+      final users = snapshot.docs
+          .map(
+            (doc) => UserModel.fromMap({
+              ...doc.data(),
+              'uid': doc.data()['uid'] ?? doc.id,
+            }),
+          )
+          .toList();
+      for (final user in users) {
+        final row = user.toMap()
+          ..remove('id')
+          ..['is_synced'] = 1;
+        await db.insert(
+          'users',
+          row,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      return users;
+    } catch (_) {
+      return [];
+    }
   }
 
   Future<int> updateUserFcmToken(String uid, String token) async {
     if (kIsWeb) return 0;
     final db = await instance.database;
-    return await db.update('users', {'fcm_token': token}, where: 'uid = ?', whereArgs: [uid]);
+    return await db.update(
+      'users',
+      {'fcm_token': token},
+      where: 'uid = ?',
+      whereArgs: [uid],
+    );
   }
 
   Future<int> delete(String table, int id) async {
@@ -356,44 +625,189 @@ class DatabaseHelper {
   // --- Child Operations ---
 
   Future<int> insertChild(ChildModel child) async {
-    if (kIsWeb) return 0;
+    final cloudData = child.toMap()
+      ..remove('id')
+      ..remove('is_synced');
+
+    if (kIsWeb) {
+      await FirebaseFirestore.instance
+          .collection('children')
+          .doc(child.childId)
+          .set({
+            ...cloudData,
+            'server_updated_at': FieldValue.serverTimestamp(),
+            'server_created_at': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+      return 0;
+    }
+
     final db = await instance.database;
-    return await db.insert('children', child.toMap());
+    final localData = child.toMap()
+      ..remove('id')
+      ..['is_synced'] = 0;
+    final id = await db.insert(
+      'children',
+      localData,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+
+    // Local write is already complete. A cloud failure intentionally leaves
+    // is_synced at 0 so SyncService can upload it once connectivity returns.
+    try {
+      await FirebaseFirestore.instance
+          .collection('children')
+          .doc(child.childId)
+          .set({
+            ...cloudData,
+            'server_updated_at': FieldValue.serverTimestamp(),
+            'server_created_at': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+      await db.update(
+        'children',
+        {'is_synced': 1},
+        where: 'child_id = ?',
+        whereArgs: [child.childId],
+      );
+    } catch (_) {}
+
+    return id;
   }
 
   Future<List<ChildModel>> getAllChildren() async {
-    if (kIsWeb) return [];
+    if (kIsWeb) return _fetchChildrenFromCloud();
+
     final db = await instance.database;
     final result = await db.query('children', orderBy: 'last_name ASC');
-    return result.map((json) => ChildModel.fromMap(json)).toList();
+    if (result.isNotEmpty) {
+      return result.map((json) => ChildModel.fromMap(json)).toList();
+    }
+
+    return _fetchChildrenFromCloud(cacheDatabase: db);
   }
 
-  Future<List<ChildModel>> readChildrenByParent(String parentUid) async {
-    if (kIsWeb) return [];
+  Future<List<ChildModel>> readChildrenByParent(
+    String parentUid, {
+    bool allowCloudFallback = true,
+  }) async {
+    if (kIsWeb) return _fetchChildrenForUser(parentUid, isParent: true);
+
     final db = await instance.database;
-    final userMaps = await db.query('users', where: 'uid = ?', whereArgs: [parentUid]);
-    if (userMaps.isEmpty) return [];
-    final userName = userMaps.first['name'] as String;
+    final userMaps = await db.query(
+      'users',
+      where: 'uid = ?',
+      whereArgs: [parentUid],
+    );
+    final userName = userMaps.isEmpty ? null : userMaps.first['name'] as String;
     final result = await db.query(
       'children',
-      where: 'parent_uid = ? OR (parent_uid IS NULL AND parent_name = ?)',
-      whereArgs: [parentUid, userName],
+      where: userName == null
+          ? 'parent_uid = ?'
+          : 'parent_uid = ? OR (parent_uid IS NULL AND parent_name = ?)',
+      whereArgs: userName == null ? [parentUid] : [parentUid, userName],
     );
-    return result.map((json) => ChildModel.fromMap(json)).toList();
+    if (result.isNotEmpty) {
+      return result.map((json) => ChildModel.fromMap(json)).toList();
+    }
+    if (!allowCloudFallback) return [];
+
+    return _fetchChildrenForUser(parentUid, isParent: true, cacheDatabase: db);
   }
 
-  Future<List<ChildModel>> readChildrenByTeacher(String teacherUid) async {
-    if (kIsWeb) return [];
+  Future<List<ChildModel>> readChildrenByTeacher(
+    String teacherUid, {
+    bool allowCloudFallback = true,
+  }) async {
+    if (kIsWeb) return _fetchChildrenForUser(teacherUid, isParent: false);
+
     final db = await instance.database;
-    final userMaps = await db.query('users', where: 'uid = ?', whereArgs: [teacherUid]);
-    if (userMaps.isEmpty) return [];
-    final teacherName = userMaps.first['name'] as String;
+    final userMaps = await db.query(
+      'users',
+      where: 'uid = ?',
+      whereArgs: [teacherUid],
+    );
+    final teacherName = userMaps.isEmpty
+        ? null
+        : userMaps.first['name'] as String;
     final result = await db.query(
       'children',
-      where: 'teacher_uid = ? OR (teacher_uid IS NULL AND teacher_name = ?)',
-      whereArgs: [teacherUid, teacherName],
+      where: teacherName == null
+          ? 'teacher_uid = ?'
+          : 'teacher_uid = ? OR (teacher_uid IS NULL AND teacher_name = ?)',
+      whereArgs: teacherName == null ? [teacherUid] : [teacherUid, teacherName],
     );
-    return result.map((json) => ChildModel.fromMap(json)).toList();
+    if (result.isNotEmpty) {
+      return result.map((json) => ChildModel.fromMap(json)).toList();
+    }
+    if (!allowCloudFallback) return [];
+
+    return _fetchChildrenForUser(
+      teacherUid,
+      isParent: false,
+      cacheDatabase: db,
+    );
+  }
+
+  Future<List<ChildModel>> _fetchChildrenFromCloud({
+    Database? cacheDatabase,
+  }) async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('children')
+          .get(const GetOptions(source: Source.server));
+      final children = snapshot.docs
+          .map(
+            (doc) => ChildModel.fromMap({
+              ...doc.data(),
+              'child_id': doc.data()['child_id'] ?? doc.id,
+            }),
+          )
+          .toList();
+      if (cacheDatabase != null) await _cacheChildren(cacheDatabase, children);
+      return children;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<List<ChildModel>> _fetchChildrenForUser(
+    String uid, {
+    required bool isParent,
+    Database? cacheDatabase,
+  }) async {
+    final children = await _fetchChildrenFromCloud(
+      cacheDatabase: cacheDatabase,
+    );
+    if (children.isEmpty) return [];
+
+    String? userName;
+    try {
+      final profile = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get(const GetOptions(source: Source.server));
+      userName = profile.data()?['name'] as String?;
+    } catch (_) {}
+
+    return children.where((child) {
+      final childUid = isParent ? child.parentUid : child.teacherUid;
+      final childName = isParent ? child.parentName : child.teacherName;
+      return childUid == uid || (childUid == null && userName == childName);
+    }).toList();
+  }
+
+  Future<void> _cacheChildren(Database db, List<ChildModel> children) async {
+    final batch = db.batch();
+    for (final child in children) {
+      final row = child.toMap()
+        ..remove('id')
+        ..['is_synced'] = 1;
+      batch.insert(
+        'children',
+        row,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
   }
 
   // --- Attendance ---
@@ -404,21 +818,33 @@ class DatabaseHelper {
     return await db.insert('attendance', attendance);
   }
 
-  Future<List<Map<String, dynamic>>> getChildAttendanceHistory(String childId) async {
+  Future<List<Map<String, dynamic>>> getChildAttendanceHistory(
+    String childId,
+  ) async {
     if (kIsWeb) return [];
     final db = await instance.database;
-    return await db.query('attendance', where: 'child_id = ?', whereArgs: [childId], orderBy: 'attendance_date DESC');
+    return await db.query(
+      'attendance',
+      where: 'child_id = ?',
+      whereArgs: [childId],
+      orderBy: 'attendance_date DESC',
+    );
   }
 
-  Future<List<Map<String, dynamic>>> getAttendanceSummaryByDate(String date) async {
+  Future<List<Map<String, dynamic>>> getAttendanceSummaryByDate(
+    String date,
+  ) async {
     if (kIsWeb) return [];
     final db = await instance.database;
-    return await db.rawQuery('''
+    return await db.rawQuery(
+      '''
       SELECT a.*, c.first_name, c.last_name
       FROM attendance a
       JOIN children c ON a.child_id = c.child_id
       WHERE a.attendance_date = ?
-    ''', [date]);
+    ''',
+      [date],
+    );
   }
 
   // --- Evaluations ---
@@ -435,40 +861,76 @@ class DatabaseHelper {
     return await db.insert('evaluations', assessment.toMap());
   }
 
-  Future<List<Map<String, dynamic>>> getChildEvaluationHistory(String childId) async {
+  Future<List<Map<String, dynamic>>> getChildEvaluationHistory(
+    String childId,
+  ) async {
     if (kIsWeb) return [];
     final db = await instance.database;
-    return await db.query('evaluations', where: 'child_id = ?', whereArgs: [childId], orderBy: 'evaluation_date DESC');
+    return await db.query(
+      'evaluations',
+      where: 'child_id = ?',
+      whereArgs: [childId],
+      orderBy: 'evaluation_date DESC',
+    );
   }
 
-  Future<List<Map<String, dynamic>>> getLatestEvaluations(String childId) async {
+  Future<List<Map<String, dynamic>>> getLatestEvaluations(
+    String childId,
+  ) async {
     if (kIsWeb) return [];
     final db = await instance.database;
-    return await db.rawQuery('''
+    return await db.rawQuery(
+      '''
       SELECT e1.* FROM evaluations e1
       WHERE e1.child_id = ? AND e1.evaluation_date = (
         SELECT MAX(e2.evaluation_date) FROM evaluations e2
         WHERE e2.child_id = e1.child_id AND e2.domain = e1.domain
       )
-    ''', [childId]);
+    ''',
+      [childId],
+    );
   }
 
   // --- Home Activities ---
 
-  Future<List<Map<String, dynamic>>> getHomeActivitiesByTeacher(int teacherId) async {
+  Future<List<Map<String, dynamic>>> getHomeActivitiesByTeacher(
+    int teacherId,
+  ) async {
     if (kIsWeb) return [];
     final db = await instance.database;
-    final userMaps = await db.query('users', where: 'id = ?', whereArgs: [teacherId]);
+    final userMaps = await db.query(
+      'users',
+      where: 'id = ?',
+      whereArgs: [teacherId],
+    );
     if (userMaps.isEmpty) return [];
     final teacherName = userMaps.first['name'] as String;
-    return await db.query('activities', where: 'assigned_by = ?', whereArgs: [teacherName]);
+    return await db.query(
+      'activities',
+      where: 'assigned_by = ?',
+      whereArgs: [teacherName],
+    );
   }
 
-  Future<int> createHomeActivity(int teacherId, int childLocalId, String title, String instructions, {int maxScore = 20}) async {
+  Future<int> createHomeActivity(
+    int teacherId,
+    int childLocalId,
+    String title,
+    String instructions, {
+    int maxScore = 20,
+  }) async {
     if (kIsWeb) return 0;
     final db = await instance.database;
-    final teacherMaps = await db.query('users', where: 'id = ?', whereArgs: [teacherId]);
-    final childMaps = await db.query('children', where: 'id = ?', whereArgs: [childLocalId]);
+    final teacherMaps = await db.query(
+      'users',
+      where: 'id = ?',
+      whereArgs: [teacherId],
+    );
+    final childMaps = await db.query(
+      'children',
+      where: 'id = ?',
+      whereArgs: [childLocalId],
+    );
     if (teacherMaps.isEmpty || childMaps.isEmpty) return 0;
     final teacherName = teacherMaps.first['name'] as String;
     final childId = childMaps.first['child_id'] as String;
@@ -487,10 +949,17 @@ class DatabaseHelper {
     });
   }
 
-  Future<List<Map<String, dynamic>>> getActivitiesByChild(String childId) async {
+  Future<List<Map<String, dynamic>>> getActivitiesByChild(
+    String childId,
+  ) async {
     if (kIsWeb) return [];
     final db = await instance.database;
-    return await db.query('activities', where: 'child_id = ?', whereArgs: [childId], orderBy: 'due_date DESC');
+    return await db.query(
+      'activities',
+      where: 'child_id = ?',
+      whereArgs: [childId],
+      orderBy: 'due_date DESC',
+    );
   }
 
   Future<List<Map<String, dynamic>>> getAllActivities() async {
@@ -502,11 +971,16 @@ class DatabaseHelper {
   Future<int> updateActivityStatus(int id, String status) async {
     if (kIsWeb) return 0;
     final db = await instance.database;
-    return await db.update('activities', {
-      'status': status,
-      'updated_at': DateTime.now().toIso8601String(),
-      'is_synced': 0,
-    }, where: 'id = ?', whereArgs: [id]);
+    return await db.update(
+      'activities',
+      {
+        'status': status,
+        'updated_at': DateTime.now().toIso8601String(),
+        'is_synced': 0,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<int> insertActivitySubmission(Map<String, dynamic> submission) async {
@@ -518,7 +992,11 @@ class DatabaseHelper {
   Future<Map<String, dynamic>?> getSubmissionByActivity(int activityId) async {
     if (kIsWeb) return null;
     final db = await instance.database;
-    final maps = await db.query('activity_submissions', where: 'activity_id = ?', whereArgs: [activityId]);
+    final maps = await db.query(
+      'activity_submissions',
+      where: 'activity_id = ?',
+      whereArgs: [activityId],
+    );
     return maps.isNotEmpty ? maps.first : null;
   }
 
@@ -553,9 +1031,37 @@ class DatabaseHelper {
     ''');
   }
 
-  Future<int> updateSubmissionReview(int submissionId, String review, String status, {int? score}) async {
+  Future<int> updateSubmissionReview(
+    int submissionId,
+    String review,
+    String status, {
+    int? score,
+  }) async {
     if (kIsWeb) return 0;
     final db = await instance.database;
+
+    // Enforce the activity's score range at the data layer as well as in the
+    // form. This prevents an invalid score from being saved by any caller.
+    if (score != null) {
+      final scoreLimit = await db.rawQuery(
+        '''
+        SELECT a.max_score
+        FROM activity_submissions s
+        INNER JOIN activities a ON a.id = s.activity_id
+        WHERE s.id = ?
+        LIMIT 1
+        ''',
+        [submissionId],
+      );
+      if (scoreLimit.isEmpty) {
+        throw StateError('Activity submission was not found.');
+      }
+      final maxScore = (scoreLimit.first['max_score'] as num?)?.toInt() ?? 20;
+      if (score < 0 || score > maxScore) {
+        throw StateError('Score must be between 0 and $maxScore.');
+      }
+    }
+
     final updates = <String, dynamic>{
       'teacher_review': review,
       'review_status': status,
@@ -564,7 +1070,12 @@ class DatabaseHelper {
     if (score != null) {
       updates['score'] = score;
     }
-    return await db.update('activity_submissions', updates, where: 'id = ?', whereArgs: [submissionId]);
+    return await db.update(
+      'activity_submissions',
+      updates,
+      where: 'id = ?',
+      whereArgs: [submissionId],
+    );
   }
 
   // --- Feedback ---
@@ -578,7 +1089,12 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getFeedbackByChild(String childId) async {
     if (kIsWeb) return [];
     final db = await instance.database;
-    return await db.query('parent_feedback', where: 'child_id = ?', whereArgs: [childId], orderBy: 'submission_date DESC');
+    return await db.query(
+      'parent_feedback',
+      where: 'child_id = ?',
+      whereArgs: [childId],
+      orderBy: 'submission_date DESC',
+    );
   }
 
   // --- Triangulations & Summaries ---
@@ -589,10 +1105,17 @@ class DatabaseHelper {
     return await db.insert('triangulations', triangulation);
   }
 
-  Future<List<Map<String, dynamic>>> getTriangulationHistory(String childId) async {
+  Future<List<Map<String, dynamic>>> getTriangulationHistory(
+    String childId,
+  ) async {
     if (kIsWeb) return [];
     final db = await instance.database;
-    return await db.query('triangulations', where: 'child_id = ?', whereArgs: [childId], orderBy: 'generated_date DESC');
+    return await db.query(
+      'triangulations',
+      where: 'child_id = ?',
+      whereArgs: [childId],
+      orderBy: 'generated_date DESC',
+    );
   }
 
   Future<int> insertDevelopmentSummary(Map<String, dynamic> summary) async {
@@ -601,13 +1124,22 @@ class DatabaseHelper {
     return await db.insert('development_summaries', summary);
   }
 
-  Future<List<Map<String, dynamic>>> getDevelopmentSummaryHistory(String childId) async {
+  Future<List<Map<String, dynamic>>> getDevelopmentSummaryHistory(
+    String childId,
+  ) async {
     if (kIsWeb) return [];
     final db = await instance.database;
-    return await db.query('development_summaries', where: 'child_id = ?', whereArgs: [childId], orderBy: 'created_date DESC');
+    return await db.query(
+      'development_summaries',
+      where: 'child_id = ?',
+      whereArgs: [childId],
+      orderBy: 'created_date DESC',
+    );
   }
 
-  Future<List<Map<String, dynamic>>> getApprovedSummariesByChild(String childId) async {
+  Future<List<Map<String, dynamic>>> getApprovedSummariesByChild(
+    String childId,
+  ) async {
     if (kIsWeb) return [];
     final db = await instance.database;
     return await db.query(
@@ -631,15 +1163,25 @@ class DatabaseHelper {
     return maps.isNotEmpty ? maps.first : null;
   }
 
-  Future<int> updateDevelopmentSummaryStatus(int id, String status, String approvedBy, String approvedDate) async {
+  Future<int> updateDevelopmentSummaryStatus(
+    int id,
+    String status,
+    String approvedBy,
+    String approvedDate,
+  ) async {
     if (kIsWeb) return 0;
     final db = await instance.database;
-    return await db.update('development_summaries', {
-      'approval_status': status,
-      'approved_by': approvedBy,
-      'approved_date': approvedDate,
-      'updated_at': DateTime.now().toIso8601String(),
-    }, where: 'id = ?', whereArgs: [id]);
+    return await db.update(
+      'development_summaries',
+      {
+        'approval_status': status,
+        'approved_by': approvedBy,
+        'approved_date': approvedDate,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   // --- Referrals ---
@@ -647,7 +1189,12 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getReferralsByChild(String childId) async {
     if (kIsWeb) return [];
     final db = await instance.database;
-    return await db.query('referrals', where: 'child_id = ?', whereArgs: [childId], orderBy: 'referral_date DESC');
+    return await db.query(
+      'referrals',
+      where: 'child_id = ?',
+      whereArgs: [childId],
+      orderBy: 'referral_date DESC',
+    );
   }
 
   Future<List<Map<String, dynamic>>> getAllReferrals() async {
@@ -669,7 +1216,9 @@ class DatabaseHelper {
     return await db.insert('notifications', notification);
   }
 
-  Future<List<Map<String, dynamic>>> getNotificationsByParent(String parentUid) async {
+  Future<List<Map<String, dynamic>>> getNotificationsByParent(
+    String parentUid,
+  ) async {
     if (kIsWeb) return [];
     final db = await instance.database;
     return await db.query(
@@ -683,13 +1232,23 @@ class DatabaseHelper {
   Future<int> markNotificationAsRead(int id) async {
     if (kIsWeb) return 0;
     final db = await instance.database;
-    return await db.update('notifications', {'is_read': 1}, where: 'id = ?', whereArgs: [id]);
+    return await db.update(
+      'notifications',
+      {'is_read': 1},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<int> markAllNotificationsAsRead(String parentUid) async {
     if (kIsWeb) return 0;
     final db = await instance.database;
-    return await db.update('notifications', {'is_read': 1}, where: 'recipient_uid = ?', whereArgs: [parentUid]);
+    return await db.update(
+      'notifications',
+      {'is_read': 1},
+      where: 'recipient_uid = ?',
+      whereArgs: [parentUid],
+    );
   }
 
   // --- Reports & Stats ---
@@ -697,13 +1256,53 @@ class DatabaseHelper {
   Future<Map<String, dynamic>> getDashboardStats(String today) async {
     if (kIsWeb) return {};
     final db = await instance.database;
-    final totalChildren = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM children')) ?? 0;
-    final totalTeachers = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM users WHERE role = ?', ['teacher'])) ?? 0;
-    final totalParents = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM users WHERE role = ?', ['parent'])) ?? 0;
-    final presentToday = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM attendance WHERE attendance_date = ? AND status = ?', [today, 'Present'])) ?? 0;
-    final absentToday = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM attendance WHERE attendance_date = ? AND status = ?', [today, 'Absent'])) ?? 0;
-    final completedEvaluations = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(DISTINCT child_id) FROM evaluations')) ?? 0;
-    final pendingReferrals = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM referrals WHERE status = ?', ['Pending'])) ?? 0;
+    final totalChildren =
+        Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM children'),
+        ) ??
+        0;
+    final totalTeachers =
+        Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM users WHERE role = ?', [
+            'teacher',
+          ]),
+        ) ??
+        0;
+    final totalParents =
+        Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM users WHERE role = ?', [
+            'parent',
+          ]),
+        ) ??
+        0;
+    final presentToday =
+        Sqflite.firstIntValue(
+          await db.rawQuery(
+            'SELECT COUNT(*) FROM attendance WHERE attendance_date = ? AND status = ?',
+            [today, 'Present'],
+          ),
+        ) ??
+        0;
+    final absentToday =
+        Sqflite.firstIntValue(
+          await db.rawQuery(
+            'SELECT COUNT(*) FROM attendance WHERE attendance_date = ? AND status = ?',
+            [today, 'Absent'],
+          ),
+        ) ??
+        0;
+    final completedEvaluations =
+        Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(DISTINCT child_id) FROM evaluations'),
+        ) ??
+        0;
+    final pendingReferrals =
+        Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM referrals WHERE status = ?', [
+            'Pending',
+          ]),
+        ) ??
+        0;
 
     return {
       'total_children': totalChildren,
@@ -759,14 +1358,42 @@ class DatabaseHelper {
   Future<Map<String, dynamic>> getChildProgressSummary(int childLocalId) async {
     if (kIsWeb) return {'assessments': [], 'attendance_rate': 0.0};
     final db = await instance.database;
-    final childMaps = await db.query('children', where: 'id = ?', whereArgs: [childLocalId]);
+    final childMaps = await db.query(
+      'children',
+      where: 'id = ?',
+      whereArgs: [childLocalId],
+    );
     if (childMaps.isEmpty) return {'assessments': [], 'attendance_rate': 0.0};
     final childId = childMaps.first['child_id'] as String;
-    final assessmentMaps = await db.rawQuery('SELECT domain, AVG(score) as avg_score FROM evaluations WHERE child_id = ? GROUP BY domain', [childId]);
-    final total = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM attendance WHERE child_id = ?', [childId])) ?? 0;
-    final present = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM attendance WHERE child_id = ? AND status = ?', [childId, 'Present'])) ?? 0;
+    final assessmentMaps = await db.rawQuery(
+      'SELECT domain, AVG(score) as avg_score FROM evaluations WHERE child_id = ? GROUP BY domain',
+      [childId],
+    );
+    final total =
+        Sqflite.firstIntValue(
+          await db.rawQuery(
+            'SELECT COUNT(*) FROM attendance WHERE child_id = ?',
+            [childId],
+          ),
+        ) ??
+        0;
+    final present =
+        Sqflite.firstIntValue(
+          await db.rawQuery(
+            'SELECT COUNT(*) FROM attendance WHERE child_id = ? AND status = ?',
+            [childId, 'Present'],
+          ),
+        ) ??
+        0;
     return {
-      'assessments': assessmentMaps.map((e) => {'domain': e['domain'], 'avg_score': (e['avg_score'] as num?)?.toDouble() ?? 0.0}).toList(),
+      'assessments': assessmentMaps
+          .map(
+            (e) => {
+              'domain': e['domain'],
+              'avg_score': (e['avg_score'] as num?)?.toDouble() ?? 0.0,
+            },
+          )
+          .toList(),
       'attendance_rate': total > 0 ? (present / total) * 100 : 0.0,
     };
   }
@@ -786,7 +1413,11 @@ class DatabaseHelper {
   Future<FileUploadModel?> getFileUploadByFileId(String fileId) async {
     if (kIsWeb) return null;
     final db = await instance.database;
-    final maps = await db.query('file_uploads', where: 'file_id = ?', whereArgs: [fileId]);
+    final maps = await db.query(
+      'file_uploads',
+      where: 'file_id = ?',
+      whereArgs: [fileId],
+    );
     if (maps.isNotEmpty) return FileUploadModel.fromMap(maps.first);
     return null;
   }
@@ -794,7 +1425,11 @@ class DatabaseHelper {
   Future<List<FileUploadModel>> getUnsyncedFileUploads() async {
     if (kIsWeb) return [];
     final db = await instance.database;
-    final result = await db.query('file_uploads', where: 'is_synced = ?', whereArgs: [0]);
+    final result = await db.query(
+      'file_uploads',
+      where: 'is_synced = ?',
+      whereArgs: [0],
+    );
     return result.map((json) => FileUploadModel.fromMap(json)).toList();
   }
 
@@ -803,10 +1438,7 @@ class DatabaseHelper {
     final db = await instance.database;
     return await db.update(
       'file_uploads',
-      {
-        'remote_url': remoteUrl,
-        'is_synced': 1,
-      },
+      {'remote_url': remoteUrl, 'is_synced': 1},
       where: 'file_id = ?',
       whereArgs: [fileId],
     );

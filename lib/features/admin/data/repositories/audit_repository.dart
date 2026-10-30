@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
 import '../../domain/audit_log_model.dart';
 
 class AuditRepository {
@@ -14,18 +15,17 @@ class AuditRepository {
     try {
       final user = _auth.currentUser;
       final actor = performedBy ?? user?.email ?? user?.uid ?? 'Admin/System';
-      final now = DateTime.now();
-
       final docRef = _firestore.collection('audit_logs').doc();
-      final logModel = AuditLogModel(
-        id: docRef.id,
-        action: action,
-        performedBy: actor,
-        targetRecord: targetRecord,
-        timestamp: now,
-      );
-
-      await docRef.set(logModel.toMap(), SetOptions(merge: true));
+      await docRef.set({
+        'id': docRef.id,
+        'action': action,
+        'performed_by': actor,
+        'target_record': targetRecord,
+        // This resolves to Firebase's UTC server time, never the phone time.
+        'timestamp': FieldValue.serverTimestamp(),
+        'server_created_at': FieldValue.serverTimestamp(),
+        'server_updated_at': FieldValue.serverTimestamp(),
+      });
     } catch (e) {
       print('AuditRepository logAction error: $e');
     }
@@ -37,7 +37,7 @@ class AuditRepository {
         .orderBy('timestamp', descending: true);
     if (limit != null) query = query.limit(limit);
     final snapshot = await query.get();
-    
+
     return snapshot.docs
         .map((doc) => AuditLogModel.fromMap(doc.data(), doc.id))
         .toList();
@@ -48,9 +48,10 @@ class AuditRepository {
         .collection('audit_logs')
         .orderBy('timestamp', descending: true);
     if (limit != null) query = query.limit(limit);
-    return query.snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => AuditLogModel.fromMap(doc.data(), doc.id))
-            .toList());
+    return query.snapshots().map(
+      (snapshot) => snapshot.docs
+          .map((doc) => AuditLogModel.fromMap(doc.data(), doc.id))
+          .toList(),
+    );
   }
 }

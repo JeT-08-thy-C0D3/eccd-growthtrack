@@ -1,3 +1,6 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+
 class ClarificationModel {
   final int? id;
   final String childId;
@@ -42,6 +45,8 @@ class ClarificationModel {
   }
 
   factory ClarificationModel.fromMap(Map<String, dynamic> map) {
+    final serverCreated = _serverUtcText(map['server_created_at']);
+    final serverUpdated = _serverUtcText(map['server_updated_at']);
     return ClarificationModel(
       id: map['id'],
       childId: map['child_id'] ?? '',
@@ -51,10 +56,16 @@ class ClarificationModel {
       message: map['message'] ?? '',
       response: map['response'],
       status: map['status'] ?? 'Pending',
-      createdAt: map['created_at'] ?? '',
-      updatedAt: map['updated_at'] ?? '',
+      createdAt: serverCreated ?? map['created_at'] ?? '',
+      updatedAt: serverUpdated ?? map['updated_at'] ?? '',
       isSynced: (map['is_synced'] ?? 0) == 1,
     );
+  }
+
+  static String? _serverUtcText(dynamic value) {
+    if (value is! Timestamp) return null;
+    return DateFormat('yyyy-MM-dd HH:mm:ss \'UTC\'')
+        .format(value.toDate().toUtc());
   }
 
   ClarificationModel copyWith({

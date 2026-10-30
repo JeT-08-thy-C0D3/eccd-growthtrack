@@ -4,6 +4,7 @@
 /// - NO PASSWORD FIELD (passwords only in Firebase Auth)
 /// - Only Firebase UID for identification
 /// - Metadata and role/consent status
+library;
 
 class CanonicalUser {
   final String uid; // Firebase Auth UID (unique identifier)

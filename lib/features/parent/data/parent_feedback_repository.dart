@@ -1,4 +1,6 @@
 import 'package:intl/intl.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import '../../../core/database/database_helper.dart';
 import '../domain/parent_feedback_model.dart';
 import '../../../data/datasources/local_data_source.dart';
@@ -28,10 +30,28 @@ class ParentFeedbackRepositoryImpl implements ParentFeedbackRepository {
     );
 
     final id = await _local.saveRecord('parent_feedback', newFeedback.toMap());
-    
+
     if (await _connectivity.isOnline) {
       try {
-        await _remote.uploadRecord('parent_feedback', id.toString(), newFeedback.toMap());
+        final cloudData = newFeedback.toMap()
+          ..['parent_uid'] = FirebaseAuth.instance.currentUser?.uid;
+        await _remote.uploadRecord('parent_feedback', id.toString(), cloudData);
+        final serverTime = await _remote.fetchServerUpdatedAt(
+          'parent_feedback',
+          id.toString(),
+        );
+        if (serverTime != null) {
+          final officialTime = DateFormat('yyyy-MM-dd HH:mm:ss \'UTC\'')
+              .format(serverTime);
+          await _dbHelper.database.then(
+            (db) => db.update(
+              'parent_feedback',
+              {'submission_date': officialTime, 'updated_at': officialTime},
+              where: 'id = ?',
+              whereArgs: [id],
+            ),
+          );
+        }
         await _local.markAsSynced('parent_feedback', id);
       } catch (e) {
         print("Cloud Sync Failed: $e");
@@ -41,7 +61,8 @@ class ParentFeedbackRepositoryImpl implements ParentFeedbackRepository {
     await AuditLogger.log(
       action: 'Submit Feedback',
       module: 'Parent Module',
-      description: 'Parent submitted developmental observation for child ID ${feedback.childId}.',
+      description:
+          'Parent submitted developmental observation for child ID ${feedback.childId}.',
     );
 
     return id;
@@ -49,7 +70,9 @@ class ParentFeedbackRepositoryImpl implements ParentFeedbackRepository {
 
   @override
   Future<List<ParentFeedbackModel>> getFeedbackHistory(String childId) async {
-    final List<Map<String, dynamic>> maps = await _dbHelper.getFeedbackByChild(childId);
+    final List<Map<String, dynamic>> maps = await _dbHelper.getFeedbackByChild(
+      childId,
+    );
     return maps.map((map) => ParentFeedbackModel.fromMap(map)).toList();
   }
 
@@ -61,11 +84,32 @@ class ParentFeedbackRepositoryImpl implements ParentFeedbackRepository {
       isSynced: await _connectivity.isOnline,
     );
 
-    final id = await _local.saveRecord('parent_feedback', updatedFeedback.toMap());
-    
+    final id = await _local.saveRecord(
+      'parent_feedback',
+      updatedFeedback.toMap(),
+    );
+
     if (await _connectivity.isOnline) {
       try {
-        await _remote.uploadRecord('parent_feedback', id.toString(), updatedFeedback.toMap());
+        final cloudData = updatedFeedback.toMap()
+          ..['parent_uid'] = FirebaseAuth.instance.currentUser?.uid;
+        await _remote.uploadRecord('parent_feedback', id.toString(), cloudData);
+        final serverTime = await _remote.fetchServerUpdatedAt(
+          'parent_feedback',
+          id.toString(),
+        );
+        if (serverTime != null) {
+          final officialTime = DateFormat('yyyy-MM-dd HH:mm:ss \'UTC\'')
+              .format(serverTime);
+          await _dbHelper.database.then(
+            (db) => db.update(
+              'parent_feedback',
+              {'updated_at': officialTime},
+              where: 'id = ?',
+              whereArgs: [id],
+            ),
+          );
+        }
         await _local.markAsSynced('parent_feedback', id);
       } catch (e) {
         print("Cloud Sync Failed: $e");

@@ -1,4 +1,8 @@
 {
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
   "functions": {
     "source": "functions",
     "runtime": "nodejs20"
@@ -8,9 +12,14 @@
     "ignore": [
       "firebase.json",
       "**/.*",
+      "!**/.well-known/**",
       "**/node_modules/**"
     ],
     "rewrites": [
+      {
+        "source": "/reset-password",
+        "destination": "/reset-password.html"
+      },
       {
         "source": "**",
         "destination": "/index.html"

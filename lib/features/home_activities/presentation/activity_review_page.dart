@@ -41,6 +41,7 @@ class _ActivityReviewPageState extends State<ActivityReviewPage> {
         content: SingleChildScrollView(
           child: Form(
             key: formKey,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,

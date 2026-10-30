@@ -42,6 +42,8 @@ dependencies:
   firebase_auth: ^5.7.0
   cloud_firestore: ^5.6.12
   firebase_messaging: ^15.2.2
+  firebase_app_check: ^0.3.2+10
+  cloud_functions: ^5.6.1
 
   # Supabase & Media
   supabase_flutter: ^2.8.0
@@ -50,6 +52,8 @@ dependencies:
 
   # Connectivity & Sync
   connectivity_plus: ^6.0.3
+  crypto: ^3.0.6
+  encrypt: ^5.0.3
 
 dev_dependencies:
   flutter_test:

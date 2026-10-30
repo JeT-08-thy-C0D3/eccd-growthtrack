@@ -14,6 +14,19 @@ service cloud.firestore {
       return isAuthenticated() && 
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
+
+    // The first profile is created only by the pre-provisioned Firebase Auth
+    // account. This lets the app bootstrap without opening user creation to
+    // anonymous or arbitrary authenticated users.
+    function isInitialAdminProfile(userId) {
+      return isAuthenticated() &&
+             request.auth.uid == userId &&
+             request.auth.token.email == 'delimahenry90@gmail.com' &&
+             request.resource.data.email == 'delimahenry90@gmail.com' &&
+             request.resource.data.role == 'admin' &&
+             request.resource.data.status == 'active' &&
+             !('password' in request.resource.data);
+    }
     
     function isTeacher() {
       return isAuthenticated() && 
@@ -28,6 +41,16 @@ service cloud.firestore {
     function getUserCenterId() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.centerId;
     }
+
+    function isAssignedTeacherForChild(childId) {
+      return isTeacher() &&
+             get(/databases/$(database)/documents/children/$(childId)).data.teacher_uid == request.auth.uid;
+    }
+
+    function isLinkedParentForChild(childId) {
+      return isParent() &&
+             get(/databases/$(database)/documents/children/$(childId)).data.parent_uid == request.auth.uid;
+    }
     
     function userOwnsDocument() {
       return request.auth.uid == resource.data.uid;
@@ -41,8 +64,12 @@ service cloud.firestore {
       // Read: Users can read their own profile; admins read all
       allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
       
-      // Create: Only admin via Cloud Function (never from client)
-      allow create: if false;
+      // Bootstrap the original admin profile, then allow that admin to create
+      // Teacher and Parent profiles. Passwords must never be in Firestore.
+      allow create: if isInitialAdminProfile(userId) ||
+                       (isAdmin() &&
+                        request.resource.data.role in ['teacher', 'parent'] &&
+                        !('password' in request.resource.data));
       
       // Update: User can update own profile (except role/status); admin can update all
       allow update: if (request.auth.uid == userId && 
@@ -66,17 +93,21 @@ service cloud.firestore {
     // ============================================================================
     
     match /children/{childId} {
-      // Read: Teachers (assigned), Parents (linked), Admins
-      allow read: if isAdmin() || 
-                      (isTeacher() && getUserCenterId() == resource.data.centerId) ||
-                      isParent(); // Parents verified via ConsentRecord
+      // Read: only the assigned teacher and the linked parent, plus admins.
+      allow read: if isAdmin() ||
+                      (isTeacher() && resource.data.teacher_uid == request.auth.uid) ||
+                      (isParent() && resource.data.parent_uid == request.auth.uid);
       
       // Create: Admin only
       allow create: if isAdmin();
       
-      // Update: Admin and assigned teachers
-      allow update: if isAdmin() || 
-                       (isTeacher() && getUserCenterId() == resource.data.centerId);
+      // A teacher or parent may edit only a linked child. Neither may move a
+      // child to another teacher/parent; assignment changes are admin-only.
+      allow update: if isAdmin() ||
+                       ((isAssignedTeacherForChild(childId) ||
+                         isLinkedParentForChild(childId)) &&
+                        request.resource.data.teacher_uid == resource.data.teacher_uid &&
+                        request.resource.data.parent_uid == resource.data.parent_uid);
       
       // Delete: Never (soft-delete via audit)
       allow delete: if false;
@@ -186,8 +217,12 @@ service cloud.firestore {
       // Read: Admin only
       allow read: if isAdmin();
       
-      // Create: Only by backend Cloud Function
-      allow create: if false;
+      // Admin clients may append a log, but its time must be Firebase's
+      // request/server time. This prevents a phone's clock from forging it.
+      allow create: if isAdmin() &&
+                       request.resource.data.timestamp == request.time &&
+                       request.resource.data.server_created_at == request.time &&
+                       request.resource.data.server_updated_at == request.time;
       
       // Update/Delete: Never
       allow update, delete: if false;
@@ -198,18 +233,26 @@ service cloud.firestore {
     // ============================================================================
     
     match /notifications/{notificationId} {
-      // Read: Own notifications
-      allow read: if request.auth.uid == resource.data.userId;
+      // NotificationModel uses recipient_uid and is_read.  Keep support for
+      // legacy records while ensuring parents can only read their own inbox.
+      allow read: if isAuthenticated() &&
+                    (request.auth.uid == resource.data.recipient_uid ||
+                     request.auth.uid == resource.data.userId);
       
-      // Create: Backend only
-      allow create: if false;
+      // Assigned teachers and administrators may create a notification for a
+      // child. The recipient must be the parent currently linked to that child.
+      allow create: if isAdmin() ||
+                       (isTeacher() &&
+                        request.resource.data.recipient_uid ==
+                          get(/databases/$(database)/documents/children/$(request.resource.data.child_id)).data.parent_uid &&
+                        get(/databases/$(database)/documents/children/$(request.resource.data.child_id)).data.teacher_uid == request.auth.uid);
       
-      // Update: User can mark as read
-      allow update: if request.auth.uid == resource.data.userId &&
-                       only(['read', 'readAt'], request.writeFields);
+      // A parent can only mark their own notification as read.
+      allow update: if isAuthenticated() &&
+                       request.auth.uid == resource.data.recipient_uid &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read']);
       
-      // Delete: User can delete own
-      allow delete: if request.auth.uid == resource.data.userId;
+      allow delete: if false;
     }
 
     // ============================================================================
@@ -219,14 +262,45 @@ service cloud.firestore {
     match /clarifications/{clarificationId} {
       // Parents may only create requests that are tagged with their own UID.
       allow create: if isParent() &&
-                       request.resource.data.parent_uid == request.auth.uid;
+                       request.resource.data.parent_uid == request.auth.uid &&
+                       request.resource.data.server_created_at == request.time &&
+                       request.resource.data.server_updated_at == request.time;
 
       // Parents can read their own requests; staff can process requests.
       allow read: if isAdmin() || isTeacher() ||
                      (isParent() && resource.data.parent_uid == request.auth.uid);
 
       // Only staff may add a response/status update.
-      allow update: if isAdmin() || isTeacher();
+      allow update: if (isAdmin() || isTeacher()) &&
+                       request.resource.data.server_updated_at == request.time;
+      allow delete: if false;
+    }
+
+    // ============================================================================
+    // PARENT FEEDBACK
+    // ============================================================================
+
+    match /parent_feedback/{feedbackId} {
+      // Parent records use Firebase time; phone time is never accepted as the
+      // official created/updated timestamp.
+      allow create: if isParent() &&
+                       request.resource.data.parent_uid == request.auth.uid &&
+                       get(/databases/$(database)/documents/children/$(request.resource.data.child_id)).data.parent_uid == request.auth.uid &&
+                       request.resource.data.server_created_at == request.time &&
+                       request.resource.data.server_updated_at == request.time;
+
+      allow read: if isAdmin() ||
+                      (isParent() && resource.data.parent_uid == request.auth.uid) ||
+                      (isTeacher() &&
+                       get(/databases/$(database)/documents/children/$(resource.data.child_id)).data.teacher_uid == request.auth.uid);
+
+      allow update: if (isAdmin() ||
+                       (isParent() && resource.data.parent_uid == request.auth.uid)) &&
+                       request.resource.data.parent_uid == resource.data.parent_uid &&
+                       request.resource.data.child_id == resource.data.child_id &&
+                       request.resource.data.server_created_at == resource.data.server_created_at &&
+                       request.resource.data.server_updated_at == request.time;
+
       allow delete: if false;
     }
     

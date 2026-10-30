@@ -1,7 +1,8 @@
 /// Pagination Service with Cursor Support
-/// 
+///
 /// Implements cursor-based pagination for efficient loading of large datasets.
 /// Provides page-by-page navigation without loading entire collection.
+library;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -25,9 +26,9 @@ class PaginationCursor {
   PaginationCursor({
     required this.value,
     required this.pageNumber,
-    this.createdAt = const Duration(),
+    DateTime? createdAt,
     this.inclusive = false,
-  }) : createdAt = createdAt == const Duration() ? DateTime.now() : createdAt;
+  }) : createdAt = createdAt ?? DateTime.now();
 
   /// Encode cursor to string
   String encode() {
@@ -105,10 +106,7 @@ class PaginatedResult<T> {
 
   /// Create empty result
   factory PaginatedResult.empty() {
-    return PaginatedResult(
-      items: [],
-      pageNumber: 1,
-    );
+    return PaginatedResult(items: [], pageNumber: 1);
   }
 
   Map<String, dynamic> toJson() => {
@@ -162,10 +160,12 @@ class PaginationService {
 
       // Convert to items
       final items = itemDocs
-          .map((doc) => fromJson({
-                ...doc.data() as Map<String, dynamic>,
-                '__id': doc.id,
-              }))
+          .map(
+            (doc) => fromJson({
+              ...doc.data() as Map<String, dynamic>,
+              '__id': doc.id,
+            }),
+          )
           .toList();
 
       // Generate cursors
@@ -273,10 +273,12 @@ class PaginationService {
     try {
       final snapshot = await query.get();
       return snapshot.docs
-          .map((doc) => fromJson({
-                ...doc.data() as Map<String, dynamic>,
-                '__id': doc.id,
-              }))
+          .map(
+            (doc) => fromJson({
+              ...doc.data() as Map<String, dynamic>,
+              '__id': doc.id,
+            }),
+          )
           .toList();
     } catch (e) {
       print('Error loading all: $e');

@@ -4,7 +4,9 @@ import '../../domain/repositories/user_repository.dart';
 import '../datasources/user_remote_datasource.dart';
 import '../../../../core/network/connectivity_service.dart';
 import 'audit_repository.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:cloud_functions/cloud_functions.dart';
 
 class UserRepositoryImpl implements UserRepository {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
@@ -14,25 +16,31 @@ class UserRepositoryImpl implements UserRepository {
 
   @override
   Future<void> createUser(UserModel user) async {
-    if (user.isProtectedAdmin) {
-      throw StateError('The system ADMIN account is protected.');
+    if (user.role == UserRole.admin) {
+      throw StateError('Creating additional ADMIN accounts is not allowed.');
     }
     if (await emailExists(user.email)) {
       throw StateError('An account with this email address already exists.');
     }
     String finalUid = user.uid;
-    
+
     // 1. If online, create Firebase Auth account
     if (await _connectivity.isOnline) {
       try {
-        finalUid = await _remoteDataSource.createAuthAccount(user.email, user.password);
+        finalUid = await _remoteDataSource.createAuthAccount(
+          user.email,
+          user.password,
+        );
       } catch (e) {
-        print("Firebase Auth creation failed: $e");
+        debugPrint('Firebase Auth creation failed: $e');
         rethrow;
       }
     }
 
-    final newUser = user.copyWith(uid: finalUid, isSynced: await _connectivity.isOnline);
+    final newUser = user.copyWith(
+      uid: finalUid,
+      isSynced: await _connectivity.isOnline,
+    );
 
     // 2. Save locally
     await _dbHelper.createUser(newUser);
@@ -41,11 +49,12 @@ class UserRepositoryImpl implements UserRepository {
     if (await _connectivity.isOnline) {
       await _remoteDataSource.saveUserToFirestore(newUser);
     }
-    
+
     // Log User Created
     await _auditRepo.logAction(
       action: 'User Created',
-      targetRecord: '${newUser.name} (${newUser.email} • ${newUser.role.name.toUpperCase()})',
+      targetRecord:
+          '${newUser.name} (${newUser.email} • ${newUser.role.name.toUpperCase()})',
     );
   }
 
@@ -61,9 +70,11 @@ class UserRepositoryImpl implements UserRepository {
   Future<bool> emailExists(String email, {String? excludingUid}) async {
     final normalizedEmail = email.trim().toLowerCase();
     final users = await getUsers();
-    return users.any((user) =>
-        user.email.trim().toLowerCase() == normalizedEmail &&
-        (excludingUid == null || user.uid != excludingUid));
+    return users.any(
+      (user) =>
+          user.email.trim().toLowerCase() == normalizedEmail &&
+          (excludingUid == null || user.uid != excludingUid),
+    );
   }
 
   @override
@@ -77,23 +88,48 @@ class UserRepositoryImpl implements UserRepository {
     if (user.isProtectedAdmin || existingUser?.isProtectedAdmin == true) {
       throw StateError('The system ADMIN account is protected.');
     }
+    if (user.role == UserRole.admin) {
+      throw StateError('Assigning the ADMIN role is not allowed.');
+    }
     if (await emailExists(user.email, excludingUid: user.uid)) {
       throw StateError('An account with this email address already exists.');
     }
+    final emailChanged =
+        existingUser != null &&
+        existingUser.email.trim().toLowerCase() != user.email.trim().toLowerCase();
+    if (emailChanged && user.role != UserRole.teacher) {
+      throw StateError('Only teacher account emails can be changed here.');
+    }
+    if (emailChanged && !await _connectivity.isOnline) {
+      throw StateError('Connect to the internet before changing a login email.');
+    }
     final updatedUser = user.copyWith(isSynced: await _connectivity.isOnline);
-    
-    // 1. Update locally
+
+    // Change Firebase Auth first. This prevents the local profile from showing
+    // an email address that cannot actually be used to sign in.
+    if (await _connectivity.isOnline) {
+      try {
+        if (emailChanged) {
+          await _remoteDataSource.updateTeacherAuthEmail(
+            oldEmail: existingUser.email,
+            newEmail: updatedUser.email,
+          );
+        } else {
+          await _remoteDataSource.saveUserToFirestore(updatedUser);
+        }
+      } on FirebaseFunctionsException catch (error) {
+        throw StateError(error.message ?? 'Unable to change the account email.');
+      }
+    }
+
+    // Persist the profile only after the sign-in email has been accepted.
     await _dbHelper.updateRecord('users', updatedUser.toMap(), 'id');
 
-    // 2. If online, update Firestore
-    if (await _connectivity.isOnline) {
-      await _remoteDataSource.saveUserToFirestore(updatedUser);
-    }
-    
     // Log User Updated
     await _auditRepo.logAction(
       action: 'User Updated',
-      targetRecord: '${updatedUser.name} (${updatedUser.email} • Status: ${updatedUser.status})',
+      targetRecord:
+          '${updatedUser.name} (${updatedUser.email} • Status: ${updatedUser.status})',
     );
   }
 
@@ -103,18 +139,25 @@ class UserRepositoryImpl implements UserRepository {
     if (user?.isProtectedAdmin == true) {
       throw StateError('The system ADMIN account cannot be deleted.');
     }
-    // 1. Delete locally
-    await _dbHelper.delete('users', id);
-
-    // 2. If online, delete from Firestore
-    if (await _connectivity.isOnline) {
-      await _remoteDataSource.deleteUserFromFirestore(uid);
+    if (user == null) {
+      throw StateError('User account was not found.');
     }
-    
+    final archivedUser = user.copyWith(
+      status: 'archived',
+      updatedAt: DateTime.now().toIso8601String(),
+      isSynced: await _connectivity.isOnline,
+    );
+
+    // Keep the audit trail and Firebase profile; archived users cannot log in.
+    await _dbHelper.updateRecord('users', archivedUser.toMap(), 'id');
+    if (await _connectivity.isOnline) {
+      await _remoteDataSource.saveUserToFirestore(archivedUser);
+    }
+
     // Log User Deleted
     await _auditRepo.logAction(
-      action: 'User Deleted',
-      targetRecord: 'UID: $uid',
+      action: 'User Archived',
+      targetRecord: '${user.name} (${user.email})',
     );
   }
 

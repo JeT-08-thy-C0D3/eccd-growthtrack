@@ -1,29 +1,34 @@
 /// Session Controller with Timeout Management
-/// 
+///
 /// Manages user sessions with automatic timeout and logout.
 /// All sensitive operations trigger timeout reset.
+library;
 
 import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
+
 import 'firebase_auth_service.dart';
 
 class SessionController {
   static final SessionController _instance = SessionController._init();
-  
+
   /// Session timeout in seconds (15 minutes)
-  static const int SESSION_TIMEOUT_SECONDS = FirebaseAuthService.SESSION_TIMEOUT_SECONDS;
-  
+  static const int SESSION_TIMEOUT_SECONDS =
+      FirebaseAuthService.SESSION_TIMEOUT_SECONDS;
+
   /// Warning threshold: show dialog 2 minutes before timeout
   static const int WARNING_THRESHOLD_SECONDS = 120;
 
   final FirebaseAuthService _authService = FirebaseAuthService();
-  
+
   Timer? _sessionTimer;
   Timer? _warningTimer;
-  
+
   bool _isSessionActive = false;
   DateTime? _lastActivityTime;
-  
+
   final List<VoidCallback> _timeoutListeners = [];
   final List<VoidCallback> _warningListeners = [];
 
@@ -53,7 +58,7 @@ class SessionController {
   /// Record user activity (resets timeout)
   void recordActivity() {
     if (!_isSessionActive) return;
-    
+
     _lastActivityTime = DateTime.now();
     _resetSessionTimer();
   }
@@ -61,10 +66,10 @@ class SessionController {
   /// Get remaining session time in seconds
   int getTimeRemaining() {
     if (_lastActivityTime == null) return 0;
-    
+
     final elapsed = DateTime.now().difference(_lastActivityTime!).inSeconds;
     final remaining = SESSION_TIMEOUT_SECONDS - elapsed;
-    
+
     return remaining > 0 ? remaining : 0;
   }
 
@@ -86,7 +91,7 @@ class SessionController {
     _lastActivityTime = null;
     _timeoutListeners.clear();
     _warningListeners.clear();
-    
+
     await _authService.signOut();
   }
 
@@ -98,23 +103,20 @@ class SessionController {
   }
 
   // Private helpers
-  
+
   void _resetSessionTimer() {
     _cancelTimers();
     _lastActivityTime = DateTime.now();
-    
+
     // Main timeout timer
     _sessionTimer = Timer(
       Duration(seconds: SESSION_TIMEOUT_SECONDS),
       _handleSessionTimeout,
     );
-    
+
     // Warning timer (fires 2 minutes before timeout)
     final warningDuration = SESSION_TIMEOUT_SECONDS - WARNING_THRESHOLD_SECONDS;
-    _warningTimer = Timer(
-      Duration(seconds: warningDuration),
-      _handleWarning,
-    );
+    _warningTimer = Timer(Duration(seconds: warningDuration), _handleWarning);
   }
 
   void _cancelTimers() {
@@ -141,7 +143,7 @@ class SessionController {
       // Note: Requires WidgetsBindingObserver integration
       // This is handled by AppLifecycleListener in main app
     }
-    
+
     // On web: listen to window focus changes
     if (kIsWeb) {
       // Note: Requires web-specific event listeners
@@ -161,8 +163,8 @@ class SessionTimeoutListener extends StatefulWidget {
     required this.child,
     this.onSessionTimeout,
     this.onTimeoutWarning,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   State<SessionTimeoutListener> createState() => _SessionTimeoutListenerState();
@@ -176,14 +178,14 @@ class _SessionTimeoutListenerState extends State<SessionTimeoutListener>
   void initState() {
     super.initState();
     _sessionController = SessionController();
-    
+
     if (widget.onSessionTimeout != null) {
       _sessionController.onSessionTimeout(widget.onSessionTimeout!);
     }
     if (widget.onTimeoutWarning != null) {
       _sessionController.onTimeoutWarning(widget.onTimeoutWarning!);
     }
-    
+
     _sessionController.initialize();
     WidgetsBinding.instance.addObserver(this);
   }
@@ -218,6 +220,3 @@ class _SessionTimeoutListenerState extends State<SessionTimeoutListener>
     );
   }
 }
-
-// Import statement needed for SessionTimeoutListener
-import 'package:flutter/material.dart';

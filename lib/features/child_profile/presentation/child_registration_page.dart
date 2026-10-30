@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import 'dart:math';
+
 import '../../../core/database/database_helper.dart';
 import '../data/child_repository.dart';
 import '../../../shared/models/child_model.dart';
@@ -21,6 +23,7 @@ class ChildRegistrationPage extends StatefulWidget {
 
 class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
   final _formKey = GlobalKey<FormState>();
+  final _birthDateFieldKey = GlobalKey<FormFieldState<String>>();
   final ChildRepository _repository = ChildRepositoryImpl();
 
   late TextEditingController _childIdController;
@@ -41,6 +44,7 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
   bool _isLoadingParents = true;
   bool _isEditMode = false;
   bool _agreedToPrivacyConsent = false;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -83,8 +87,9 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
     List<UserModel> parentUsers = [];
 
     try {
-      final snapshot =
-          await FirebaseFirestore.instance.collection('users').get();
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .get();
       parentUsers = snapshot.docs
           .map((doc) => UserModel.fromMap(doc.data()))
           .where(
@@ -105,8 +110,9 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
           .toList();
     }
 
-    parentUsers
-        .sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    parentUsers.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
 
     UserModel? selectedParent;
     if (_parentNameController.text.isNotEmpty) {
@@ -133,8 +139,12 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
     if (user != null) {
       if (!mounted) return;
       setState(() {
-        _teacherNameController.text = user.name;
         _currentTeacher = user;
+        // A teacher owns new child assignments. When a parent edits one of
+        // several linked children, keep the original teacher assignment.
+        if (!_isEditMode && user.role == UserRole.teacher) {
+          _teacherNameController.text = user.name;
+        }
       });
     }
   }
@@ -162,10 +172,12 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
         final age = DateTime.now().year - picked.year;
         _ageController.text = age.toString();
       });
+      _birthDateFieldKey.currentState?.didChange(_birthDateController.text);
     }
   }
 
   void _saveForm() async {
+    if (_isSaving) return;
     if (_formKey.currentState!.validate()) {
       if (_selectedParent == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -179,18 +191,23 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
       if (!_agreedToPrivacyConsent) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Parent Data Privacy Consent under RA 10173/12199 is required'),
+            content: Text(
+              'Parent Data Privacy Consent under RA 10173/12199 is required',
+            ),
             backgroundColor: Colors.orange,
           ),
         );
         return;
       }
 
-      final childName = "${_firstNameController.text} ${_lastNameController.text}";
+      final childName =
+          "${_firstNameController.text} ${_lastNameController.text}";
 
       final confirmed = await ConfirmationDialog.show(
         context: context,
-        title: _isEditMode ? 'Confirm Child–Parent Update' : 'Confirm Child–Parent Link',
+        title: _isEditMode
+            ? 'Confirm Child–Parent Update'
+            : 'Confirm Child–Parent Link',
         message: _isEditMode
             ? 'Save the updated child profile and parent link for $childName?'
             : 'Link $childName to parent ${_selectedParent!.name}?',
@@ -199,6 +216,9 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
         icon: Icons.link,
       );
       if (!confirmed) return;
+
+      if (!mounted) return;
+      setState(() => _isSaving = true);
 
       final child = ChildModel(
         id: widget.child?.id,
@@ -211,19 +231,24 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
         gender: _selectedGender,
         address: _addressController.text.trim(),
         parentName: _selectedParent!.name,
-        teacherName: _teacherNameController.text.trim(),
+        teacherName: _isEditMode && _currentTeacher?.role != UserRole.teacher
+            ? widget.child!.teacherName
+            : _teacherNameController.text.trim(),
         parentUid: _selectedParent!.uid,
-        teacherUid: _currentTeacher?.uid ?? widget.child?.teacherUid,
+        teacherUid: _isEditMode && _currentTeacher?.role != UserRole.teacher
+            ? widget.child!.teacherUid
+            : _currentTeacher?.uid ?? widget.child?.teacherUid,
         updatedAt: DateTime.now().toIso8601String(),
       );
 
-      if (_isEditMode) {
-        await _repository.updateChild(child);
-      } else {
-        await _repository.addChild(child);
-      }
+      try {
+        if (_isEditMode) {
+          await _repository.updateChild(child);
+        } else {
+          await _repository.addChild(child);
+        }
 
-      if (mounted) {
+        if (!mounted) return;
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -234,6 +259,17 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
             ),
           ),
         );
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(error.toString()),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isSaving = false);
       }
     }
   }
@@ -254,11 +290,14 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_isEditMode ? 'Edit Child Profile' : 'Child Registration')),
+      appBar: AppBar(
+        title: Text(_isEditMode ? 'Edit Child Profile' : 'Child Registration'),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Form(
           key: _formKey,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -278,20 +317,35 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
                   final fields = [
                     TextFormField(
                       controller: _firstNameController,
-                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z ]'))],
-                      decoration: const InputDecoration(labelText: 'First Name', border: OutlineInputBorder()),
-                      validator: (v) => Validators.validatePersonName(v, 'First name'),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z ]')),
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: 'First Name',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) =>
+                          Validators.validatePersonName(v, 'First name'),
                     ),
                     TextFormField(
                       controller: _lastNameController,
-                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z ]'))],
-                      decoration: const InputDecoration(labelText: 'Last Name', border: OutlineInputBorder()),
-                      validator: (v) => Validators.validatePersonName(v, 'Last name'),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z ]')),
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: 'Last Name',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) =>
+                          Validators.validatePersonName(v, 'Last name'),
                     ),
                     DropdownButtonFormField<String>(
                       initialValue: _selectedAffix,
                       isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Affix (Optional)', border: OutlineInputBorder()),
+                      decoration: const InputDecoration(
+                        labelText: 'Affix (Optional)',
+                        border: OutlineInputBorder(),
+                      ),
                       items: const [
                         DropdownMenuItem(value: 'Jr.', child: Text('Jr.')),
                         DropdownMenuItem(value: 'Sr.', child: Text('Sr.')),
@@ -299,13 +353,18 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
                         DropdownMenuItem(value: 'III', child: Text('III')),
                         DropdownMenuItem(value: 'IV', child: Text('IV')),
                       ],
-                      onChanged: (value) => setState(() => _selectedAffix = value),
+                      onChanged: (value) =>
+                          setState(() => _selectedAffix = value),
                     ),
                   ];
                   if (constraints.maxWidth < 620) {
                     return Column(
                       children: [
-                        fields[0], const SizedBox(height: 16), fields[1], const SizedBox(height: 16), fields[2],
+                        fields[0],
+                        const SizedBox(height: 16),
+                        fields[1],
+                        const SizedBox(height: 16),
+                        fields[2],
                       ],
                     );
                   }
@@ -324,6 +383,7 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
               LayoutBuilder(
                 builder: (context, constraints) {
                   final birthDate = TextFormField(
+                    key: _birthDateFieldKey,
                     controller: _birthDateController,
                     readOnly: true,
                     onTap: _selectDate,
@@ -332,16 +392,23 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.calendar_today),
                     ),
-                    validator: (v) => Validators.validateRequired(v, 'Birth date'),
+                    validator: (v) =>
+                        Validators.validateRequired(v, 'Birth date'),
                   );
                   final age = TextFormField(
                     controller: _ageController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Age', border: OutlineInputBorder()),
-                    validator: (v) => Validators.validateAge(v, min: 0, max: 12),
+                    decoration: const InputDecoration(
+                      labelText: 'Age',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (v) =>
+                        Validators.validateAge(v, min: 0, max: 12),
                   );
                   if (constraints.maxWidth < 420) {
-                    return Column(children: [birthDate, const SizedBox(height: 16), age]);
+                    return Column(
+                      children: [birthDate, const SizedBox(height: 16), age],
+                    );
                   }
                   return Row(
                     children: [
@@ -377,7 +444,9 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<UserModel>(
-                key: ValueKey(_selectedParent?.uid ?? _parentNameController.text),
+                key: ValueKey(
+                  _selectedParent?.uid ?? _parentNameController.text,
+                ),
                 initialValue: _selectedParent,
                 decoration: InputDecoration(
                   labelText: 'Parent/Guardian Name',
@@ -386,10 +455,10 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
                   helperText: _isLoadingParents
                       ? 'Loading parent accounts...'
                       : _parents.isEmpty
-                          ? _parentLoadError == null
-                              ? 'No active parent accounts found. Add one in User Management first.'
-                              : 'Could not load Firebase parents. Check Firestore rules or connection.'
-                          : 'Choose from registered parent accounts',
+                      ? _parentLoadError == null
+                            ? 'No active parent accounts found. Add one in User Management first.'
+                            : 'Could not load Firebase parents. Check Firestore rules or connection.'
+                      : 'Choose from registered parent accounts',
                 ),
                 hint: Text(
                   _isLoadingParents
@@ -430,14 +499,16 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.school),
                 ),
-                validator: (v) => Validators.validatePersonName(v, 'Teacher name'),
+                validator: (v) =>
+                    Validators.validatePersonName(v, 'Teacher name'),
               ),
               const SizedBox(height: 16),
               Row(
                 children: [
                   Checkbox(
                     value: _agreedToPrivacyConsent,
-                    onChanged: (val) => setState(() => _agreedToPrivacyConsent = val ?? false),
+                    onChanged: (val) =>
+                        setState(() => _agreedToPrivacyConsent = val ?? false),
                   ),
                   Expanded(
                     child: GestureDetector(
@@ -456,17 +527,28 @@ class _ChildRegistrationPageState extends State<ChildRegistrationPage> {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: _saveForm,
+                onPressed: _isSaving ? null : _saveForm,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   backgroundColor: Colors.blue,
                   foregroundColor: Colors.white,
                 ),
-                child: Text(
-                  _isEditMode ? 'Update Profile' : 'Register Child',
-                  style: const TextStyle(fontSize: 18),
-                ),
+                child: _isSaving
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : Text(
+                        _isEditMode ? 'Update Profile' : 'Register Child',
+                        style: const TextStyle(fontSize: 18),
+                      ),
               ),
             ],
           ),

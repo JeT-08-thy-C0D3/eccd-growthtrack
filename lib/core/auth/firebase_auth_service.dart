@@ -9,9 +9,9 @@
 /// 3. All user data operations via secure backend (Cloud Functions)
 /// 4. Session timeout with automatic logout
 /// 5. Role-based authorization checks
+library;
 
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../shared/models/canonical/canonical_user_model.dart';
 
 class FirebaseAuthService {
   static final FirebaseAuthService _instance = FirebaseAuthService._init();

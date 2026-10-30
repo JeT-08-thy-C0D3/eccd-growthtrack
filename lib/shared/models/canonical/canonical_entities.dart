@@ -1,4 +1,5 @@
 /// Canonical models for remaining 15+ entities required by Phase 1.
+library;
 
 // ============================================================================
 // CENTER & CHILD MANAGEMENT

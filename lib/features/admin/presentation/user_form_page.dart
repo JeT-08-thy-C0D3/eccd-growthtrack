@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+
 import '../../../shared/models/user_model.dart';
 import '../domain/repositories/user_repository.dart';
 import '../data/repositories/user_repository_impl.dart';
@@ -33,9 +34,13 @@ class _UserFormPageState extends State<UserFormPage> {
   void initState() {
     super.initState();
     final nameParts = (widget.user?.name ?? '').trim().split(RegExp(r'\s+'));
-    final firstName = nameParts.isEmpty || nameParts.first.isEmpty ? '' : nameParts.first;
+    final firstName = nameParts.isEmpty || nameParts.first.isEmpty
+        ? ''
+        : nameParts.first;
     final lastName = nameParts.length > 1 ? nameParts.last : '';
-    final middleName = nameParts.length > 2 ? nameParts.sublist(1, nameParts.length - 1).join(' ') : '';
+    final middleName = nameParts.length > 2
+        ? nameParts.sublist(1, nameParts.length - 1).join(' ')
+        : '';
     _firstNameController = TextEditingController(text: firstName);
     _middleNameController = TextEditingController(text: middleName);
     _lastNameController = TextEditingController(text: lastName);
@@ -48,11 +53,13 @@ class _UserFormPageState extends State<UserFormPage> {
 
   void _saveUser() async {
     if (_formKey.currentState!.validate()) {
-      final standardizedName = _standardizeName([
-        _firstNameController.text,
-        _middleNameController.text,
-        _lastNameController.text,
-      ].where((part) => part.trim().isNotEmpty).join(' '));
+      final standardizedName = _standardizeName(
+        [
+          _firstNameController.text,
+          _middleNameController.text,
+          _lastNameController.text,
+        ].where((part) => part.trim().isNotEmpty).join(' '),
+      );
       final normalizedEmail = _emailController.text.trim().toLowerCase();
       final emailAlreadyUsed = await _repository.emailExists(
         normalizedEmail,
@@ -62,7 +69,9 @@ class _UserFormPageState extends State<UserFormPage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('An account with this email address already exists.'),
+              content: Text(
+                'An account with this email address already exists.',
+              ),
               backgroundColor: Colors.orange,
             ),
           );
@@ -74,7 +83,9 @@ class _UserFormPageState extends State<UserFormPage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('The system ADMIN account is protected and cannot be changed.'),
+              content: Text(
+                'The system ADMIN account is protected and cannot be changed.',
+              ),
               backgroundColor: Colors.orange,
             ),
           );
@@ -87,7 +98,9 @@ class _UserFormPageState extends State<UserFormPage> {
       if (!_agreedToTerms) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('You must agree to the Terms and Conditions before creating an account.'),
+            content: Text(
+              'You must agree to the Terms and Conditions before creating an account.',
+            ),
             backgroundColor: Colors.orange,
           ),
         );
@@ -103,7 +116,8 @@ class _UserFormPageState extends State<UserFormPage> {
           : await ConfirmationDialog.show(
               context: context,
               title: 'Confirm Create Account',
-              message: 'Create a new ${_selectedRole.name.toUpperCase()} account for $standardizedName?',
+              message:
+                  'Create a new ${_selectedRole.name.toUpperCase()} account for $standardizedName?',
               confirmLabel: 'Create Account',
               confirmColor: Colors.green,
               icon: Icons.person_add,
@@ -116,10 +130,12 @@ class _UserFormPageState extends State<UserFormPage> {
 
       try {
         final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
-        
+
         final user = UserModel(
           id: widget.user?.id,
-          uid: widget.user?.uid ?? 'temp-${DateTime.now().millisecondsSinceEpoch}',
+          uid:
+              widget.user?.uid ??
+              'temp-${DateTime.now().millisecondsSinceEpoch}',
           name: standardizedName,
           email: normalizedEmail,
           password: _passwordController.text,
@@ -140,14 +156,22 @@ class _UserFormPageState extends State<UserFormPage> {
         if (mounted) {
           Navigator.pop(context, true);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(widget.user == null ? 'User created successfully' : 'User updated successfully')),
+            SnackBar(
+              content: Text(
+                widget.user == null
+                    ? 'User created successfully'
+                    : 'User updated successfully',
+              ),
+            ),
           );
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Failed to ${widget.user == null ? "create" : "update"} account: $e'),
+              content: Text(
+                'Failed to ${widget.user == null ? "create" : "update"} account: $e',
+              ),
               backgroundColor: Colors.red,
             ),
           );
@@ -173,9 +197,11 @@ class _UserFormPageState extends State<UserFormPage> {
         .trim()
         .split(RegExp(r'\s+'))
         .where((part) => part.isNotEmpty)
-        .map((part) => part.length == 1
-            ? part.toUpperCase()
-            : '${part[0].toUpperCase()}${part.substring(1).toLowerCase()}')
+        .map(
+          (part) => part.length == 1
+              ? part.toUpperCase()
+              : '${part[0].toUpperCase()}${part.substring(1).toLowerCase()}',
+        )
         .join(' ');
   }
 
@@ -192,16 +218,22 @@ class _UserFormPageState extends State<UserFormPage> {
           padding: const EdgeInsets.all(24.0),
           child: Form(
             key: _formKey,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
             child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    widget.user == null ? 'Register New User' : 'Update User Details',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                    widget.user == null
+                        ? 'Register New User'
+                        : 'Update User Details',
+                    style: Theme.of(context).textTheme.headlineSmall
+                        ?.copyWith(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
-                  const Text('Assign proper roles and verify email addresses under RA 10173 & RA 12199 compliance.'),
+                  const Text(
+                    'Assign proper roles and verify email addresses under RA 10173 & RA 12199 compliance.',
+                  ),
                   const SizedBox(height: 32),
                   TextFormField(
                     controller: _firstNameController,
@@ -211,7 +243,8 @@ class _UserFormPageState extends State<UserFormPage> {
                       prefixIcon: Icon(Icons.person),
                     ),
                     textCapitalization: TextCapitalization.words,
-                    validator: (v) => Validators.validateRequired(v, 'First Name'),
+                    validator: (v) =>
+                        Validators.validatePersonName(v, 'First Name'),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -222,6 +255,9 @@ class _UserFormPageState extends State<UserFormPage> {
                       prefixIcon: Icon(Icons.badge_outlined),
                     ),
                     textCapitalization: TextCapitalization.words,
+                    validator: (v) => v == null || v.trim().isEmpty
+                        ? null
+                        : Validators.validatePersonName(v, 'Middle Name'),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -232,7 +268,8 @@ class _UserFormPageState extends State<UserFormPage> {
                       prefixIcon: Icon(Icons.person_outline),
                     ),
                     textCapitalization: TextCapitalization.words,
-                    validator: (v) => Validators.validateRequired(v, 'Last Name'),
+                    validator: (v) =>
+                        Validators.validatePersonName(v, 'Last Name'),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -253,10 +290,16 @@ class _UserFormPageState extends State<UserFormPage> {
                       labelText: 'Password',
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.lock),
+                      helperText:
+                          'At least 8 characters: Aa, 1, and symbol (e.g. Password123@)',
                     ),
                     obscureText: true,
-                    inputFormatters: [FilteringTextInputFormatter.deny(RegExp(r'\s'))],
-                    validator: (v) => widget.user == null ? Validators.validatePassword(v, minLength: 6) : null,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.deny(RegExp(r'\s')),
+                    ],
+                    validator: (v) => widget.user == null
+                        ? Validators.validatePassword(v)
+                        : null,
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<UserRole>(
@@ -266,10 +309,14 @@ class _UserFormPageState extends State<UserFormPage> {
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.admin_panel_settings),
                     ),
-                    items: UserRole.values.map((r) => DropdownMenuItem(
-                      value: r, 
-                      child: Text(r.name.toUpperCase()),
-                    )).toList(),
+                    items: const [UserRole.teacher, UserRole.parent]
+                        .map(
+                          (r) => DropdownMenuItem(
+                            value: r,
+                            child: Text(r.name.toUpperCase()),
+                          ),
+                        )
+                        .toList(),
                     onChanged: (val) => setState(() => _selectedRole = val!),
                   ),
                   const SizedBox(height: 16),
@@ -277,12 +324,14 @@ class _UserFormPageState extends State<UserFormPage> {
                     children: [
                       Checkbox(
                         value: _agreedToTerms,
-                        onChanged: (val) => setState(() => _agreedToTerms = val ?? false),
+                        onChanged: (val) =>
+                            setState(() => _agreedToTerms = val ?? false),
                       ),
                       Expanded(
                         child: GestureDetector(
                           onTap: () async {
-                            final accepted = await TermsAndConditionsScreen.show(context);
+                            final accepted =
+                                await TermsAndConditionsScreen.show(context);
                             if (accepted == true) {
                               setState(() => _agreedToTerms = true);
                             }
@@ -306,11 +355,18 @@ class _UserFormPageState extends State<UserFormPage> {
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       backgroundColor: Colors.blue,
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                    child: _isLoading 
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : Text(widget.user == null ? 'Create Account' : 'Update Account', style: const TextStyle(fontSize: 16)),
+                    child: _isLoading
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : Text(
+                            widget.user == null
+                                ? 'Create Account'
+                                : 'Update Account',
+                            style: const TextStyle(fontSize: 16),
+                          ),
                   ),
                 ],
               ),

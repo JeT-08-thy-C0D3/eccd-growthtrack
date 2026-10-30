@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.eccd.eccd_growthtrack",
+      "sha256_cert_fingerprints": [
+        "74:B0:C7:85:B8:F4:91:00:8E:E3:0F:92:D1:6E:30:47:A6:8A:16:69:5B:40:CE:B6:F5:B0:69:4C:96:15:B6:E6"
+      ]
+    }
+  }
+]

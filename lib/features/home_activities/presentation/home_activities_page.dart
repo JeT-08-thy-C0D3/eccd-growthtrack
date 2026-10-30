@@ -67,7 +67,10 @@ class _HomeActivitiesPageState extends State<HomeActivitiesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Home Activities')),
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        title: const Text('Home Activities'),
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showAssignDialog,
         icon: const Icon(Icons.add),
@@ -169,7 +172,7 @@ class _AssignActivitySheetState extends State<_AssignActivitySheet> {
           const Text('Assign Activity to Parent', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
           DropdownButtonFormField<ChildModel>(
-            value: _selectedChild,
+            initialValue: _selectedChild,
             decoration: const InputDecoration(labelText: 'Select Child', border: OutlineInputBorder()),
             items: widget.children.map((c) => DropdownMenuItem(value: c, child: Text("${c.firstName} ${c.lastName}"))).toList(),
             onChanged: (val) => setState(() => _selectedChild = val),

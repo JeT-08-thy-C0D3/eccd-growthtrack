@@ -4,6 +4,7 @@
 /// to cached evaluation data, child records, and sync history.
 /// 
 /// Uses AES-256 encryption with key derivation from user credentials.
+library;
 
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';

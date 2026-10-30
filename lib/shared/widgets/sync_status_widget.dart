@@ -1,9 +1,13 @@
 /// Sync Status Widget
-/// 
+///
 /// Displays current sync state to users with visual feedback.
 /// Shows pending operations, last sync time, and errors.
+library;
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
+
 import '../../core/sync/unified_sync_service.dart';
 
 class SyncStatusWidget extends StatefulWidget {
@@ -12,11 +16,11 @@ class SyncStatusWidget extends StatefulWidget {
   final VoidCallback? onSyncPressed;
 
   const SyncStatusWidget({
-    Key? key,
+    super.key,
     this.showLastSync = true,
     this.showPendingCount = true,
     this.onSyncPressed,
-  }) : super(key: key);
+  });
 
   @override
   State<SyncStatusWidget> createState() => _SyncStatusWidgetState();
@@ -97,9 +101,8 @@ class _SyncStatusWidgetState extends State<SyncStatusWidget> {
             const SizedBox(width: 4),
             Text(
               'Synced',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.green,
-                  ),
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: Colors.green),
             ),
           ],
         ),
@@ -116,9 +119,8 @@ class _SyncStatusWidgetState extends State<SyncStatusWidget> {
               const SizedBox(width: 4),
               Text(
                 '$pendingCount pending',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.orange,
-                    ),
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: Colors.orange),
               ),
             ],
           ),
@@ -144,9 +146,8 @@ class _SyncStatusWidgetState extends State<SyncStatusWidget> {
         const SizedBox(width: 4),
         Text(
           'Syncing...',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).primaryColor,
-              ),
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Theme.of(context).primaryColor),
         ),
       ],
     );
@@ -162,9 +163,8 @@ class _SyncStatusWidgetState extends State<SyncStatusWidget> {
           const SizedBox(width: 4),
           Text(
             'Sync error',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.red,
-                ),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: Colors.red),
           ),
         ],
       ),
@@ -181,9 +181,8 @@ class _SyncStatusWidgetState extends State<SyncStatusWidget> {
           const SizedBox(width: 4),
           Text(
             'Conflict',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.amber,
-                ),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: Colors.amber),
           ),
         ],
       ),
@@ -208,7 +207,7 @@ class _SyncStatusWidgetState extends State<SyncStatusWidget> {
 
 /// Full-screen sync status dialog
 class SyncStatusDialog extends StatefulWidget {
-  const SyncStatusDialog({Key? key}) : super(key: key);
+  const SyncStatusDialog({super.key});
 
   @override
   State<SyncStatusDialog> createState() => _SyncStatusDialogState();

@@ -2,6 +2,7 @@
 /// 
 /// This model defines the 7 standard ECCD domains recognized across
 /// the system and their associated indicators.
+library;
 
 enum EccdDomainType {
   grossMotor,

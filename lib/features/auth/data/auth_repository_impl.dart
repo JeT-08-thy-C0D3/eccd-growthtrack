@@ -1,7 +1,10 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart' show debugPrint, debugPrintStack, kIsWeb;
+import 'package:flutter/foundation.dart'
+    show debugPrint, debugPrintStack, kIsWeb;
+
 import '../../../shared/models/user_model.dart';
 import '../domain/auth_repository.dart';
 import '../../../core/utils/audit_logger.dart';
@@ -12,27 +15,47 @@ class AuthRepositoryImpl implements AuthRepository {
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static const String _userKey = 'logged_in_user_id';
+  static const String _passwordRecoveryUrl =
+      'https://eccd-growthtrack.firebaseapp.com/reset-password';
+
+  /// Safe to use for cache lookup only. Access control continues to use the
+  /// server-validated profile in [getCurrentUser].
+  String? get firebaseUserId => _firebaseAuth.currentUser?.uid;
 
   @override
   Future<UserModel?> login(String email, String password) async {
     try {
-      final UserCredential credential = await _firebaseAuth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      final UserCredential credential = await _firebaseAuth
+          .signInWithEmailAndPassword(email: email, password: password);
 
       if (credential.user != null) {
         DocumentSnapshot<Map<String, dynamic>> doc;
         try {
           // Never use a cached profile for access control. An administrator may
           // have deactivated this account moments ago on another device.
-          doc = await _firestore.collection('users').doc(credential.user!.uid).get(
-                const GetOptions(source: Source.server),
-              );
+          doc = await _firestore
+              .collection('users')
+              .doc(credential.user!.uid)
+              .get(const GetOptions(source: Source.server));
         } catch (e) {
           throw 'Cloud database is currently unavailable. Please check your internet connection.';
         }
-        
+
+        if (!doc.exists &&
+            credential.user!.email?.trim().toLowerCase() ==
+                'johnexiquel.idian@gmail.com') {
+          // The previous admin profile used a stale UID. The server-side,
+          // one-time migration copies the safe profile fields to this verified
+          // Firebase Authentication UID and removes the obsolete document.
+          await FirebaseFunctions.instanceFor(region: 'asia-southeast1')
+              .httpsCallable('bootstrapReplacementAdmin')
+              .call();
+          doc = await _firestore
+              .collection('users')
+              .doc(credential.user!.uid)
+              .get(const GetOptions(source: Source.server));
+        }
+
         if (doc.exists) {
           final user = UserModel.fromMap(doc.data()!);
 
@@ -43,23 +66,27 @@ class AuthRepositoryImpl implements AuthRepository {
             await _firebaseAuth.signOut();
             throw 'This account has been deactivated by the administrator.';
           }
-          
+
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString(_userKey, user.uid);
-          
+
           if (!kIsWeb) {
             await DatabaseHelper.instance.insertRecord('users', user.toMap());
           }
 
-          // Initialize FCM and sync FCM Token to user profile
-          await FcmService().initializeAndSyncToken(user.uid);
+          // Web push needs a separate service-worker/VAPID configuration.
+          // Keep web sign-in independent from mobile FCM setup.
+          if (!kIsWeb) {
+            await FcmService().initializeAndSyncToken(user.uid);
+          }
 
           await AuditLogger.log(
             action: 'Login',
             module: 'Authentication',
-            description: 'User ${user.email} logged in successfully via Firebase.',
+            description:
+                'User ${user.email} logged in successfully via Firebase.',
           );
-          
+
           return user;
         } else {
           throw 'User profile record not found in system database.';
@@ -95,10 +122,23 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<void> sendPasswordResetEmail(String email) async {
     try {
       final normalizedEmail = email.trim().toLowerCase();
-      await _firebaseAuth.sendPasswordResetEmail(email: normalizedEmail);
+      // The Gmail link proves ownership of the account, then the app lets the
+      // verified user set a new password. This uses only Firebase Auth, so it
+      // works on the Spark plan without a Cloud Function.
+      await _firebaseAuth.sendSignInLinkToEmail(
+        email: normalizedEmail,
+        actionCodeSettings: ActionCodeSettings(
+          url: Uri.parse(_passwordRecoveryUrl)
+              .replace(queryParameters: {'email': normalizedEmail})
+              .toString(),
+          handleCodeInApp: true,
+        ),
+      );
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString('password_reset_email', normalizedEmail);
 
       // Keep an auditable reset state in Firestore so admins can see that the
-      // request was made even though Firebase sends the actual email.
+      // verification email was requested.
       try {
         final matchingUsers = await _firestore
             .collection('users')
@@ -145,7 +185,7 @@ class AuthRepositoryImpl implements AuthRepository {
       await _firebaseAuth.signOut();
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_userKey);
-      
+
       if (user != null) {
         await AuditLogger.log(
           action: 'Logout',
@@ -154,7 +194,7 @@ class AuthRepositoryImpl implements AuthRepository {
         );
       }
     } catch (e) {
-      print('Logout Error: $e');
+      debugPrint('Logout Error: $e');
     }
   }
 
@@ -163,9 +203,10 @@ class AuthRepositoryImpl implements AuthRepository {
     try {
       final User? firebaseUser = _firebaseAuth.currentUser;
       if (firebaseUser != null) {
-        final doc = await _firestore.collection('users').doc(firebaseUser.uid).get(
-              const GetOptions(source: Source.server),
-            );
+        final doc = await _firestore
+            .collection('users')
+            .doc(firebaseUser.uid)
+            .get(const GetOptions(source: Source.server));
         if (doc.exists) {
           final user = UserModel.fromMap(doc.data()!);
           if (user.status.trim().toLowerCase() != 'active') {
@@ -174,13 +215,15 @@ class AuthRepositoryImpl implements AuthRepository {
             await prefs.remove(_userKey);
             return null;
           }
-          FcmService().initializeAndSyncToken(user.uid);
+          if (!kIsWeb) {
+            FcmService().initializeAndSyncToken(user.uid);
+          }
           return user;
         }
       }
       return null;
     } catch (e) {
-      print('getCurrentUser error: $e');
+      debugPrint('getCurrentUser error: $e');
       return null;
     }
   }

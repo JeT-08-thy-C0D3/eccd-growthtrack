@@ -1,19 +1,21 @@
 /// Privacy and Consent Framework
-/// 
+///
 /// Implements GDPR/CCPA compliance including:
 /// - Privacy notices (versioned)
 /// - Consent records (audit trail)
 /// - Data access requests
 /// - Data deletion requests
 /// - Relationship management
+library;
 
 class PrivacyNotice {
   final String version; // e.g., '1.0', '2.0'
   final String title;
   final String content;
-  final List<String> purposes; // e.g., ['evaluation', 'reporting', 'parent_feedback']
+  final List<String>
+  purposes; // e.g., ['evaluation', 'reporting', 'parent_feedback']
   final List<String> legalBases; // 'consent', 'legitimate_interest', 'contract'
-  final String? dpoCo ntact; // Data Protection Officer email
+  final String? dpoContact; // Data Protection Officer email
   final DateTime effectiveDate;
   final DateTime? deprecatedDate; // When this version was superseded
 
@@ -35,7 +37,9 @@ class PrivacyNotice {
     purposes: List<String>.from(map['purposes'] ?? []),
     legalBases: List<String>.from(map['legal_bases'] ?? []),
     dpoContact: map['dpo_contact'],
-    effectiveDate: DateTime.parse(map['effective_date'] ?? DateTime.now().toIso8601String()),
+    effectiveDate: DateTime.parse(
+      map['effective_date'] ?? DateTime.now().toIso8601String(),
+    ),
     deprecatedDate: map['deprecated_date'] != null
         ? DateTime.parse(map['deprecated_date'])
         : null,
@@ -71,7 +75,9 @@ class TermsOfUse {
   factory TermsOfUse.fromMap(Map<String, dynamic> map) => TermsOfUse(
     version: map['version'] ?? '',
     content: map['content'] ?? '',
-    effectiveDate: DateTime.parse(map['effective_date'] ?? DateTime.now().toIso8601String()),
+    effectiveDate: DateTime.parse(
+      map['effective_date'] ?? DateTime.now().toIso8601String(),
+    ),
     deprecatedDate: map['deprecated_date'] != null
         ? DateTime.parse(map['deprecated_date'])
         : null,
@@ -92,7 +98,8 @@ class ParentChildRelationship {
   final String id;
   final String parentId; // User UID
   final String childId;
-  final String relationshipType; // 'parent', 'guardian', 'custodian', 'relative'
+  final String
+  relationshipType; // 'parent', 'guardian', 'custodian', 'relative'
   final bool isPrimary; // Is this the primary contact?
   final bool hasLegalCustody; // Important for consent authority
   final DateTime createdAt;
@@ -118,7 +125,8 @@ class ParentChildRelationship {
         isPrimary: (map['is_primary'] ?? 0) == 1,
         hasLegalCustody: (map['has_legal_custody'] ?? 1) == 1,
         createdAt: DateTime.parse(
-            map['created_at'] ?? DateTime.now().toIso8601String()),
+          map['created_at'] ?? DateTime.now().toIso8601String(),
+        ),
         verifiedAt: map['verified_at'] != null
             ? DateTime.parse(map['verified_at'])
             : null,
@@ -140,7 +148,8 @@ class ParentChildRelationship {
 class DataAccessRequest {
   final String id;
   final String userId; // Who requested
-  final String? dataSubjectId; // Whose data (may differ if parent requesting child data)
+  final String?
+  dataSubjectId; // Whose data (may differ if parent requesting child data)
   final String status; // 'pending', 'processing', 'completed', 'denied'
   final DateTime requestedAt;
   final DateTime? completedAt;
@@ -169,7 +178,8 @@ class DataAccessRequest {
         dataSubjectId: map['data_subject_id'],
         status: map['status'] ?? 'pending',
         requestedAt: DateTime.parse(
-            map['requested_at'] ?? DateTime.now().toIso8601String()),
+          map['requested_at'] ?? DateTime.now().toIso8601String(),
+        ),
         completedAt: map['completed_at'] != null
             ? DateTime.parse(map['completed_at'])
             : null,
@@ -234,7 +244,8 @@ class DataCorrectionRequest {
         status: map['status'] ?? 'pending',
         reason: map['reason'],
         requestedAt: DateTime.parse(
-            map['requested_at'] ?? DateTime.now().toIso8601String()),
+          map['requested_at'] ?? DateTime.now().toIso8601String(),
+        ),
         resolvedAt: map['resolved_at'] != null
             ? DateTime.parse(map['resolved_at'])
             : null,
@@ -288,7 +299,8 @@ class DataDeletionRequest {
         reason: map['reason'],
         status: map['status'] ?? 'pending',
         requestedAt: DateTime.parse(
-            map['requested_at'] ?? DateTime.now().toIso8601String()),
+          map['requested_at'] ?? DateTime.now().toIso8601String(),
+        ),
         completedAt: map['completed_at'] != null
             ? DateTime.parse(map['completed_at'])
             : null,
@@ -337,12 +349,14 @@ class RetentionDisposalRecord {
         dataType: map['data_type'] ?? '',
         retentionPeriodDays: map['retention_period_days'] ?? '',
         disposalDate: DateTime.parse(
-            map['disposal_date'] ?? DateTime.now().toIso8601String()),
+          map['disposal_date'] ?? DateTime.now().toIso8601String(),
+        ),
         disposalMethod: map['disposal_method'] ?? '',
         recordsDisposed: map['records_disposed'] ?? 0,
         disposedBy: map['disposed_by'],
         createdAt: DateTime.parse(
-            map['created_at'] ?? DateTime.now().toIso8601String()),
+          map['created_at'] ?? DateTime.now().toIso8601String(),
+        ),
       );
 
   Map<String, dynamic> toMap() => {

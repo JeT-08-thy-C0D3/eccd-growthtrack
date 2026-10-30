@@ -6,6 +6,7 @@
 /// - Compliance (GDPR, COPPA, etc.)
 /// - Security investigation
 /// - Preventing client-side log deletion
+library;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 

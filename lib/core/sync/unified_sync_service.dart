@@ -9,9 +9,11 @@
 /// - Conflict resolution
 /// - Retry and failure handling
 /// - Visible sync status
+library;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/widgets.dart' show VoidCallback;
 import '../database/database_helper.dart';
 import '../../shared/models/canonical/canonical_entities.dart';
 
@@ -27,7 +29,7 @@ class UnifiedSyncService {
   SyncStatus _status = SyncStatus.idle;
   DateTime? _lastSyncTime;
   int _pendingOperations = 0;
-  List<String> _failedOperationIds = [];
+  final List<String> _failedOperationIds = [];
   
   final List<VoidCallback> _statusListeners = [];
   final List<void Function(String)> _errorListeners = [];

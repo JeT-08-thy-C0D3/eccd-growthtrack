@@ -2,6 +2,7 @@
 /// 
 /// Manages SQLite schema versioning and migration.
 /// Tracks schema versions and handles data transformations between versions.
+library;
 
 import 'package:sqflite/sqflite.dart';
 

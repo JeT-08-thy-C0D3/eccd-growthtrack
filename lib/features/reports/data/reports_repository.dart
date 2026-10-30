@@ -1,7 +1,9 @@
 import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../../../core/database/database_helper.dart';
 import '../../../data/repositories/file_upload_repository.dart';
 import '../../../core/config/supabase_config.dart';
@@ -13,7 +15,11 @@ abstract class ReportsRepository {
   Future<List<EvaluationReportItem>> getEvaluationReport();
   Future<List<ReferralReportItem>> getReferralReport();
   Future<List<ChildProgressReportItem>> getChildProgressReport();
-  Future<String?> uploadPdfReport(String reportId, Uint8List pdfBytes, String fileName);
+  Future<String?> uploadPdfReport(
+    String reportId,
+    Uint8List pdfBytes,
+    String fileName,
+  );
 }
 
 class ReportsRepositoryImpl implements ReportsRepository {
@@ -24,21 +30,45 @@ class ReportsRepositoryImpl implements ReportsRepository {
   @override
   Future<DashboardStats> getDashboardStats() async {
     final String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    
+
     if (kIsWeb) {
-      final children = await _firestore.collection('children').get();
-      final referrals = await _firestore.collection('referrals').where('status', isEqualTo: 'Pending').get();
-      final evaluations = await _firestore.collection('evaluations').get();
-      final attendance = await _firestore.collection('attendance').where('attendance_date', isEqualTo: today).get();
-      final users = await _firestore.collection('users').get();
+      final queries = await Future.wait([
+        _firestore.collection('children').get(),
+        _firestore
+            .collection('referrals')
+            .where('status', isEqualTo: 'Pending')
+            .get(),
+        _firestore.collection('evaluations').get(),
+        _firestore
+            .collection('attendance')
+            .where('attendance_date', isEqualTo: today)
+            .get(),
+        _firestore.collection('users').get(),
+      ]);
+      final children = queries[0];
+      final referrals = queries[1];
+      final evaluations = queries[2];
+      final attendance = queries[3];
+      final users = queries[4];
 
       return DashboardStats(
         totalChildren: children.size,
-        totalTeachers: users.docs.where((d) => d.data()['role'] == 'teacher').length,
-        totalParents: users.docs.where((d) => d.data()['role'] == 'parent').length,
-        presentToday: attendance.docs.where((d) => d.data()['status'] == 'Present').length,
-        absentToday: attendance.docs.where((d) => d.data()['status'] == 'Absent').length,
-        completedEvaluations: evaluations.docs.map((d) => d.data()['child_id']).toSet().length,
+        totalTeachers: users.docs
+            .where((d) => d.data()['role'] == 'teacher')
+            .length,
+        totalParents: users.docs
+            .where((d) => d.data()['role'] == 'parent')
+            .length,
+        presentToday: attendance.docs
+            .where((d) => d.data()['status'] == 'Present')
+            .length,
+        absentToday: attendance.docs
+            .where((d) => d.data()['status'] == 'Absent')
+            .length,
+        completedEvaluations: evaluations.docs
+            .map((d) => d.data()['child_id'])
+            .toSet()
+            .length,
         pendingReferrals: referrals.size,
       );
     } else {
@@ -50,25 +80,37 @@ class ReportsRepositoryImpl implements ReportsRepository {
   @override
   Future<List<AttendanceReportItem>> getAttendanceReport() async {
     if (kIsWeb) {
-      final children = await _firestore.collection('children').get();
-      final attendance = await _firestore.collection('attendance').get();
-      
+      final queries = await Future.wait([
+        _firestore.collection('children').get(),
+        _firestore.collection('attendance').get(),
+      ]);
+      final children = queries[0];
+      final attendance = queries[1];
+
       List<AttendanceReportItem> items = [];
       for (var doc in children.docs) {
         final data = doc.data();
         final cid = data['child_id'];
-        final childAttendance = attendance.docs.where((d) => d.data()['child_id'] == cid);
-        final present = childAttendance.where((d) => d.data()['status'] == 'Present').length;
-        final absent = childAttendance.where((d) => d.data()['status'] == 'Absent').length;
+        final childAttendance = attendance.docs.where(
+          (d) => d.data()['child_id'] == cid,
+        );
+        final present = childAttendance
+            .where((d) => d.data()['status'] == 'Present')
+            .length;
+        final absent = childAttendance
+            .where((d) => d.data()['status'] == 'Absent')
+            .length;
         final total = present + absent;
 
-        items.add(AttendanceReportItem(
-          childId: cid,
-          childName: "${data['first_name']} ${data['last_name']}",
-          present: present,
-          absent: absent,
-          attendanceRate: total > 0 ? (present / total) * 100 : 0.0,
-        ));
+        items.add(
+          AttendanceReportItem(
+            childId: cid,
+            childName: "${data['first_name']} ${data['last_name']}",
+            present: present,
+            absent: absent,
+            attendanceRate: total > 0 ? (present / total) * 100 : 0.0,
+          ),
+        );
       }
       return items;
     } else {
@@ -80,22 +122,30 @@ class ReportsRepositoryImpl implements ReportsRepository {
   @override
   Future<List<EvaluationReportItem>> getEvaluationReport() async {
     if (kIsWeb) {
-      final children = await _firestore.collection('children').get();
-      final evaluations = await _firestore.collection('evaluations').get();
-      
+      final queries = await Future.wait([
+        _firestore.collection('children').get(),
+        _firestore.collection('evaluations').get(),
+      ]);
+      final children = queries[0];
+      final evaluations = queries[1];
+
       List<EvaluationReportItem> result = [];
       for (var doc in evaluations.docs) {
         final data = doc.data();
-        final childDoc = children.docs.firstWhere((c) => c.data()['child_id'] == data['child_id']);
+        final childDoc = children.docs.firstWhere(
+          (c) => c.data()['child_id'] == data['child_id'],
+        );
         final childData = childDoc.data();
-        result.add(EvaluationReportItem(
-          childId: data['child_id'],
-          childName: "${childData['first_name']} ${childData['last_name']}",
-          domain: data['domain'],
-          score: data['score'] ?? 0,
-          date: data['evaluation_date'] ?? '',
-          remarks: data['remarks'] ?? '',
-        ));
+        result.add(
+          EvaluationReportItem(
+            childId: data['child_id'],
+            childName: "${childData['first_name']} ${childData['last_name']}",
+            domain: data['domain'],
+            score: data['score'] ?? 0,
+            date: data['evaluation_date'] ?? '',
+            remarks: data['remarks'] ?? '',
+          ),
+        );
       }
       return result;
     } else {
@@ -107,22 +157,30 @@ class ReportsRepositoryImpl implements ReportsRepository {
   @override
   Future<List<ReferralReportItem>> getReferralReport() async {
     if (kIsWeb) {
-      final children = await _firestore.collection('children').get();
-      final referrals = await _firestore.collection('referrals').get();
-      
+      final queries = await Future.wait([
+        _firestore.collection('children').get(),
+        _firestore.collection('referrals').get(),
+      ]);
+      final children = queries[0];
+      final referrals = queries[1];
+
       List<ReferralReportItem> result = [];
       for (var doc in referrals.docs) {
         final data = doc.data();
-        final childDoc = children.docs.firstWhere((c) => c.data()['child_id'] == data['child_id']);
+        final childDoc = children.docs.firstWhere(
+          (c) => c.data()['child_id'] == data['child_id'],
+        );
         final childData = childDoc.data();
-        result.add(ReferralReportItem(
-          childId: data['child_id'],
-          childName: "${childData['first_name']} ${childData['last_name']}",
-          concern: data['concern'] ?? '',
-          referralDate: data['referral_date'] ?? '',
-          followUpDate: data['follow_up_date'] ?? '',
-          status: data['status'] ?? '',
-        ));
+        result.add(
+          ReferralReportItem(
+            childId: data['child_id'],
+            childName: "${childData['first_name']} ${childData['last_name']}",
+            concern: data['concern'] ?? '',
+            referralDate: data['referral_date'] ?? '',
+            followUpDate: data['follow_up_date'] ?? '',
+            status: data['status'] ?? '',
+          ),
+        );
       }
       return result;
     } else {
@@ -134,7 +192,7 @@ class ReportsRepositoryImpl implements ReportsRepository {
   @override
   Future<List<ChildProgressReportItem>> getChildProgressReport() async {
     if (kIsWeb) {
-      return []; 
+      return [];
     } else {
       final data = await _dbHelper.getChildProgressReport();
       return data.map((e) => ChildProgressReportItem.fromMap(e)).toList();
@@ -142,7 +200,11 @@ class ReportsRepositoryImpl implements ReportsRepository {
   }
 
   @override
-  Future<String?> uploadPdfReport(String reportId, Uint8List pdfBytes, String fileName) async {
+  Future<String?> uploadPdfReport(
+    String reportId,
+    Uint8List pdfBytes,
+    String fileName,
+  ) async {
     return await _fileUploadRepo.uploadBytes(
       bucket: SupabaseConfig.pdfReports,
       entityId: reportId,

@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class AuditLogModel {
   final String id;
   final String action;
@@ -27,20 +29,33 @@ class AuditLogModel {
     DateTime parsedTimestamp;
     try {
       final rawTime = map['timestamp'];
-      if (rawTime is String) {
-        parsedTimestamp = DateTime.parse(rawTime);
+      if (rawTime is Timestamp) {
+        parsedTimestamp = rawTime.toDate().toUtc();
+      } else if (rawTime is DateTime) {
+        parsedTimestamp = rawTime.toUtc();
+      } else if (rawTime is String) {
+        parsedTimestamp = DateTime.parse(rawTime).toUtc();
       } else {
-        parsedTimestamp = DateTime.now();
+        // A just-written server timestamp can be null in the first snapshot.
+        // Do not substitute the device clock while waiting for Firebase.
+        parsedTimestamp = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
       }
     } catch (_) {
-      parsedTimestamp = DateTime.now();
+      parsedTimestamp = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
     }
 
     return AuditLogModel(
       id: docId,
       action: map['action'] as String? ?? 'General Action',
-      performedBy: map['performed_by'] as String? ?? map['user_id'] as String? ?? 'System/Anonymous',
-      targetRecord: map['target_record'] as String? ?? map['description'] as String? ?? map['module'] as String? ?? 'N/A',
+      performedBy:
+          map['performed_by'] as String? ??
+          map['user_id'] as String? ??
+          'System/Anonymous',
+      targetRecord:
+          map['target_record'] as String? ??
+          map['description'] as String? ??
+          map['module'] as String? ??
+          'N/A',
       timestamp: parsedTimestamp,
     );
   }

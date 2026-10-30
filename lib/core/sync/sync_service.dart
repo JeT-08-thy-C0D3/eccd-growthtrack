@@ -1,5 +1,7 @@
 import 'dart:async';
+
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../data/datasources/local_data_source.dart';
 import '../../data/datasources/remote_data_source.dart';
 import '../../data/repositories/file_upload_repository.dart';
@@ -10,7 +12,7 @@ class SyncService {
   final RemoteDataSource _remote = RemoteDataSource();
   final ConnectivityService _connectivity = ConnectivityService();
   final FileUploadRepository _fileUploadRepo = FileUploadRepository();
-  
+
   bool _isSyncing = false;
   final List<String> _tablesToSync = [
     'users',
@@ -24,7 +26,7 @@ class SyncService {
     'activity_submissions',
     'referrals',
     'audit_logs',
-    'clarifications'
+    'clarifications',
   ];
 
   void init() {
@@ -35,6 +37,10 @@ class SyncService {
     Timer.periodic(const Duration(minutes: 10), (timer) async {
       if (await _connectivity.isOnline) performSync();
     });
+
+    // Start a non-blocking inbox/outbox sync at launch. Dashboards can render
+    // their SQLite cache immediately while fresh Firestore records download.
+    unawaited(performSync());
   }
 
   Future<void> performSync() async {
@@ -76,16 +82,18 @@ class SyncService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final lastSyncKey = 'last_sync_$table';
-      final lastSyncDate = prefs.getString(lastSyncKey) ?? '1970-01-01T00:00:00.000';
+      final lastSyncDate =
+          prefs.getString(lastSyncKey) ?? '1970-01-01T00:00:00.000';
 
-      final updates = await _remote.fetchUpdates(table, lastSyncDate); 
+      final updates = await _remote.fetchUpdates(table, lastSyncDate);
       for (var doc in updates) {
         final remoteData = doc.data();
         // The Firestore document ID is the stable local ID for activities and
         // submissions. Older documents may not contain an `id` field because
         // it was previously stripped before upload, so restore it here before
         // LocalDataSource performs its upsert.
-        if ((table == 'activities' || table == 'activity_submissions') && !remoteData.containsKey('id')) {
+        if ((table == 'activities' || table == 'activity_submissions') &&
+            !remoteData.containsKey('id')) {
           final localId = int.tryParse(doc.id);
           if (localId != null) remoteData['id'] = localId;
         }

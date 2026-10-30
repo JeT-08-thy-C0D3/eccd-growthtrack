@@ -23,9 +23,14 @@ class ChildRepositoryImpl implements ChildRepository {
 
   @override
   Future<int> addChild(ChildModel child) async {
+    if (await _hasDuplicateChild(child)) {
+      throw StateError(
+        'A child with the same name, birth date, and parent is already registered.',
+      );
+    }
     // 1. ALWAYS save locally first
     final id = await _local.saveRecord('children', child.toMap());
-    
+
     // 2. OPTIONAL: Attempt immediate cloud sync if online
     if (await _connectivity.isOnline) {
       try {
@@ -35,40 +40,59 @@ class ChildRepositoryImpl implements ChildRepository {
         // Silently fail; SyncService will retry later
       }
     }
-    
+
     // Log addition
     await AuditLogger.log(
       action: 'Register Child',
       module: 'Child Registration',
-      description: 'Registered child: ${child.firstName} ${child.lastName} (ID: ${child.childId}).',
+      description:
+          'Registered child: ${child.firstName} ${child.lastName} (ID: ${child.childId}).',
     );
-    
+
     return id;
   }
 
   @override
   Future<List<ChildModel>> getChildren() async {
+    // DatabaseHelper implements the shared local-first policy: SQLite is read
+    // first on mobile and Firestore is used only to hydrate an empty cache.
+    // Web has no SQLite support, so it reads Firestore directly.
     return await DatabaseHelper.instance.getAllChildren();
   }
-  
+
+  Future<bool> _hasDuplicateChild(ChildModel candidate) async {
+    final firstName = candidate.firstName.trim().toLowerCase();
+    final lastName = candidate.lastName.trim().toLowerCase();
+    final parentUid = candidate.parentUid?.trim() ?? '';
+
+    return (await getChildren()).any(
+      (existing) =>
+          existing.childId != candidate.childId &&
+          existing.firstName.trim().toLowerCase() == firstName &&
+          existing.lastName.trim().toLowerCase() == lastName &&
+          existing.birthDate == candidate.birthDate &&
+          (existing.parentUid?.trim() ?? '') == parentUid,
+    );
+  }
+
   @override
   Future<int> updateChild(ChildModel child) async {
     final id = await addChild(child);
-    
+
     // Log update
     await AuditLogger.log(
       action: 'Update Child',
       module: 'Child Registration',
       description: 'Updated profile for ${child.firstName} ${child.lastName}.',
     );
-    
+
     return id;
   }
 
   @override
   Future<int> deleteChild(int id) async {
-     // Local delete + cloud delete trigger
-     return 0; // Simplified for example
+    // Local delete + cloud delete trigger
+    return 0; // Simplified for example
   }
 
   @override

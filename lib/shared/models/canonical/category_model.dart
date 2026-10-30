@@ -1,6 +1,7 @@
 /// Category Models for Dynamic System Configuration
 /// 
 /// Categories replace hard-coded lists and enable admin customization.
+library;
 
 class Category {
   final String id;

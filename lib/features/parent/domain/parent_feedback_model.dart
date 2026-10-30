@@ -1,3 +1,6 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+
 class ParentFeedbackModel {
   final int? id;
   final String childId;
@@ -36,6 +39,8 @@ class ParentFeedbackModel {
   }
 
   factory ParentFeedbackModel.fromMap(Map<String, dynamic> map) {
+    final serverCreated = _serverUtcText(map['server_created_at']);
+    final serverUpdated = _serverUtcText(map['server_updated_at']);
     return ParentFeedbackModel(
       id: map['id'],
       childId: map['child_id'] ?? '',
@@ -43,10 +48,16 @@ class ParentFeedbackModel {
       parentObservation: map['parent_observation'] ?? '',
       assistanceLevel: map['assistance_level'] ?? '',
       notes: map['notes'] ?? '',
-      submissionDate: map['submission_date'] ?? '',
-      updatedAt: map['updated_at'] ?? DateTime.now().toIso8601String(),
+      submissionDate: serverCreated ?? map['submission_date'] ?? '',
+      updatedAt: serverUpdated ?? map['updated_at'] ?? '',
       isSynced: (map['is_synced'] ?? 0) == 1,
     );
+  }
+
+  static String? _serverUtcText(dynamic value) {
+    if (value is! Timestamp) return null;
+    return DateFormat('yyyy-MM-dd HH:mm:ss \'UTC\'')
+        .format(value.toDate().toUtc());
   }
 
   ParentFeedbackModel copyWith({

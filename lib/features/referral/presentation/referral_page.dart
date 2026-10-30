@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
+
 import '../../../core/database/database_helper.dart';
 import '../../../shared/models/child_model.dart';
 import '../data/referral_repository.dart';
 import '../domain/referral_model.dart';
 import '../../../core/utils/validators.dart';
 import '../../../shared/widgets/confirmation_dialog.dart';
+import '../../../shared/widgets/brand_widgets.dart';
 
 class ReferralPage extends StatefulWidget {
   const ReferralPage({super.key});
@@ -24,6 +26,7 @@ class _ReferralPageState extends State<ReferralPage> {
   String _selectedStatusFilter = 'All';
   String _sortBy = 'Date Newest First';
   bool _isLoading = true;
+  String? _loadError;
 
   final List<String> _statusFilters = [
     'All',
@@ -31,7 +34,7 @@ class _ReferralPageState extends State<ReferralPage> {
     'Referred',
     'For Follow-Up',
     'Completed',
-    'Closed'
+    'Closed',
   ];
 
   @override
@@ -41,23 +44,48 @@ class _ReferralPageState extends State<ReferralPage> {
   }
 
   Future<void> _loadReferrals() async {
-    setState(() => _isLoading = true);
-    _allReferrals = await _repository.getAllReferrals();
-    _applyFilterAndSort();
-    setState(() => _isLoading = false);
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+    try {
+      final referrals = await _repository.getAllReferrals().timeout(
+        const Duration(seconds: 15),
+      );
+      if (!mounted) return;
+      setState(() {
+        _allReferrals = referrals;
+        _isLoading = false;
+      });
+      _applyFilterAndSort();
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loadError =
+              'Unable to load referrals. Check your connection and try again.';
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   void _applyFilterAndSort() {
     setState(() {
       final q = _searchQuery.toLowerCase();
       _filteredReferrals = _allReferrals.where((item) {
-        final childName = "${item['first_name']} ${item['last_name']}".toLowerCase();
+        final childName = "${item['first_name']} ${item['last_name']}"
+            .toLowerCase();
         final childId = (item['child_id'] as String? ?? '').toLowerCase();
         final concern = (item['concern'] as String? ?? '').toLowerCase();
         final status = (item['status'] as String? ?? '').toLowerCase();
 
-        final matchesSearch = childName.contains(q) || childId.contains(q) || concern.contains(q) || status.contains(q);
-        final matchesStatus = _selectedStatusFilter == 'All' ||
+        final matchesSearch =
+            childName.contains(q) ||
+            childId.contains(q) ||
+            concern.contains(q) ||
+            status.contains(q);
+        final matchesStatus =
+            _selectedStatusFilter == 'All' ||
             status.toLowerCase() == _selectedStatusFilter.toLowerCase();
 
         return matchesSearch && matchesStatus;
@@ -68,7 +96,11 @@ class _ReferralPageState extends State<ReferralPage> {
         final dateB = (b['referral_date'] as String? ?? '');
         switch (_sortBy) {
           case 'Name A-Z':
-            return "${a['first_name']} ${a['last_name']}".toLowerCase().compareTo("${b['first_name']} ${b['last_name']}".toLowerCase());
+            return "${a['first_name']} ${a['last_name']}"
+                .toLowerCase()
+                .compareTo(
+                  "${b['first_name']} ${b['last_name']}".toLowerCase(),
+                );
           case 'Date Oldest First':
             return dateA.compareTo(dateB);
           case 'Date Newest First':
@@ -83,7 +115,9 @@ class _ReferralPageState extends State<ReferralPage> {
     final children = await DatabaseHelper.instance.getAllChildren();
     if (children.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No children registered yet.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No children registered yet.')),
+        );
       }
       return;
     }
@@ -94,7 +128,9 @@ class _ReferralPageState extends State<ReferralPage> {
       context: context,
       builder: (context) => _ReferralFormDialog(
         children: children,
-        referral: existingReferral != null ? ReferralModel.fromMap(existingReferral) : null,
+        referral: existingReferral != null
+            ? ReferralModel.fromMap(existingReferral)
+            : null,
       ),
     );
 
@@ -111,12 +147,11 @@ class _ReferralPageState extends State<ReferralPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isPhone = MediaQuery.sizeOf(context).width < 600;
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: const Text('Referrals & Cases'),
-        actions: [
-          IconButton(onPressed: _loadReferrals, icon: const Icon(Icons.refresh)),
-        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showReferralForm(),
@@ -125,8 +160,12 @@ class _ReferralPageState extends State<ReferralPage> {
       ),
       body: Column(
         children: [
+          _buildHero(isPhone),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 8.0,
+            ),
             child: SearchBar(
               controller: _searchController,
               hintText: 'Search by Child ID, Child Name, or Concern...',
@@ -141,46 +180,200 @@ class _ReferralPageState extends State<ReferralPage> {
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
+                : _loadError != null
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.cloud_off_rounded,
+                          size: 40,
+                          color: Colors.orange,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(_loadError!, textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          onPressed: _loadReferrals,
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('Try again'),
+                        ),
+                      ],
+                    ),
+                  )
                 : _filteredReferrals.isEmpty
-                    ? const Center(child: Text('No matching referrals found.'))
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _filteredReferrals.length,
-                        itemBuilder: (context, index) {
-                          final item = _filteredReferrals[index];
-                          final status = item['status'];
-                          final color = _getStatusColor(status);
+                ? SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                    child: _buildEmptyState(),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                    itemCount: _filteredReferrals.length,
+                    itemBuilder: (context, index) {
+                      final item = _filteredReferrals[index];
+                      final status = item['status'];
+                      final color = _getStatusColor(status);
 
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: color.withValues(alpha: 0.1),
-                                child: Icon(Icons.assignment_late, color: color),
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: color.withValues(alpha: 0.1),
+                            child: Icon(Icons.assignment_late, color: color),
+                          ),
+                          title: Text(
+                            '${item['first_name']} ${item['last_name']} (${item['child_id']})',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Concern: ${item['concern']}'),
+                              Text(
+                                'Date: ${item['referral_date']}',
+                                style: const TextStyle(fontSize: 12),
                               ),
-                              title: Text('${item['first_name']} ${item['last_name']} (${item['child_id']})', style: const TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Concern: ${item['concern']}'),
-                                  Text('Date: ${item['referral_date']}', style: const TextStyle(fontSize: 12)),
-                                ],
-                              ),
-                              trailing: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                                child: Text(status, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 10)),
-                              ),
-                              onTap: () => _showReferralForm(existingReferral: item),
+                            ],
+                          ),
+                          trailing: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
                             ),
-                          );
-                        },
-                      ),
+                            decoration: BoxDecoration(
+                              color: color.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              status,
+                              style: TextStyle(
+                                color: color,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ),
+                          onTap: () =>
+                              _showReferralForm(existingReferral: item),
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
     );
   }
+
+  Widget _buildHero(bool isPhone) => Padding(
+    padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
+    child: Container(
+      height: isPhone ? 176 : 188,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFE8F5FF), Color(0xFFF9FCFF)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: FractionallySizedBox(
+                widthFactor: isPhone ? 1 : .47,
+                heightFactor: 1,
+                child: Image.asset(
+                  'assets/images/referrals_hero.png',
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+          ),
+          if (isPhone)
+            const Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xE6E8F5FF), Color(0x66F9FCFF)],
+                  ),
+                ),
+              ),
+            ),
+          Positioned(
+            left: isPhone ? 24 : 30,
+            top: isPhone ? 28 : 42,
+            right: isPhone ? 24 : null,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Referrals & Cases',
+                  style: TextStyle(
+                    fontSize: isPhone ? 28 : 32,
+                    color: Color(0xFF102A72),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 9),
+                const Text(
+                  'Track and manage child referrals, concerns, and follow-ups.',
+                  style: TextStyle(color: Color(0xFF54769B), fontSize: 15),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _buildEmptyState() => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 110,
+          height: 110,
+          decoration: BoxDecoration(
+            color: const Color(0xFFE7F3FF),
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: const Icon(
+            Icons.assignment_late_outlined,
+            color: BrandColors.sky,
+            size: 62,
+          ),
+        ),
+        const SizedBox(height: 18),
+        const Text(
+          'No matching referrals found.',
+          style: TextStyle(
+            fontSize: 23,
+            color: Color(0xFF102A72),
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'There are no referral records to display yet.',
+          style: TextStyle(color: Color(0xFF64748B)),
+        ),
+        const SizedBox(height: 18),
+        ElevatedButton.icon(
+          onPressed: () => _showReferralForm(),
+          icon: const Icon(Icons.add),
+          label: const Text('New Referral'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: BrandColors.sky,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 15),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _buildFilterBar() {
     return Container(
@@ -189,7 +382,10 @@ class _ReferralPageState extends State<ReferralPage> {
         children: [
           const Icon(Icons.filter_list, size: 18),
           const SizedBox(width: 8),
-          const Text('Status:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+          const Text(
+            'Status:',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: SingleChildScrollView(
@@ -200,7 +396,10 @@ class _ReferralPageState extends State<ReferralPage> {
                   return Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: ChoiceChip(
-                      label: Text(status == 'All' ? 'All Status' : status, style: const TextStyle(fontSize: 11)),
+                      label: Text(
+                        status == 'All' ? 'All Status' : status,
+                        style: const TextStyle(fontSize: 11),
+                      ),
                       selected: isSelected,
                       onSelected: (selected) {
                         if (selected) {
@@ -224,7 +423,16 @@ class _ReferralPageState extends State<ReferralPage> {
               underline: const SizedBox(),
               icon: const Icon(Icons.sort, size: 20),
               items: ['Date Newest First', 'Date Oldest First', 'Name A-Z']
-                  .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12))))
+                  .map(
+                    (s) => DropdownMenuItem(
+                      value: s,
+                      child: Text(
+                        s,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  )
                   .toList(),
               onChanged: (val) {
                 if (val != null) {
@@ -243,12 +451,18 @@ class _ReferralPageState extends State<ReferralPage> {
 
   Color _getStatusColor(String status) {
     switch (status) {
-      case 'Pending': return Colors.orange;
-      case 'Referred': return Colors.blue;
-      case 'For Follow-Up': return Colors.purple;
-      case 'Completed': return Colors.green;
-      case 'Closed': return Colors.grey;
-      default: return Colors.black;
+      case 'Pending':
+        return Colors.orange;
+      case 'Referred':
+        return Colors.blue;
+      case 'For Follow-Up':
+        return Colors.purple;
+      case 'Completed':
+        return Colors.green;
+      case 'Closed':
+        return Colors.grey;
+      default:
+        return Colors.black;
     }
   }
 }
@@ -277,7 +491,7 @@ class _ReferralFormDialogState extends State<_ReferralFormDialog> {
     'Social-Emotional',
   ];
   final List<String> _concernOptions = [..._developmentalConcerns];
-  
+
   ChildModel? _selectedChild;
   String _selectedConcern = _developmentalConcerns.first;
   String _selectedStatus = 'Pending';
@@ -297,7 +511,9 @@ class _ReferralFormDialogState extends State<_ReferralFormDialog> {
       _selectedStatus = widget.referral!.status;
       _referralDate = DateTime.parse(widget.referral!.referralDate);
       _followUpDate = DateTime.parse(widget.referral!.followUpDate);
-      _selectedChild = widget.children.firstWhere((c) => c.childId == widget.referral!.childId);
+      _selectedChild = widget.children.firstWhere(
+        (c) => c.childId == widget.referral!.childId,
+      );
     } else {
       _selectedChild = widget.children.first;
     }
@@ -355,15 +571,45 @@ class _ReferralFormDialogState extends State<_ReferralFormDialog> {
             width: double.maxFinite,
             child: Row(
               children: [
-                Expanded(child: _timeWheel('Hour', 24, hourController, (value) => setDialogState(() => hour = value))),
-                Expanded(child: _timeWheel('Minute', 60, minuteController, (value) => setDialogState(() => minute = value))),
-                Expanded(child: _timeWheel('Second', 60, secondController, (value) => setDialogState(() => second = value))),
+                Expanded(
+                  child: _timeWheel(
+                    'Hour',
+                    24,
+                    hourController,
+                    (value) => setDialogState(() => hour = value),
+                  ),
+                ),
+                Expanded(
+                  child: _timeWheel(
+                    'Minute',
+                    60,
+                    minuteController,
+                    (value) => setDialogState(() => minute = value),
+                  ),
+                ),
+                Expanded(
+                  child: _timeWheel(
+                    'Second',
+                    60,
+                    secondController,
+                    (value) => setDialogState(() => second = value),
+                  ),
+                ),
               ],
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.pop(context, _TimeWithSeconds(hour, minute, second)), child: const Text('Set time')),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(
+                context,
+                _TimeWithSeconds(hour, minute, second),
+              ),
+              child: const Text('Set time'),
+            ),
           ],
         ),
       ),
@@ -383,17 +629,26 @@ class _ReferralFormDialogState extends State<_ReferralFormDialog> {
         Expanded(
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: .45),
+              color: Theme.of(context).colorScheme.surfaceContainerHighest
+                  .withValues(alpha: .45),
               borderRadius: BorderRadius.circular(14),
             ),
             child: CupertinoPicker.builder(
               scrollController: controller,
               itemExtent: 44,
-              selectionOverlay: const CupertinoPickerDefaultSelectionOverlay(background: Colors.transparent),
+              selectionOverlay: const CupertinoPickerDefaultSelectionOverlay(
+                background: Colors.transparent,
+              ),
               onSelectedItemChanged: onChanged,
               childCount: itemCount,
               itemBuilder: (context, index) => Center(
-                child: Text(index.toString().padLeft(2, '0'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                child: Text(
+                  index.toString().padLeft(2, '0'),
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ),
           ),
@@ -417,6 +672,7 @@ class _ReferralFormDialogState extends State<_ReferralFormDialog> {
       content: SingleChildScrollView(
         child: Form(
           key: _formKey,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -424,19 +680,41 @@ class _ReferralFormDialogState extends State<_ReferralFormDialog> {
                 initialValue: _selectedChild,
                 isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Child'),
-                items: widget.children.map((c) => DropdownMenuItem(value: c, child: Text("${c.firstName} ${c.lastName} (${c.childId})", overflow: TextOverflow.ellipsis))).toList(),
-                onChanged: widget.referral != null ? null : (val) => setState(() => _selectedChild = val),
+                items: widget.children
+                    .map(
+                      (c) => DropdownMenuItem(
+                        value: c,
+                        child: Text(
+                          "${c.firstName} ${c.lastName} (${c.childId})",
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: widget.referral != null
+                    ? null
+                    : (val) => setState(() => _selectedChild = val),
               ),
               const SizedBox(height: 14),
               DropdownButtonFormField<String>(
                 initialValue: _selectedConcern,
                 isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Developmental Concern'),
+                decoration: const InputDecoration(
+                  labelText: 'Developmental Concern',
+                ),
                 items: _concernOptions
-                    .map((concern) => DropdownMenuItem(value: concern, child: Text(concern, overflow: TextOverflow.ellipsis)))
+                    .map(
+                      (concern) => DropdownMenuItem(
+                        value: concern,
+                        child: Text(concern, overflow: TextOverflow.ellipsis),
+                      ),
+                    )
                     .toList(),
-                onChanged: (value) => setState(() => _selectedConcern = value ?? _selectedConcern),
-                validator: (value) => Validators.validateRequired(value, 'Developmental Concern'),
+                onChanged: (value) => setState(
+                  () => _selectedConcern = value ?? _selectedConcern,
+                ),
+                validator: (value) =>
+                    Validators.validateRequired(value, 'Developmental Concern'),
               ),
               const SizedBox(height: 14),
               TextFormField(
@@ -447,75 +725,113 @@ class _ReferralFormDialogState extends State<_ReferralFormDialog> {
               ),
               const SizedBox(height: 16),
               ListTile(
-                title: const Text('Referral Date', style: TextStyle(fontSize: 14)),
-                subtitle: Text(DateFormat('yyyy-MM-dd HH:mm:ss').format(_referralDate)),
+                title: const Text(
+                  'Referral Date',
+                  style: TextStyle(fontSize: 14),
+                ),
+                subtitle: Text(
+                  DateFormat('yyyy-MM-dd HH:mm:ss').format(_referralDate),
+                ),
                 trailing: const Icon(Icons.calendar_today, size: 20),
                 onTap: () async {
-                  final picked = await showDatePicker(context: context, initialDate: _referralDate, firstDate: DateTime(2020), lastDate: DateTime.now());
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: _referralDate,
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime.now(),
+                  );
                   if (picked != null) {
-                    setState(() => _referralDate = DateTime(
-                      picked.year,
-                      picked.month,
-                      picked.day,
-                      _referralDate.hour,
-                      _referralDate.minute,
-                      _referralDate.second,
-                    ));
+                    setState(
+                      () => _referralDate = DateTime(
+                        picked.year,
+                        picked.month,
+                        picked.day,
+                        _referralDate.hour,
+                        _referralDate.minute,
+                        _referralDate.second,
+                      ),
+                    );
                   }
                 },
               ),
               ListTile(
-                title: const Text('Referral Time', style: TextStyle(fontSize: 14)),
+                title: const Text(
+                  'Referral Time',
+                  style: TextStyle(fontSize: 14),
+                ),
                 subtitle: Text(DateFormat('HH:mm:ss').format(_referralDate)),
                 trailing: const Icon(Icons.schedule, size: 20),
                 onTap: () async {
-                  final picked = await _showTimeWithSecondsPicker(_referralDate);
+                  final picked = await _showTimeWithSecondsPicker(
+                    _referralDate,
+                  );
                   if (picked != null) {
-                    setState(() => _referralDate = DateTime(
-                      _referralDate.year,
-                      _referralDate.month,
-                      _referralDate.day,
-                      picked.hour,
-                      picked.minute,
-                      picked.second,
-                    ));
+                    setState(
+                      () => _referralDate = DateTime(
+                        _referralDate.year,
+                        _referralDate.month,
+                        _referralDate.day,
+                        picked.hour,
+                        picked.minute,
+                        picked.second,
+                      ),
+                    );
                   }
                 },
               ),
               const SizedBox(height: 8),
               ListTile(
-                title: const Text('Follow-up Date', style: TextStyle(fontSize: 14)),
-                subtitle: Text(DateFormat('yyyy-MM-dd HH:mm:ss').format(_followUpDate)),
+                title: const Text(
+                  'Follow-up Date',
+                  style: TextStyle(fontSize: 14),
+                ),
+                subtitle: Text(
+                  DateFormat('yyyy-MM-dd HH:mm:ss').format(_followUpDate),
+                ),
                 trailing: const Icon(Icons.calendar_today, size: 20),
                 onTap: () async {
-                  final picked = await showDatePicker(context: context, initialDate: _followUpDate, firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)));
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: _followUpDate,
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime.now().add(const Duration(days: 365)),
+                  );
                   if (picked != null) {
-                    setState(() => _followUpDate = DateTime(
-                      picked.year,
-                      picked.month,
-                      picked.day,
-                      _followUpDate.hour,
-                      _followUpDate.minute,
-                      _followUpDate.second,
-                    ));
+                    setState(
+                      () => _followUpDate = DateTime(
+                        picked.year,
+                        picked.month,
+                        picked.day,
+                        _followUpDate.hour,
+                        _followUpDate.minute,
+                        _followUpDate.second,
+                      ),
+                    );
                   }
                 },
               ),
               ListTile(
-                title: const Text('Follow-up Time', style: TextStyle(fontSize: 14)),
+                title: const Text(
+                  'Follow-up Time',
+                  style: TextStyle(fontSize: 14),
+                ),
                 subtitle: Text(DateFormat('HH:mm:ss').format(_followUpDate)),
                 trailing: const Icon(Icons.schedule, size: 20),
                 onTap: () async {
-                  final picked = await _showTimeWithSecondsPicker(_followUpDate);
+                  final picked = await _showTimeWithSecondsPicker(
+                    _followUpDate,
+                  );
                   if (picked != null) {
-                    setState(() => _followUpDate = DateTime(
-                      _followUpDate.year,
-                      _followUpDate.month,
-                      _followUpDate.day,
-                      picked.hour,
-                      picked.minute,
-                      picked.second,
-                    ));
+                    setState(
+                      () => _followUpDate = DateTime(
+                        _followUpDate.year,
+                        _followUpDate.month,
+                        _followUpDate.day,
+                        picked.hour,
+                        picked.minute,
+                        picked.second,
+                      ),
+                    );
                   }
                 },
               ),
@@ -524,7 +840,21 @@ class _ReferralFormDialogState extends State<_ReferralFormDialog> {
                 initialValue: _selectedStatus,
                 isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Status'),
-                items: ['Pending', 'Referred', 'For Follow-Up', 'Completed', 'Closed'].map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis))).toList(),
+                items:
+                    [
+                          'Pending',
+                          'Referred',
+                          'For Follow-Up',
+                          'Completed',
+                          'Closed',
+                        ]
+                        .map(
+                          (s) => DropdownMenuItem(
+                            value: s,
+                            child: Text(s, overflow: TextOverflow.ellipsis),
+                          ),
+                        )
+                        .toList(),
                 onChanged: (val) => setState(() => _selectedStatus = val!),
               ),
               const SizedBox(height: 14),
@@ -538,7 +868,10 @@ class _ReferralFormDialogState extends State<_ReferralFormDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
         ElevatedButton(onPressed: _save, child: const Text('Save')),
       ],
     );

@@ -1,13 +1,14 @@
 /// Firebase App Check Service
-/// 
+///
 /// Implements Firebase App Check to prevent abuse and ensure
 /// only legitimate clients access Firebase services.
-/// 
+///
 /// Supports:
 /// - SafetyNet (Android)
 /// - DeviceCheck (iOS)
 /// - reCAPTCHA v3 (Web)
 /// - Custom token provider (for testing)
+library;
 
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -20,7 +21,7 @@ class AppCheckService {
   factory AppCheckService() => _instance;
 
   /// Initialize Firebase App Check
-  /// 
+  ///
   /// Must be called BEFORE FirebaseApp initialization for full coverage.
   /// In main.dart:
   ///   await Firebase.initializeApp();
@@ -28,8 +29,8 @@ class AppCheckService {
   Future<void> initialize() async {
     try {
       await FirebaseAppCheck.instance.activate(
-        webRecaptchaV3Provider: kIsWeb
-            ? RecaptchaV3Provider('YOUR_RECAPTCHA_V3_PUBLIC_KEY')
+        webProvider: kIsWeb
+            ? ReCaptchaV3Provider('YOUR_RECAPTCHA_V3_PUBLIC_KEY')
             : null,
         androidProvider: AndroidProvider.safetyNet,
         appleProvider: AppleProvider.deviceCheck,
@@ -44,13 +45,12 @@ class AppCheckService {
   }
 
   /// Get current App Check token
-  /// 
+  ///
   /// This token is automatically attached to Firestore, Storage,
   /// and Cloud Functions requests.
   Future<String?> getToken() async {
     try {
-      final token = await FirebaseAppCheck.instance.getToken(forceFresh: false);
-      return token?.token;
+      return await FirebaseAppCheck.instance.getToken(false);
     } catch (e) {
       print('Error getting App Check token: $e');
       return null;
@@ -60,8 +60,7 @@ class AppCheckService {
   /// Refresh App Check token
   Future<String?> refreshToken() async {
     try {
-      final token = await FirebaseAppCheck.instance.getToken(forceFresh: true);
-      return token?.token;
+      return await FirebaseAppCheck.instance.getToken(true);
     } catch (e) {
       print('Error refreshing App Check token: $e');
       return null;
@@ -69,15 +68,15 @@ class AppCheckService {
   }
 
   /// Listen to App Check token changes
-  /// 
+  ///
   /// Token is automatically refreshed periodically by Firebase.
   /// Use this to update your app state if needed.
-  Stream<FirebaseAppCheckToken?> get tokenStream {
+  Stream<String?> get tokenStream {
     return FirebaseAppCheck.instance.onTokenChange;
   }
 
   /// Set App Check enforcement level (debug only)
-  /// 
+  ///
   /// WARNING: Only use for testing. Production requires valid app provisioning.
   static Future<void> setDebugMode() async {
     if (kIsWeb) {

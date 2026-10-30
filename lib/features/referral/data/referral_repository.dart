@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
+
 import '../../../core/database/database_helper.dart';
 import '../../../core/utils/audit_logger.dart';
 import '../../admin/data/repositories/audit_repository.dart';
@@ -39,11 +41,15 @@ class ReferralRepositoryImpl implements ReferralRepository {
 
     // 1. Save Locally
     final id = await _local.saveRecord('referrals', newReferral.toMap());
-    
+
     // 2. Sync to Cloud if online
     if (await _connectivity.isOnline) {
       try {
-        await _remote.uploadRecord('referrals', id.toString(), newReferral.toMap());
+        await _remote.uploadRecord(
+          'referrals',
+          id.toString(),
+          newReferral.toMap(),
+        );
         await _local.markAsSynced('referrals', id);
       } catch (e) {
         print("Cloud Sync Failed: $e");
@@ -56,23 +62,37 @@ class ReferralRepositoryImpl implements ReferralRepository {
       module: 'Referral',
       description: 'Created referral for concern: ${referral.concern}.',
     );
-    
+
     return id;
   }
 
   @override
   Future<List<ReferralModel>> getReferralsByChild(String childId) async {
-    final List<Map<String, dynamic>> maps = await _dbHelper.getReferralsByChild(childId);
+    final List<Map<String, dynamic>> maps = await _dbHelper.getReferralsByChild(
+      childId,
+    );
     return maps.map((map) => ReferralModel.fromMap(map)).toList();
   }
 
   @override
   Future<List<Map<String, dynamic>>> getAllReferrals() async {
     if (kIsWeb) {
-      final referrals = await _firestore.collection('referrals').get();
-      final children = await _firestore.collection('children').get();
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      final queries = await Future.wait([
+        _firestore
+            .collection('referrals')
+            .where('referrerId', isEqualTo: uid)
+            .get(),
+        _firestore
+            .collection('children')
+            .where('teacher_uid', isEqualTo: uid)
+            .get(),
+      ]);
+      final referrals = queries[0];
+      final children = queries[1];
       final childrenById = {
-        for (final child in children.docs) child.data()['child_id']: child.data(),
+        for (final child in children.docs)
+          child.data()['child_id']: child.data(),
       };
 
       return referrals.docs.map((doc) {
@@ -108,12 +128,19 @@ class ReferralRepositoryImpl implements ReferralRepository {
     );
 
     // 1. Update Locally
-    final result = await _local.saveRecord('referrals', updatedReferral.toMap());
-    
+    final result = await _local.saveRecord(
+      'referrals',
+      updatedReferral.toMap(),
+    );
+
     // 2. Sync to Cloud if online
     if (await _connectivity.isOnline) {
       try {
-        await _remote.uploadRecord('referrals', updatedReferral.id.toString(), updatedReferral.toMap());
+        await _remote.uploadRecord(
+          'referrals',
+          updatedReferral.id.toString(),
+          updatedReferral.toMap(),
+        );
         await _local.markAsSynced('referrals', updatedReferral.id);
       } catch (e) {
         print("Cloud Sync Failed: $e");
@@ -123,7 +150,8 @@ class ReferralRepositoryImpl implements ReferralRepository {
     // 3. Log Action
     await AuditRepository().logAction(
       action: 'Referral Updated',
-      targetRecord: 'Referral ID: ${referral.id} • Child ID: ${referral.childId} • Status: ${referral.status}',
+      targetRecord:
+          'Referral ID: ${referral.id} • Child ID: ${referral.childId} • Status: ${referral.status}',
     );
 
     // Send Parent Notification
@@ -131,10 +159,11 @@ class ReferralRepositoryImpl implements ReferralRepository {
       childId: referral.childId,
       type: 'referral',
       title: 'Referral Status Updated',
-      body: 'Referral case for concern "${referral.concern}" updated to status "${referral.status}".',
+      body:
+          'Referral case for concern "${referral.concern}" updated to status "${referral.status}".',
       referenceId: referral.id?.toString(),
     );
-    
+
     return result;
   }
 
@@ -146,7 +175,10 @@ class ReferralRepositoryImpl implements ReferralRepository {
   }
 
   @override
-  Future<String?> uploadReferralAttachment(String referralId, String filePath) async {
+  Future<String?> uploadReferralAttachment(
+    String referralId,
+    String filePath,
+  ) async {
     return await _fileUploadRepo.uploadFile(
       bucket: SupabaseConfig.referralAttachments,
       entityId: referralId,

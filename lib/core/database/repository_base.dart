@@ -1,8 +1,8 @@
 /// Repository Base Class with Pagination
-/// 
+///
 /// Provides a template for all entity repositories with built-in pagination,
 /// filtering, and sorting support.
-/// 
+///
 /// Usage:
 ///   class EvaluationRepository extends RepositoryBase<EvaluationSession> {
 ///     @override
@@ -10,8 +10,10 @@
 ///     @override
 ///     EvaluationSession fromJson(Map<String, dynamic> json) => EvaluationSession.fromJson(json);
 ///   }
+library;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+
 import 'query_builder.dart';
 import 'pagination_service.dart';
 
@@ -38,7 +40,11 @@ abstract class RepositoryBase<T> {
   /// Create new entity
   Future<String> create(T entity) async {
     try {
-      final doc = await collection.add(toJson(entity));
+      final doc = await collection.add({
+        ...toJson(entity),
+        'server_created_at': FieldValue.serverTimestamp(),
+        'server_updated_at': FieldValue.serverTimestamp(),
+      });
       return doc.id;
     } catch (e) {
       print('Error creating $T: $e');
@@ -49,7 +55,11 @@ abstract class RepositoryBase<T> {
   /// Create with custom ID
   Future<void> createWithId(String id, T entity) async {
     try {
-      await collection.doc(id).set(toJson(entity));
+      await collection.doc(id).set({
+        ...toJson(entity),
+        'server_created_at': FieldValue.serverTimestamp(),
+        'server_updated_at': FieldValue.serverTimestamp(),
+      });
     } catch (e) {
       print('Error creating $T with id $id: $e');
       rethrow;
@@ -66,10 +76,7 @@ abstract class RepositoryBase<T> {
       final doc = await collection.doc(id).get();
       if (!doc.exists) return null;
 
-      return fromJson({
-        ...doc.data() as Map<String, dynamic>,
-        '__id': doc.id,
-      });
+      return fromJson({...doc.data() as Map<String, dynamic>, '__id': doc.id});
     } catch (e) {
       print('Error getting $T by id: $e');
       return null;
@@ -93,10 +100,9 @@ abstract class RepositoryBase<T> {
             .get();
 
         for (final doc in snapshot.docs) {
-          results.add(fromJson({
-            ...doc.data() as Map<String, dynamic>,
-            '__id': doc.id,
-          }));
+          results.add(
+            fromJson({...doc.data() as Map<String, dynamic>, '__id': doc.id}),
+          );
         }
       }
 
@@ -112,10 +118,12 @@ abstract class RepositoryBase<T> {
     try {
       final snapshot = await collection.limit(limit).get();
       return snapshot.docs
-          .map((doc) => fromJson({
-                ...doc.data() as Map<String, dynamic>,
-                '__id': doc.id,
-              }))
+          .map(
+            (doc) => fromJson({
+              ...doc.data() as Map<String, dynamic>,
+              '__id': doc.id,
+            }),
+          )
           .toList();
     } catch (e) {
       print('Error getting all $T: $e');
@@ -130,7 +138,10 @@ abstract class RepositoryBase<T> {
   /// Update entity
   Future<void> update(String id, T entity) async {
     try {
-      await collection.doc(id).update(toJson(entity));
+      await collection.doc(id).update({
+        ...toJson(entity),
+        'server_updated_at': FieldValue.serverTimestamp(),
+      });
     } catch (e) {
       print('Error updating $T: $e');
       rethrow;
@@ -140,7 +151,10 @@ abstract class RepositoryBase<T> {
   /// Partial update (only specified fields)
   Future<void> updatePartial(String id, Map<String, dynamic> updates) async {
     try {
-      await collection.doc(id).update(updates);
+      await collection.doc(id).update({
+        ...updates,
+        'server_updated_at': FieldValue.serverTimestamp(),
+      });
     } catch (e) {
       print('Error partially updating $T: $e');
       rethrow;
@@ -167,6 +181,7 @@ abstract class RepositoryBase<T> {
       await collection.doc(id).update({
         'status': 'deleted',
         'deletedAt': FieldValue.serverTimestamp(),
+        'server_updated_at': FieldValue.serverTimestamp(),
       });
     } catch (e) {
       print('Error soft deleting $T: $e');
@@ -314,16 +329,15 @@ abstract class RepositoryBase<T> {
 
     return firestoreQuery.snapshots().map((snapshot) {
       final items = snapshot.docs
-          .map((doc) => fromJson({
-                ...doc.data() as Map<String, dynamic>,
-                '__id': doc.id,
-              }))
+          .map(
+            (doc) => fromJson({
+              ...doc.data() as Map<String, dynamic>,
+              '__id': doc.id,
+            }),
+          )
           .toList();
 
-      return PaginatedResult(
-        items: items,
-        pageNumber: 1,
-      );
+      return PaginatedResult(items: items, pageNumber: 1);
     });
   }
 
@@ -334,10 +348,12 @@ abstract class RepositoryBase<T> {
 
     return firestoreQuery.snapshots().map((snapshot) {
       return snapshot.docs
-          .map((doc) => fromJson({
-                ...doc.data() as Map<String, dynamic>,
-                '__id': doc.id,
-              }))
+          .map(
+            (doc) => fromJson({
+              ...doc.data() as Map<String, dynamic>,
+              '__id': doc.id,
+            }),
+          )
           .toList();
     });
   }

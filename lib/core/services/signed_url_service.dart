@@ -3,6 +3,7 @@
 /// Generates temporary signed URLs for time-limited file access.
 /// Prevents direct exposures of storage paths while maintaining
 /// secure access control.
+library;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 

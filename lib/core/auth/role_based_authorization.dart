@@ -1,16 +1,18 @@
 /// Authorization Service - Enhanced with Role-Based Access Control
-/// 
+///
 /// This replaces the simple authorization_service.dart with a comprehensive
 /// role-based access control (RBAC) system that validates:
 /// - User roles (admin, teacher, parent)
 /// - Center/organization assignments
 /// - Child access permissions
 /// - Feature flags and capabilities
+library;
 
 import '../../shared/models/canonical/canonical_user_model.dart';
 
 class RoleBasedAuthorizationService {
-  static const RoleBasedAuthorizationService _instance = RoleBasedAuthorizationService._();
+  static const RoleBasedAuthorizationService _instance =
+      RoleBasedAuthorizationService._();
 
   /// Feature access matrix
   static const Map<UserRoleType, Set<String>> _roleFeatures = {
@@ -89,13 +91,6 @@ class RoleBasedAuthorizationService {
       '/parent/privacy',
       '/parent/data-requests',
     },
-    UserRoleType.parent: {
-      '/login',
-      '/signup',
-      '/terms',
-      '/privacy',
-      '/password-reset',
-    },
   };
 
   const RoleBasedAuthorizationService._();
@@ -120,14 +115,25 @@ class RoleBasedAuthorizationService {
     required bool isWeb,
   }) {
     // Public routes accessible to everyone
-    const publicRoutes = {'/login', '/signup', '/terms', '/privacy', '/password-reset'};
+    const publicRoutes = {
+      '/login',
+      '/signup',
+      '/terms',
+      '/privacy',
+      '/password-reset',
+    };
     if (publicRoutes.contains(routeName)) return true;
 
     // Require user for protected routes
     if (user == null || user.status != 'active') return false;
 
     // Web-only routes (admin)
-    const webOnlyRoutes = {'/admin', '/admin/users', '/admin/centers', '/admin/monitoring'};
+    const webOnlyRoutes = {
+      '/admin',
+      '/admin/users',
+      '/admin/centers',
+      '/admin/monitoring',
+    };
     if (webOnlyRoutes.contains(routeName) && !isWeb) return false;
 
     // Check role-based route access
@@ -153,11 +159,13 @@ class RoleBasedAuthorizationService {
         // Teachers can only access children assigned to them
         if (user.centerId != childCenterId) return false;
         if (teacherAssignments == null) return false;
-        
-        return teacherAssignments.any((a) =>
-            a.childId == childId &&
-            a.teacherId == user.uid &&
-            a.status == 'active');
+
+        return teacherAssignments.any(
+          (a) =>
+              a.childId == childId &&
+              a.teacherId == user.uid &&
+              a.status == 'active',
+        );
 
       case UserRoleType.parent:
         // Parents can only access linked children (verified consent)
@@ -186,9 +194,7 @@ class RoleBasedAuthorizationService {
   }
 
   /// Check if user can approve evaluation results
-  static bool canApproveEvaluation({
-    required CanonicalUser? user,
-  }) {
+  static bool canApproveEvaluation({required CanonicalUser? user}) {
     if (user == null || user.status != 'active') return false;
     // Only teachers can approve (potentially with admin override)
     return user.role == UserRoleType.teacher;
@@ -205,29 +211,25 @@ class RoleBasedAuthorizationService {
       case UserRoleType.admin:
         return true; // Admins see all
       case UserRoleType.teacher:
-        return user.centerId == referralCenterId; // Teachers see center referrals
+        return user.centerId ==
+            referralCenterId; // Teachers see center referrals
       case UserRoleType.parent:
         return false; // Parents cannot view referrals (confidential)
     }
   }
 
   /// Check if user can delete records (audit trail)
-  static bool canDeleteRecord({
-    required CanonicalUser? user,
-  }) {
+  static bool canDeleteRecord({required CanonicalUser? user}) {
     if (user == null || user.status != 'active') return false;
     // Only admins can delete (soft-delete via audit log)
     return user.role == UserRoleType.admin;
   }
 
   /// Check if user can export data
-  static bool canExportData({
-    required CanonicalUser? user,
-  }) {
+  static bool canExportData({required CanonicalUser? user}) {
     if (user == null || user.status != 'active') return false;
     // Admins and teachers can export
-    return user.role == UserRoleType.admin ||
-        user.role == UserRoleType.teacher;
+    return user.role == UserRoleType.admin || user.role == UserRoleType.teacher;
   }
 
   /// Get user's capabilities as a feature set
@@ -245,7 +247,8 @@ class RoleBasedAuthorizationService {
     required CanonicalUser? user,
     required String action, // 'create', 'read', 'update', 'delete'
     required String entityType, // 'evaluation', 'referral', 'child', etc.
-    Map<String, dynamic>? context, // Additional context (e.g., target user, center)
+    Map<String, dynamic>?
+    context, // Additional context (e.g., target user, center)
   }) {
     if (user == null || user.status != 'active') return false;
 

@@ -2,7 +2,7 @@ enum UserRole { admin, teacher, parent }
 
 class UserModel {
   final int? id;
-  final String uid; 
+  final String uid;
   final String name;
   final String email;
   final String password;
@@ -33,9 +33,8 @@ class UserModel {
   /// deactivated, or deleted from user management.
   bool get isProtectedAdmin {
     final normalizedEmail = email.trim().toLowerCase();
-    final normalizedName = name.trim().toLowerCase();
     return role == UserRole.admin &&
-        (normalizedEmail == 'admin@eccd.com' || normalizedName == 'admin');
+        normalizedEmail == 'delimahenry90@gmail.com';
   }
 
   Map<String, dynamic> toMap() {
@@ -53,6 +52,14 @@ class UserModel {
       'terms_accepted_at': termsAcceptedAt,
       'fcm_token': fcmToken,
     };
+  }
+
+  /// Public profile data stored in Firestore. Credentials belong exclusively
+  /// to Firebase Authentication and must never be written to Firestore.
+  Map<String, dynamic> toFirestoreMap() {
+    final data = Map<String, dynamic>.from(toMap());
+    data.remove('password');
+    return data;
   }
 
   factory UserModel.fromMap(Map<String, dynamic> map) {

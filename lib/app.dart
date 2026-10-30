@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'core/theme/theme_controller.dart';
 import 'features/auth/presentation/login_page.dart';
+import 'features/auth/presentation/reset_password_page.dart';
 import 'features/auth/presentation/terms_and_conditions_screen.dart';
 import 'features/teacher/presentation/teacher_dashboard.dart';
 import 'features/parent/presentation/parent_dashboard.dart';
@@ -33,12 +36,21 @@ import 'shared/widgets/brand_widgets.dart';
 
 class GrowthTrackApp extends StatelessWidget {
   final UserModel? initialUser;
-  const GrowthTrackApp({super.key, this.initialUser});
+  final String? initialPasswordResetLink;
+  final bool initialPasswordResetSuccess;
+  const GrowthTrackApp({
+    super.key,
+    this.initialUser,
+    this.initialPasswordResetLink,
+    this.initialPasswordResetSuccess = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final Map<String, WidgetBuilder> appRoutes = {
-      '/login': (context) => const LoginPage(),
+      '/login': (context) =>
+          LoginPage(showPasswordResetSuccess: initialPasswordResetSuccess),
+      '/intro': (context) => _IntroSplashPage(nextRoute: _initialRoute()),
       '/terms': (context) => const TermsAndConditionsScreen(),
       '/admin': (context) => _buildAdminRoute(),
       '/admin/users': (context) => const UserManagementPage(),
@@ -49,7 +61,7 @@ class GrowthTrackApp extends StatelessWidget {
       '/admin/settings': (context) => const SystemSettingsPage(),
       '/teacher': (context) => _buildTeacherRoute(),
       '/parent': (context) => _buildParentRoute(),
-      
+
       // Feature Routes
       '/register-child': (context) => const ChildListPage(),
       '/child-registration': (context) => const ChildRegistrationPage(),
@@ -65,8 +77,10 @@ class GrowthTrackApp extends StatelessWidget {
       '/clarifications': (context) => const ParentClarificationPage(),
       '/teacher/clarifications': (context) => const TeacherClarificationsPage(),
       '/parent/notifications': (context) => const ParentNotificationsPage(),
-      '/parent/practice-activities': (context) => const PracticeActivitiesPage(),
-      '/parent/practice-activities/completed': (context) => const CompletedActivitiesPage(),
+      '/parent/practice-activities': (context) =>
+          const PracticeActivitiesPage(),
+      '/parent/practice-activities/completed': (context) =>
+          const CompletedActivitiesPage(),
     };
 
     return ValueListenableBuilder<ThemeMode>(
@@ -85,18 +99,42 @@ class GrowthTrackApp extends StatelessWidget {
             bottom: true,
             child: child ?? const SizedBox.shrink(),
           ),
-          initialRoute: initialUser == null ? '/login' : _getInitialRoute(initialUser!.role),
+          initialRoute: '/intro',
           onGenerateRoute: (settings) {
             final name = settings.name;
-            
-            // Web Platform Guard: Block direct URL access to mobile-only routes
-            if (kIsWeb && (name == '/teacher' || name == '/parent')) {
+            if (name == '/email-link-recovery' &&
+                initialPasswordResetLink != null) {
+              final email =
+                  Uri.tryParse(initialPasswordResetLink!)
+                      ?.queryParameters['email'] ??
+                  '';
               return MaterialPageRoute(
                 settings: settings,
-                builder: (context) => const PlatformErrorPage(requiredPlatform: 'Mobile App'),
+                builder: (_) => ResetPasswordPage(
+                  emailLink: initialPasswordResetLink,
+                  initialEmail: email,
+                ),
               );
             }
-
+            final emailLink = _emailSignInLinkFromRoute(name);
+            if (emailLink != null) {
+              final email =
+                  Uri.tryParse(name ?? '')?.queryParameters['email'] ?? '';
+              return MaterialPageRoute(
+                settings: settings,
+                builder: (_) => ResetPasswordPage(
+                  emailLink: emailLink,
+                  initialEmail: email,
+                ),
+              );
+            }
+            final resetCode = _passwordResetCodeFromRoute(name);
+            if (resetCode != null) {
+              return MaterialPageRoute(
+                settings: settings,
+                builder: (_) => ResetPasswordPage(actionCode: resetCode),
+              );
+            }
             final builder = appRoutes[name];
             if (builder != null) {
               return MaterialPageRoute(settings: settings, builder: builder);
@@ -104,7 +142,9 @@ class GrowthTrackApp extends StatelessWidget {
 
             return MaterialPageRoute(
               settings: settings,
-              builder: (context) => const LoginPage(),
+              builder: (context) => LoginPage(
+                showPasswordResetSuccess: initialPasswordResetSuccess,
+              ),
             );
           },
         );
@@ -112,17 +152,44 @@ class GrowthTrackApp extends StatelessWidget {
     );
   }
 
+  String? _passwordResetCodeFromRoute(String? route) {
+    if (route == null || !route.contains('resetPassword')) return null;
+    final uri = Uri.tryParse(route);
+    final code = uri?.queryParameters['oobCode'];
+    return (code == null || code.isEmpty) ? null : code;
+  }
+
+  String? _emailSignInLinkFromRoute(String? route) {
+    final uri = Uri.tryParse(route ?? '');
+    final code = uri?.queryParameters['oobCode'];
+    final isRecoveryPath = uri?.path.endsWith('/reset-password') == true;
+    return (uri?.queryParameters['mode'] == 'signIn' || isRecoveryPath) &&
+            code != null &&
+            code.isNotEmpty
+        ? route
+        : null;
+  }
+
+  String _initialRoute() {
+    if (_emailSignInLinkFromRoute(initialPasswordResetLink) != null) {
+      return '/email-link-recovery';
+    }
+    return initialPasswordResetLink ??
+        (initialUser == null ? '/login' : _getInitialRoute(initialUser!.role));
+  }
+
   ThemeData _buildTheme(Brightness brightness) {
     final isDark = brightness == Brightness.dark;
-    final scheme = ColorScheme.fromSeed(
-      seedColor: BrandColors.navy,
-      brightness: brightness,
-    ).copyWith(
-      primary: isDark ? BrandColors.sky : BrandColors.navy,
-      secondary: BrandColors.green,
-      tertiary: BrandColors.sunshine,
-      surface: isDark ? const Color(0xFF101C24) : BrandColors.canvas,
-    );
+    final scheme =
+        ColorScheme.fromSeed(
+          seedColor: BrandColors.navy,
+          brightness: brightness,
+        ).copyWith(
+          primary: isDark ? BrandColors.sky : BrandColors.navy,
+          secondary: BrandColors.green,
+          tertiary: BrandColors.sunshine,
+          surface: isDark ? const Color(0xFF101C24) : BrandColors.canvas,
+        );
 
     return ThemeData(
       useMaterial3: true,
@@ -147,7 +214,10 @@ class GrowthTrackApp extends StatelessWidget {
         filled: false,
         floatingLabelBehavior: FloatingLabelBehavior.always,
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 12,
+        ),
         labelStyle: const TextStyle(fontSize: 12),
         floatingLabelStyle: TextStyle(
           color: scheme.onSurfaceVariant,
@@ -180,7 +250,9 @@ class GrowthTrackApp extends StatelessWidget {
           backgroundColor: BrandColors.green,
           foregroundColor: Colors.white,
           minimumSize: const Size(0, 52),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
@@ -189,34 +261,112 @@ class GrowthTrackApp extends StatelessWidget {
     );
   }
 
-  Widget _buildAdminRoute() {
-    if (!kIsWeb) {
-      return const PlatformErrorPage(requiredPlatform: 'Web');
-    }
-    return const AdminDashboardPage();
-  }
+  Widget _buildAdminRoute() => const AdminDashboardPage();
 
-  Widget _buildTeacherRoute() {
-    if (kIsWeb) {
-      return const PlatformErrorPage(requiredPlatform: 'Mobile App');
-    }
-    return const TeacherDashboard();
-  }
+  Widget _buildTeacherRoute() => const TeacherDashboard();
 
-  Widget _buildParentRoute() {
-    if (kIsWeb) {
-      return const PlatformErrorPage(requiredPlatform: 'Mobile App');
-    }
-    return const ParentDashboard();
-  }
+  Widget _buildParentRoute() => const ParentDashboard();
 
   String _getInitialRoute(UserRole role) {
     switch (role) {
-      case UserRole.admin: return '/admin';
-      case UserRole.teacher: return '/teacher';
-      case UserRole.parent: return '/parent';
+      case UserRole.admin:
+        return '/admin';
+      case UserRole.teacher:
+        return '/teacher';
+      case UserRole.parent:
+        return '/parent';
     }
   }
+}
+
+class _IntroSplashPage extends StatefulWidget {
+  const _IntroSplashPage({required this.nextRoute});
+  final String nextRoute;
+
+  @override
+  State<_IntroSplashPage> createState() => _IntroSplashPageState();
+}
+
+class _IntroSplashPageState extends State<_IntroSplashPage>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2300),
+    )..forward();
+    Timer(const Duration(milliseconds: 3000), () {
+      if (mounted) {
+        Navigator.of(context).pushReplacementNamed(widget.nextRoute);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFFF7FCFF), Color(0xFFE1F4FF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Center(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            final fade = Curves.easeInOutCubic.transform(
+              (_controller.value / .7).clamp(0.0, 1.0),
+            );
+            final scale = Curves.easeOutBack
+                .transform((_controller.value / .85).clamp(0.0, 1.0))
+                .clamp(0.0, 1.0);
+            return Opacity(
+              opacity: fade,
+              child: Transform.translate(
+                offset: Offset(0, 22 * (1 - fade)),
+                child: Transform.scale(
+                  scale: .78 + (.22 * scale),
+                  child: child,
+                ),
+              ),
+            );
+          },
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              EccdLogo(width: 170, height: 170),
+              SizedBox(height: 20),
+              Text(
+                'ECCD GrowthTrack',
+                style: TextStyle(
+                  color: BrandColors.navy,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Supporting every child’s growth',
+                style: TextStyle(color: Color(0xFF54769B), fontSize: 15),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class PlatformErrorPage extends StatelessWidget {
@@ -236,7 +386,8 @@ class PlatformErrorPage extends StatelessWidget {
               const SizedBox(height: 24),
               Text(
                 'Invalid Platform',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+                style: Theme.of(context).textTheme.headlineMedium
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
               Text(
@@ -246,7 +397,8 @@ class PlatformErrorPage extends StatelessWidget {
               ),
               const SizedBox(height: 32),
               ElevatedButton(
-                onPressed: () => Navigator.pushReplacementNamed(context, '/login'),
+                onPressed: () =>
+                    Navigator.pushReplacementNamed(context, '/login'),
                 child: const Text('Back to Login'),
               ),
             ],

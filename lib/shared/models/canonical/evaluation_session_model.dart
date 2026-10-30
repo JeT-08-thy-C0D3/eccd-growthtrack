@@ -3,6 +3,7 @@
 /// An EvaluationSession represents a complete evaluation of a child's
 /// development across one or more domains during a specific session.
 /// This consolidates the old AssessmentModel and any EvaluationModel.
+library;
 
 class EvaluationSession {
   final String id; // Unique session ID (UUID)

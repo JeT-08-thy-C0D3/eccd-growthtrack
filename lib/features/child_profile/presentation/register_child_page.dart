@@ -13,6 +13,7 @@ class RegisterChildPage extends StatefulWidget {
 
 class _RegisterChildPageState extends State<RegisterChildPage> {
   final _formKey = GlobalKey<FormState>();
+  final _dobFieldKey = GlobalKey<FormFieldState<String>>();
   final _nameController = TextEditingController();
   final _dobController = TextEditingController();
   
@@ -45,6 +46,7 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
       setState(() {
         _dobController.text = "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
       });
+      _dobFieldKey.currentState?.didChange(_dobController.text);
     }
   }
 
@@ -98,6 +100,7 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
             padding: const EdgeInsets.all(24.0),
             child: Form(
               key: _formKey,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -112,6 +115,7 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
+                    key: _dobFieldKey,
                     controller: _dobController,
                     readOnly: true,
                     onTap: _selectDate,

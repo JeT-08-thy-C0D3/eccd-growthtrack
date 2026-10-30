@@ -6,6 +6,7 @@
 /// - Sorting (field + direction)
 /// - Cursor-based pagination
 /// - Applied to all entity types (users, children, evaluations, referrals, etc.)
+library;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 

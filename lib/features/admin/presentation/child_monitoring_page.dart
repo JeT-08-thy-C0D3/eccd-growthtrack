@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../../../core/database/database_helper.dart';
 import '../../../shared/models/child_model.dart';
 import '../../attendance/domain/attendance_model.dart';
 import '../../eccd_evaluation/domain/evaluation_model.dart';
 import '../../parent/domain/parent_feedback_model.dart';
 import '../../triangulation/domain/triangulation_model.dart';
+import '../../../shared/widgets/brand_widgets.dart';
 
 class ChildMonitoringPage extends StatefulWidget {
   const ChildMonitoringPage({super.key});
@@ -36,10 +38,12 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
 
   Future<void> _loadChildren() async {
     setState(() => _isLoading = true);
-    
+
     if (kIsWeb) {
       final snapshot = await _firestore.collection('children').get();
-      _children = snapshot.docs.map((doc) => ChildModel.fromMap(doc.data())).toList();
+      _children = snapshot.docs
+          .map((doc) => ChildModel.fromMap(doc.data()))
+          .toList();
     } else {
       _children = await DatabaseHelper.instance.getAllChildren();
     }
@@ -52,13 +56,15 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
     setState(() {
       final q = _searchQuery.toLowerCase();
       _filteredChildren = _children.where((child) {
-        final matchesSearch = child.firstName.toLowerCase().contains(q) ||
+        final matchesSearch =
+            child.firstName.toLowerCase().contains(q) ||
             child.lastName.toLowerCase().contains(q) ||
             child.childId.toLowerCase().contains(q) ||
             child.teacherName.toLowerCase().contains(q) ||
             child.parentName.toLowerCase().contains(q);
-        
-        final matchesGender = _selectedGenderFilter == 'All' ||
+
+        final matchesGender =
+            _selectedGenderFilter == 'All' ||
             child.gender.toLowerCase() == _selectedGenderFilter.toLowerCase();
 
         return matchesSearch && matchesGender;
@@ -74,7 +80,9 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
               result = nameA.compareTo(nameB);
               break;
             case 1:
-              result = a.childId.toLowerCase().compareTo(b.childId.toLowerCase());
+              result = a.childId.toLowerCase().compareTo(
+                b.childId.toLowerCase(),
+              );
               break;
             case 2:
               result = a.age.compareTo(b.age);
@@ -83,10 +91,14 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
               result = a.gender.compareTo(b.gender);
               break;
             case 4:
-              result = a.teacherName.toLowerCase().compareTo(b.teacherName.toLowerCase());
+              result = a.teacherName.toLowerCase().compareTo(
+                b.teacherName.toLowerCase(),
+              );
               break;
             case 5:
-              result = a.parentName.toLowerCase().compareTo(b.parentName.toLowerCase());
+              result = a.parentName.toLowerCase().compareTo(
+                b.parentName.toLowerCase(),
+              );
               break;
           }
           return _sortAscending ? result : -result;
@@ -132,29 +144,131 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
         .toList();
 
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: const Text('Child Monitoring & Case Review (Admin)'),
-      ),
       body: Column(
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(32, 28, 32, 10),
+            child: _buildChildHero(),
+          ),
           _buildSearchAndFilterBar(),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _filteredChildren.isEmpty
-                    ? const Center(child: Text('No matching child records found.'))
-                    : Column(
-                        children: [
-                          Expanded(child: _buildResponsiveList(paginatedChildren, isWide)),
-                          _buildPaginationControls(totalItems, totalPages),
-                        ],
+                ? const Center(child: Text('No matching child records found.'))
+                : Column(
+                    children: [
+                      Expanded(
+                        child: _buildResponsiveList(paginatedChildren, isWide),
                       ),
+                      _buildPaginationControls(totalItems, totalPages),
+                    ],
+                  ),
           ),
         ],
       ),
     );
   }
+
+  Widget _buildChildHero() => Container(
+    width: double.infinity,
+    height: 164,
+    clipBehavior: Clip.antiAlias,
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(
+        colors: [Color(0xFFE1F2FF), Color(0xFFF7FCFF)],
+      ),
+      borderRadius: BorderRadius.circular(24),
+    ),
+    child: Stack(
+      children: [
+        Positioned(
+          right: -45,
+          top: -65,
+          child: Container(
+            width: 230,
+            height: 230,
+            decoration: BoxDecoration(
+              color: BrandColors.sky.withValues(alpha: .14),
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+        Positioned(
+          right: 62,
+          bottom: 0,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Icon(
+                Icons.assignment_turned_in_rounded,
+                color: BrandColors.green.withValues(alpha: .78),
+                size: 100,
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.child_care_rounded,
+                color: Colors.orange.shade200,
+                size: 105,
+              ),
+              Icon(
+                Icons.person_rounded,
+                color: Colors.blue.shade300,
+                size: 118,
+              ),
+            ],
+          ),
+        ),
+        Positioned(
+          left: 30,
+          top: 36,
+          right: 410,
+          child: Row(
+            children: [
+              Container(
+                width: 68,
+                height: 68,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF168CF0),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Icon(
+                  Icons.child_friendly_rounded,
+                  color: Colors.white,
+                  size: 40,
+                ),
+              ),
+              const SizedBox(width: 22),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Child Monitoring & Case Review (Admin)',
+                      style: TextStyle(
+                        color: Color(0xFF0D1A5B),
+                        fontSize: 30,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    SizedBox(height: 7),
+                    Text(
+                      'Monitor children\'s profiles and review their cases and development status.',
+                      style: TextStyle(
+                        color: Color(0xFF386296),
+                        fontSize: 15,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _buildSearchAndFilterBar() {
     return Padding(
@@ -193,9 +307,17 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
             },
           );
           if (constraints.maxWidth < 680) {
-            return Column(children: [search, const SizedBox(height: 10), filter]);
+            return Column(
+              children: [search, const SizedBox(height: 10), filter],
+            );
           }
-          return Row(children: [Expanded(child: search), const SizedBox(width: 16), SizedBox(width: 210, child: filter)]);
+          return Row(
+            children: [
+              Expanded(child: search),
+              const SizedBox(width: 16),
+              SizedBox(width: 210, child: filter),
+            ],
+          );
         },
       ),
     );
@@ -211,65 +333,107 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
             child: Card(
               clipBehavior: Clip.antiAlias,
               shape: RoundedRectangleBorder(
-                side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+                side: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: DataTable(
                 sortColumnIndex: _sortColumnIndex,
                 sortAscending: _sortAscending,
-                headingRowColor: WidgetStateProperty.all(Theme.of(context).colorScheme.surfaceContainer),
+                headingRowColor: WidgetStateProperty.all(
+                  Theme.of(context).colorScheme.surfaceContainer,
+                ),
                 columns: [
                   DataColumn(
-                    label: const Text('Child Name', style: TextStyle(fontWeight: FontWeight.bold)),
+                    label: const Text(
+                      'Child Name',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     onSort: (index, ascending) => _sort(index, ascending),
                   ),
                   DataColumn(
-                    label: const Text('Child ID', style: TextStyle(fontWeight: FontWeight.bold)),
+                    label: const Text(
+                      'Child ID',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     onSort: (index, ascending) => _sort(index, ascending),
                   ),
                   DataColumn(
-                    label: const Text('Age', style: TextStyle(fontWeight: FontWeight.bold)),
+                    label: const Text(
+                      'Age',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     onSort: (index, ascending) => _sort(index, ascending),
                   ),
                   DataColumn(
-                    label: const Text('Gender', style: TextStyle(fontWeight: FontWeight.bold)),
+                    label: const Text(
+                      'Gender',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     onSort: (index, ascending) => _sort(index, ascending),
                   ),
                   DataColumn(
-                    label: const Text('Teacher', style: TextStyle(fontWeight: FontWeight.bold)),
+                    label: const Text(
+                      'Teacher',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     onSort: (index, ascending) => _sort(index, ascending),
                   ),
                   DataColumn(
-                    label: const Text('Parent/Guardian', style: TextStyle(fontWeight: FontWeight.bold)),
+                    label: const Text(
+                      'Parent/Guardian',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     onSort: (index, ascending) => _sort(index, ascending),
                   ),
-                  const DataColumn(label: Text('Action', style: TextStyle(fontWeight: FontWeight.bold))),
+                  const DataColumn(
+                    label: Text(
+                      'Action',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
                 ],
                 rows: paginatedChildren.map((child) {
-                  return DataRow(cells: [
-                    DataCell(Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 14,
-                          child: Text(child.firstName[0].toUpperCase(), style: const TextStyle(fontSize: 12)),
+                  return DataRow(
+                    cells: [
+                      DataCell(
+                        Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 14,
+                              child: Text(
+                                child.firstName[0].toUpperCase(),
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              '${child.firstName} ${child.lastName}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 12),
-                        Text('${child.firstName} ${child.lastName}', style: const TextStyle(fontWeight: FontWeight.w500)),
-                      ],
-                    )),
-                    DataCell(Text(child.childId)),
-                    DataCell(Text('${child.age} yrs')),
-                    DataCell(Text(child.gender)),
-                    DataCell(Text(child.teacherName)),
-                    DataCell(Text(child.parentName)),
-                    DataCell(
-                      IconButton(
-                        icon: const Icon(Icons.analytics_outlined, color: Colors.blue),
-                        onPressed: () => _viewChildDetails(child),
-                        tooltip: 'View Full Record & Case Assessment',
                       ),
-                    ),
-                  ]);
+                      DataCell(Text(child.childId)),
+                      DataCell(Text('${child.age} yrs')),
+                      DataCell(Text(child.gender)),
+                      DataCell(Text(child.teacherName)),
+                      DataCell(Text(child.parentName)),
+                      DataCell(
+                        IconButton(
+                          icon: const Icon(
+                            Icons.analytics_outlined,
+                            color: Colors.blue,
+                          ),
+                          onPressed: () => _viewChildDetails(child),
+                          tooltip: 'View Full Record & Case Assessment',
+                        ),
+                      ),
+                    ],
+                  );
                 }).toList(),
               ),
             ),
@@ -289,9 +453,13 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
             leading: CircleAvatar(
               child: Text(child.firstName[0].toUpperCase()),
             ),
-            title: Text('${child.firstName} ${child.lastName}', 
-              style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text('ID: ${child.childId} | Teacher: ${child.teacherName}'),
+            title: Text(
+              '${child.firstName} ${child.lastName}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Text(
+              'ID: ${child.childId} | Teacher: ${child.teacherName}',
+            ),
             trailing: const Icon(Icons.analytics_outlined, color: Colors.blue),
             onTap: () => _viewChildDetails(child),
           ),
@@ -311,28 +479,39 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest
+          .withValues(alpha: 0.2),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             'Showing $startItem - $endItem of $totalItems children',
-            style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            style: TextStyle(
+              fontSize: 13,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
           Row(
             children: [
               IconButton(
                 icon: const Icon(Icons.chevron_left),
-                onPressed: _currentPage > 0 ? () => setState(() => _currentPage--) : null,
+                onPressed: _currentPage > 0
+                    ? () => setState(() => _currentPage--)
+                    : null,
                 tooltip: 'Previous Page',
               ),
               Text(
                 'Page ${_currentPage + 1} of $displayTotalPages',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
               ),
               IconButton(
                 icon: const Icon(Icons.chevron_right),
-                onPressed: _currentPage + 1 < displayTotalPages ? () => setState(() => _currentPage++) : null,
+                onPressed: _currentPage + 1 < displayTotalPages
+                    ? () => setState(() => _currentPage++)
+                    : null,
                 tooltip: 'Next Page',
               ),
             ],
@@ -369,17 +548,37 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
     final String cid = widget.child.childId;
 
     if (kIsWeb) {
-      final attSnap = await _firestore.collection('attendance').where('child_id', isEqualTo: cid).get();
-      final evalSnap = await _firestore.collection('evaluations').where('child_id', isEqualTo: cid).get();
-      final feedSnap = await _firestore.collection('parent_feedback').where('child_id', isEqualTo: cid).get();
-      final triSnap = await _firestore.collection('triangulations').where('child_id', isEqualTo: cid).get();
+      final attSnap = await _firestore
+          .collection('attendance')
+          .where('child_id', isEqualTo: cid)
+          .get();
+      final evalSnap = await _firestore
+          .collection('evaluations')
+          .where('child_id', isEqualTo: cid)
+          .get();
+      final feedSnap = await _firestore
+          .collection('parent_feedback')
+          .where('child_id', isEqualTo: cid)
+          .get();
+      final triSnap = await _firestore
+          .collection('triangulations')
+          .where('child_id', isEqualTo: cid)
+          .get();
 
       setState(() {
-        _attendance = attSnap.docs.map((d) => AttendanceModel.fromMap(d.data())).toList();
-        _evaluations = evalSnap.docs.map((d) => EvaluationModel.fromMap(d.data())).toList();
-        _feedback = feedSnap.docs.map((d) => ParentFeedbackModel.fromMap(d.data())).toList();
+        _attendance = attSnap.docs
+            .map((d) => AttendanceModel.fromMap(d.data()))
+            .toList();
+        _evaluations = evalSnap.docs
+            .map((d) => EvaluationModel.fromMap(d.data()))
+            .toList();
+        _feedback = feedSnap.docs
+            .map((d) => ParentFeedbackModel.fromMap(d.data()))
+            .toList();
         if (triSnap.docs.isNotEmpty) {
-          _latestTriangulation = TriangulationModel.fromMap(triSnap.docs.first.data());
+          _latestTriangulation = TriangulationModel.fromMap(
+            triSnap.docs.first.data(),
+          );
         }
         _isLoading = false;
       });
@@ -391,11 +590,19 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
       final triangulationData = await db.getTriangulationHistory(cid);
 
       setState(() {
-        _attendance = attendanceData.map((e) => AttendanceModel.fromMap(e)).toList();
-        _evaluations = evaluationData.map((e) => EvaluationModel.fromMap(e)).toList();
-        _feedback = feedbackData.map((e) => ParentFeedbackModel.fromMap(e)).toList();
+        _attendance = attendanceData
+            .map((e) => AttendanceModel.fromMap(e))
+            .toList();
+        _evaluations = evaluationData
+            .map((e) => EvaluationModel.fromMap(e))
+            .toList();
+        _feedback = feedbackData
+            .map((e) => ParentFeedbackModel.fromMap(e))
+            .toList();
         if (triangulationData.isNotEmpty) {
-          _latestTriangulation = TriangulationModel.fromMap(triangulationData.first);
+          _latestTriangulation = TriangulationModel.fromMap(
+            triangulationData.first,
+          );
         }
         _isLoading = false;
       });
@@ -408,7 +615,9 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
       child: Scaffold(
         appBar: AppBar(
           automaticallyImplyLeading: false,
-          title: Text('Record: ${widget.child.firstName} ${widget.child.lastName}'),
+          title: Text(
+            'Record: ${widget.child.firstName} ${widget.child.lastName}',
+          ),
           leading: IconButton(
             icon: const Icon(Icons.close),
             onPressed: () => Navigator.pop(context),
@@ -424,8 +633,11 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
                     _buildSectionHeader('Profile Information', Icons.person),
                     _buildProfileInfo(),
                     const SizedBox(height: 32),
-                    
-                    _buildSectionHeader('Latest Triangulation Status', Icons.psychology),
+
+                    _buildSectionHeader(
+                      'Latest Triangulation Status',
+                      Icons.psychology,
+                    ),
                     _buildTriangulationSummary(),
                     const SizedBox(height: 32),
 
@@ -436,9 +648,18 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
                         children: [
                           const TabBar(
                             tabs: [
-                              Tab(text: 'Attendance', icon: Icon(Icons.calendar_month)),
-                              Tab(text: 'Evaluations', icon: Icon(Icons.assignment)),
-                              Tab(text: 'Parent Feedback', icon: Icon(Icons.family_restroom)),
+                              Tab(
+                                text: 'Attendance',
+                                icon: Icon(Icons.calendar_month),
+                              ),
+                              Tab(
+                                text: 'Evaluations',
+                                icon: Icon(Icons.assignment),
+                              ),
+                              Tab(
+                                text: 'Parent Feedback',
+                                icon: Icon(Icons.family_restroom),
+                              ),
                             ],
                           ),
                           SizedBox(
@@ -468,7 +689,10 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
         children: [
           Icon(icon, color: Colors.blue),
           const SizedBox(width: 8),
-          Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          Text(
+            title,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
         ],
       ),
     );
@@ -497,7 +721,12 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
 
   Widget _buildTriangulationSummary() {
     if (_latestTriangulation == null) {
-      return const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('No triangulation analysis performed yet.')));
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('No triangulation analysis performed yet.'),
+        ),
+      );
     }
     final status = _latestTriangulation!.developmentStatus;
     Color color = Colors.green;
@@ -506,7 +735,10 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
 
     return Card(
       color: color.withValues(alpha: 0.05),
-      shape: RoundedRectangleBorder(side: BorderSide(color: color.withValues(alpha: 0.2)), borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: color.withValues(alpha: 0.2)),
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -514,14 +746,26 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
           children: [
             Row(
               children: [
-                const Text('Overall Status: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(status, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+                const Text(
+                  'Overall Status: ',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  status,
+                  style: TextStyle(color: color, fontWeight: FontWeight.bold),
+                ),
                 const Spacer(),
-                Text('Date: ${_latestTriangulation!.generatedDate}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                Text(
+                  'Date: ${_latestTriangulation!.generatedDate}',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
               ],
             ),
             const Divider(),
-            const Text('Summary Analysis:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'Summary Analysis:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             Text(_latestTriangulation!.triangulatedSummary),
           ],
         ),
@@ -530,7 +774,8 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
   }
 
   Widget _buildAttendanceList() {
-    if (_attendance.isEmpty) return const Center(child: Text('No attendance records found.'));
+    if (_attendance.isEmpty)
+      return const Center(child: Text('No attendance records found.'));
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 16),
       itemCount: _attendance.length,
@@ -538,17 +783,27 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
         final item = _attendance[index];
         final isPresent = item.status == 'Present';
         return ListTile(
-          leading: Icon(isPresent ? Icons.check_circle : Icons.cancel, color: isPresent ? Colors.green : Colors.red),
+          leading: Icon(
+            isPresent ? Icons.check_circle : Icons.cancel,
+            color: isPresent ? Colors.green : Colors.red,
+          ),
           title: Text(item.attendanceDate),
           subtitle: Text('Time: ${item.attendanceTime}'),
-          trailing: Text(item.status, style: TextStyle(fontWeight: FontWeight.bold, color: isPresent ? Colors.green : Colors.red)),
+          trailing: Text(
+            item.status,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: isPresent ? Colors.green : Colors.red,
+            ),
+          ),
         );
       },
     );
   }
 
   Widget _buildEvaluationList() {
-    if (_evaluations.isEmpty) return const Center(child: Text('No evaluation records found.'));
+    if (_evaluations.isEmpty)
+      return const Center(child: Text('No evaluation records found.'));
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 16),
       itemCount: _evaluations.length,
@@ -557,7 +812,10 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
         return Card(
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
-            title: Text(item.domain, style: const TextStyle(fontWeight: FontWeight.bold)),
+            title: Text(
+              item.domain,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
             subtitle: Text('Score: ${item.score} pts | ${item.remarks}'),
             trailing: Text(item.evaluationDate),
           ),
@@ -567,7 +825,8 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
   }
 
   Widget _buildFeedbackList() {
-    if (_feedback.isEmpty) return const Center(child: Text('No parent feedback found.'));
+    if (_feedback.isEmpty)
+      return const Center(child: Text('No parent feedback found.'));
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 16),
       itemCount: _feedback.length,
@@ -577,9 +836,14 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
             title: Text('Observation: ${item.parentObservation}'),
-            subtitle: Text('Assistance: ${item.assistanceLevel}\nNotes: ${item.notes}'),
+            subtitle: Text(
+              'Assistance: ${item.assistanceLevel}\nNotes: ${item.notes}',
+            ),
             isThreeLine: true,
-            trailing: Text(item.submissionDate, style: const TextStyle(fontSize: 10)),
+            trailing: Text(
+              item.submissionDate,
+              style: const TextStyle(fontSize: 10),
+            ),
           ),
         );
       },
@@ -591,7 +855,10 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-        Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+        Text(
+          value,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+        ),
       ],
     );
   }
