@@ -250,7 +250,7 @@ class _AuditHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     width: double.infinity,
-    height: 174,
+    height: compact ? 258 : 174,
     clipBehavior: Clip.antiAlias,
     decoration: BoxDecoration(
       gradient: const LinearGradient(
@@ -273,55 +273,71 @@ class _AuditHero extends StatelessWidget {
         if (!compact)
           const Positioned(right: 56, bottom: 8, child: _AuditIllustration()),
         Positioned(
-          top: 36,
-          left: 28,
+          top: compact ? 24 : 36,
+          left: compact ? 24 : 28,
           right: compact ? 24 : 430,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 68,
-                height: 68,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF9FD3FF),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Icon(
-                  Icons.manage_search_rounded,
-                  color: Color(0xFF1676D2),
-                  size: 39,
-                ),
-              ),
-              const SizedBox(width: 22),
-              const Expanded(
-                child: Column(
+          child: compact
+              ? Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'System Audit Trail',
-                      style: TextStyle(
-                        color: Color(0xFF0D1A5B),
-                        fontSize: 32,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    SizedBox(height: 7),
-                    Text(
-                      'Track system activities and monitor important actions across the portal.',
-                      style: TextStyle(
-                        color: Color(0xFF386296),
-                        fontSize: 15,
-                        height: 1.35,
-                      ),
-                    ),
+                    _auditIcon(compact: true),
+                    const SizedBox(height: 14),
+                    _auditText(compact: true),
                   ],
-                ),
-              ),
+                )
+              : Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _auditIcon(),
+              const SizedBox(width: 22),
+              Expanded(child: _auditText()),
             ],
           ),
         ),
       ],
     ),
+  );
+
+  Widget _auditIcon({bool compact = false}) => Container(
+    width: compact ? 58 : 68,
+    height: compact ? 58 : 68,
+    decoration: BoxDecoration(
+      color: const Color(0xFF9FD3FF),
+      borderRadius: BorderRadius.circular(compact ? 16 : 18),
+    ),
+    child: Icon(
+      Icons.manage_search_rounded,
+      color: const Color(0xFF1676D2),
+      size: compact ? 33 : 39,
+    ),
+  );
+
+  Widget _auditText({bool compact = false}) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'System Audit Trail',
+        maxLines: compact ? 2 : null,
+        overflow: compact ? TextOverflow.ellipsis : null,
+        style: TextStyle(
+          color: const Color(0xFF0D1A5B),
+          fontSize: compact ? 28 : 32,
+          fontWeight: FontWeight.w800,
+          height: 1.12,
+        ),
+      ),
+      const SizedBox(height: 7),
+      Text(
+        'Track system activities and monitor important actions across the portal.',
+        maxLines: compact ? 3 : null,
+        overflow: compact ? TextOverflow.ellipsis : null,
+        style: TextStyle(
+          color: const Color(0xFF386296),
+          fontSize: compact ? 14 : 15,
+          height: 1.35,
+        ),
+      ),
+    ],
   );
 }
 

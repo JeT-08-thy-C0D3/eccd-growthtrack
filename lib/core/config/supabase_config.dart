@@ -2,8 +2,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class SupabaseConfig {
-  static const String url = 'https://qghrxybgqasjgqlykblc.supabase.co';
-  static const String anonKey = 'sb_publishable_-lL057VQr2a0KLqwnSWHhA_hPNRJJGt';
+  static const String url = 'https://jevshtdblsxikquujhek.supabase.co';
+  static const String anonKey = 'sb_publishable_86e7nO1WxEbU1lIsbL6I1g_IctSVGzy';
 
   // One private bucket. Categories are object-path prefixes inside it.
   static const String filesBucket = 'eccd-files';

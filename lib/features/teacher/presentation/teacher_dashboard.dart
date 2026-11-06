@@ -504,6 +504,7 @@ class _TeacherWorkspaceHome extends StatelessWidget {
         final columns = constraints.maxWidth >= 1050 ? 3 : (isPhone ? 1 : 2);
         final horizontalPadding = isPhone ? 16.0 : 32.0;
         final contentWidth = constraints.maxWidth - (horizontalPadding * 2);
+        final metricWidth = isPhone ? (contentWidth - 16) / 2 : 296.0;
         return SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(
             horizontalPadding,
@@ -518,7 +519,7 @@ class _TeacherWorkspaceHome extends StatelessWidget {
               children: [
                 Container(
                   width: double.infinity,
-                  height: isPhone ? 208 : 224,
+                  height: isPhone ? 244 : 224,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
                       colors: [Color(0xFFEAF7FF), Color(0xFFF8FCFF)],
@@ -584,9 +585,13 @@ class _TeacherWorkspaceHome extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 9),
-                            const Text(
+                            Text(
                               'Keep your classroom organized and every child\'s progress visible.',
-                              style: TextStyle(
+                              maxLines: isPhone ? 4 : null,
+                              overflow: isPhone
+                                  ? TextOverflow.ellipsis
+                                  : null,
+                              style: const TextStyle(
                                 color: Color(0xFF54769B),
                                 fontSize: 15,
                                 height: 1.35,
@@ -608,28 +613,28 @@ class _TeacherWorkspaceHome extends StatelessWidget {
                       value: isLoading ? '—' : '$childCount',
                       icon: Icons.groups_rounded,
                       color: BrandColors.green,
-                      width: isPhone ? contentWidth : 296,
+                      width: metricWidth,
                     ),
                     _TeacherMetric(
                       label: 'Attendance',
                       value: 'Ready',
                       icon: Icons.fact_check_rounded,
                       color: BrandColors.sky,
-                      width: isPhone ? contentWidth : 296,
+                      width: metricWidth,
                     ),
                     _TeacherMetric(
                       label: 'Evaluations',
                       value: 'Review',
                       icon: Icons.auto_graph_rounded,
                       color: BrandColors.sunshine,
-                      width: isPhone ? contentWidth : 296,
+                      width: metricWidth,
                     ),
                     _TeacherMetric(
                       label: 'Referrals',
                       value: '0',
                       icon: Icons.medical_services_rounded,
                       color: Color(0xFFE76F51),
-                      width: isPhone ? contentWidth : 296,
+                      width: metricWidth,
                     ),
                   ],
                 ),

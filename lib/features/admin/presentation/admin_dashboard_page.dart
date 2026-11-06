@@ -260,8 +260,10 @@ class _AdminWorkspaceHome extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isPhone = constraints.maxWidth < 600;
-        final columns = constraints.maxWidth >= 1050 ? 3 : (isPhone ? 1 : 2);
+        final columns = constraints.maxWidth >= 1050 ? 3 : 2;
         final horizontalPadding = isPhone ? 16.0 : 32.0;
+        final contentWidth = constraints.maxWidth - (horizontalPadding * 2);
+        final metricWidth = isPhone ? (contentWidth - 16) / 2 : 210.0;
         return SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(
             horizontalPadding,
@@ -288,18 +290,24 @@ class _AdminWorkspaceHome extends StatelessWidget {
                       value: _value(stats?.totalTeachers ?? 0),
                       icon: Icons.school_rounded,
                       color: BrandColors.sky,
+                      width: metricWidth,
+                      compact: isPhone,
                     ),
                     _AdminMetric(
                       label: 'Registered children',
                       value: _value(stats?.totalChildren ?? 0),
                       icon: Icons.groups_rounded,
                       color: BrandColors.green,
+                      width: metricWidth,
+                      compact: isPhone,
                     ),
                     _AdminMetric(
                       label: 'Pending referrals',
                       value: _value(stats?.pendingReferrals ?? 0),
                       icon: Icons.assignment_late_rounded,
                       color: const Color(0xFFE76F51),
+                      width: metricWidth,
+                      compact: isPhone,
                     ),
                   ],
                 ),
@@ -317,7 +325,7 @@ class _AdminWorkspaceHome extends StatelessWidget {
                   mainAxisSpacing: 16,
                   childAspectRatio: constraints.maxWidth >= 800
                       ? 1.7
-                      : (isPhone ? 1.55 : 1.3),
+                      : (isPhone ? .82 : 1.3),
                   children: [
                     _AdminAction(
                       title: 'Manage users',
@@ -325,6 +333,7 @@ class _AdminWorkspaceHome extends StatelessWidget {
                       icon: Icons.person_add_alt_1_rounded,
                       color: BrandColors.sky,
                       onTap: () => onNavigate(1),
+                      compact: isPhone,
                     ),
                     _AdminAction(
                       title: 'Monitor children',
@@ -332,6 +341,7 @@ class _AdminWorkspaceHome extends StatelessWidget {
                       icon: Icons.child_friendly_rounded,
                       color: BrandColors.green,
                       onTap: () => onNavigate(2),
+                      compact: isPhone,
                     ),
                     _AdminAction(
                       title: 'Review referrals',
@@ -339,6 +349,7 @@ class _AdminWorkspaceHome extends StatelessWidget {
                       icon: Icons.medical_services_rounded,
                       color: const Color(0xFFE76F51),
                       onTap: () => onNavigate(3),
+                      compact: isPhone,
                     ),
                     _AdminAction(
                       title: 'Audit trail',
@@ -346,6 +357,7 @@ class _AdminWorkspaceHome extends StatelessWidget {
                       icon: Icons.verified_user_rounded,
                       color: BrandColors.navy,
                       onTap: () => onNavigate(4),
+                      compact: isPhone,
                     ),
                     _AdminAction(
                       title: 'View reports',
@@ -353,6 +365,7 @@ class _AdminWorkspaceHome extends StatelessWidget {
                       icon: Icons.auto_graph_rounded,
                       color: BrandColors.sunshine,
                       onTap: () => onNavigate(5),
+                      compact: isPhone,
                     ),
                     _AdminAction(
                       title: 'System settings',
@@ -360,6 +373,7 @@ class _AdminWorkspaceHome extends StatelessWidget {
                       icon: Icons.settings_suggest_rounded,
                       color: BrandColors.green,
                       onTap: () => onNavigate(6),
+                      compact: isPhone,
                     ),
                   ],
                 ),
@@ -381,7 +395,7 @@ class _AdminHero extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      height: isPhone ? 208 : 224,
+      height: isPhone ? 244 : 224,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
@@ -443,9 +457,11 @@ class _AdminHero extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 9),
-                const Text(
+                Text(
                   'Keep program operations, users, and child support data organized in one place.',
-                  style: TextStyle(
+                  maxLines: isPhone ? 4 : null,
+                  overflow: isPhone ? TextOverflow.ellipsis : null,
+                  style: const TextStyle(
                     color: Color(0xFF54769B),
                     fontSize: 15,
                     height: 1.35,
@@ -466,50 +482,54 @@ class _AdminMetric extends StatelessWidget {
     required this.value,
     required this.icon,
     required this.color,
+    required this.width,
+    required this.compact,
   });
   final String label;
   final String value;
   final IconData icon;
   final Color color;
+  final double width;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) => Container(
-    width: 210,
-    padding: const EdgeInsets.all(18),
+    width: width,
+    padding: EdgeInsets.all(compact ? 12 : 18),
     decoration: BoxDecoration(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(compact ? 14 : 18),
       border: Border.all(color: color.withValues(alpha: .18)),
     ),
     child: Row(
       children: [
         Container(
-          width: 42,
-          height: 42,
+          width: compact ? 36 : 42,
+          height: compact ? 36 : 42,
           decoration: BoxDecoration(
             color: color.withValues(alpha: .12),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(compact ? 10 : 12),
           ),
           child: Icon(icon, color: color),
         ),
-        const SizedBox(width: 12),
+        SizedBox(width: compact ? 8 : 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 value,
-                style: const TextStyle(
-                  fontSize: 20,
+                style: TextStyle(
+                  fontSize: compact ? 18 : 20,
                   fontWeight: FontWeight.w800,
                 ),
               ),
               Text(
                 label,
-                maxLines: 1,
+                maxLines: compact ? 2 : 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: compact ? 10 : 12,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
@@ -528,12 +548,14 @@ class _AdminAction extends StatelessWidget {
     required this.icon,
     required this.color,
     required this.onTap,
+    required this.compact,
   });
   final String title;
   final String subtitle;
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -543,7 +565,7 @@ class _AdminAction extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
       child: Container(
-        padding: const EdgeInsets.all(18),
+        padding: EdgeInsets.all(compact ? 14 : 18),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
           border: Border.all(color: color.withValues(alpha: .18)),
@@ -552,25 +574,30 @@ class _AdminAction extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 44,
-              height: 44,
+              width: compact ? 40 : 44,
+              height: compact ? 40 : 44,
               decoration: BoxDecoration(
                 color: color.withValues(alpha: .12),
-                borderRadius: BorderRadius.circular(13),
+                borderRadius: BorderRadius.circular(compact ? 12 : 13),
               ),
               child: Icon(icon, color: color),
             ),
             const Spacer(),
             Text(
               title,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: compact ? 14 : 16,
+              ),
             ),
             const SizedBox(height: 5),
             Text(
               subtitle,
+              maxLines: compact ? 3 : null,
+              overflow: compact ? TextOverflow.ellipsis : null,
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontSize: 12,
+                fontSize: compact ? 11 : 12,
                 height: 1.3,
               ),
             ),

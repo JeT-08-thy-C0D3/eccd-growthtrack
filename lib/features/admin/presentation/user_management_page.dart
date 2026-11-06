@@ -28,9 +28,10 @@ class _UserManagementPageState extends State<UserManagementPage> {
   static const int _itemsPerPage = 10;
 
   Future<void> _openUserForm() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const UserFormPage()),
+    await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => const UserFormPage(),
     );
   }
 
@@ -156,7 +157,10 @@ class _UserManagementPageState extends State<UserManagementPage> {
       final matchesRole =
           _selectedRoleFilter == null || u.role == _selectedRoleFilter;
       final matchesStatus =
-          _selectedStatusFilter == null || u.status == _selectedStatusFilter;
+          _selectedStatusFilter == null ||
+          (_selectedStatusFilter == 'archived-parent'
+              ? u.status == 'archived' && u.role == UserRole.parent
+              : u.status == _selectedStatusFilter);
       return matchesSearch && matchesRole && matchesStatus;
     }).toList();
 
@@ -193,6 +197,11 @@ class _UserManagementPageState extends State<UserManagementPage> {
   @override
   Widget build(BuildContext context) {
     final isWide = MediaQuery.of(context).size.width > 1000;
+    final isPhone = MediaQuery.sizeOf(context).width < 700;
+
+    if (isPhone) {
+      return Scaffold(body: _buildMobileUserPage());
+    }
 
     return Scaffold(
       body: Column(
@@ -241,6 +250,69 @@ class _UserManagementPageState extends State<UserManagementPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildMobileUserPage() {
+    Widget content(List<UserModel> users) {
+      final totalItems = users.length;
+      final totalPages = (totalItems / _itemsPerPage).ceil();
+      if (_currentPage >= totalPages && totalPages > 0) {
+        _currentPage = totalPages - 1;
+      }
+      final paginatedUsers = users
+          .skip(_currentPage * _itemsPerPage)
+          .take(_itemsPerPage)
+          .toList();
+
+      return SingleChildScrollView(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 28, 16, 10),
+              child: _buildUserHero(),
+            ),
+            _buildSearchAndFilterBar(),
+            _buildResponsiveList(
+              users,
+              paginatedUsers,
+              false,
+            ),
+            _buildPaginationControls(totalItems, totalPages),
+            const SizedBox(height: 24),
+          ],
+        ),
+      );
+    }
+
+    if (!kIsWeb) {
+      return FutureBuilder<List<UserModel>>(
+        future: _repository.getUsers(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return _buildErrorView(snapshot.error.toString());
+          }
+          return content(_filterAndSortUsers(snapshot.data ?? []));
+        },
+      );
+    }
+
+    return StreamBuilder<List<UserModel>>(
+      stream: _repository.getUsersStream(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return _buildErrorView(
+            'Cloud database connection issue: ${snapshot.error}',
+          );
+        }
+        return content(_filterAndSortUsers(snapshot.data ?? []));
+      },
     );
   }
 
@@ -315,6 +387,10 @@ class _UserManagementPageState extends State<UserManagementPage> {
               const DropdownMenuItem(
                 value: 'status:archived',
                 child: Text('Archived users'),
+              ),
+              const DropdownMenuItem(
+                value: 'status:archived-parent',
+                child: Text('Parent archive'),
               ),
             ],
             onChanged: (value) {
@@ -518,6 +594,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
     List<UserModel> paginatedUsers,
     bool isWide,
   ) {
+    final embedded = MediaQuery.sizeOf(context).width < 700;
     if (allUsers.isEmpty) {
       return Center(
         child: Padding(
@@ -669,7 +746,9 @@ class _UserManagementPageState extends State<UserManagementPage> {
                             ),
                           ),
                           DataCell(
-                            user.isProtectedAdmin
+                            user.status == 'archived'
+                                ? const Chip(label: Text('Archived'))
+                                : user.isProtectedAdmin
                                 ? const Chip(label: Text('Protected'))
                                 : Switch(
                                     value: user.status == 'active',
@@ -680,7 +759,16 @@ class _UserManagementPageState extends State<UserManagementPage> {
                           DataCell(
                             Row(
                               children: [
-                                if (user.isProtectedAdmin)
+                                if (user.status == 'archived')
+                                  const Tooltip(
+                                    message: 'Archived accounts are retained for records',
+                                    child: Icon(
+                                      Icons.archive_outlined,
+                                      color: Colors.orange,
+                                      size: 20,
+                                    ),
+                                  )
+                                else if (user.isProtectedAdmin)
                                   const Tooltip(
                                     message: 'System ADMIN is protected',
                                     child: Icon(
@@ -723,6 +811,8 @@ class _UserManagementPageState extends State<UserManagementPage> {
 
     return ListView.builder(
       padding: const EdgeInsets.all(24),
+      shrinkWrap: embedded,
+      physics: embedded ? const NeverScrollableScrollPhysics() : null,
       itemCount: paginatedUsers.length,
       itemBuilder: (context, index) {
         final user = paginatedUsers[index];
@@ -753,7 +843,12 @@ class _UserManagementPageState extends State<UserManagementPage> {
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (user.isProtectedAdmin)
+                if (user.status == 'archived')
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Chip(label: Text('Archived')),
+                  )
+                else if (user.isProtectedAdmin)
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 8),
                     child: Chip(label: Text('Protected')),

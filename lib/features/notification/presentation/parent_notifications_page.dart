@@ -77,7 +77,7 @@ class _ParentNotificationsPageState extends State<ParentNotificationsPage> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return Container(
+    return Material(
       color: const Color(0xFFF8FCFF),
       child: StreamBuilder<List<NotificationModel>>(
         stream: _repository.getParentNotificationsStream(_parentUid),
@@ -130,7 +130,7 @@ class _ParentNotificationsPageState extends State<ParentNotificationsPage> {
     final compact = width < 760;
     return Container(
       width: double.infinity,
-      height: compact ? 205 : 196,
+      height: compact ? 252 : 196,
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 24 : 28,
         vertical: 24,
@@ -189,61 +189,106 @@ class _ParentNotificationsPageState extends State<ParentNotificationsPage> {
           ],
           Align(
             alignment: Alignment.centerLeft,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  width: 96,
-                  height: 96,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(21),
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF1599F4), Color(0xFF198BE4)],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF168FEA).withValues(alpha: .22),
-                        blurRadius: 16,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.notifications_rounded,
-                    color: Colors.white,
-                    size: 53,
-                  ),
-                ),
-                const SizedBox(width: 24),
-                Flexible(
-                  child: Column(
+            child: compact
+                ? Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Container(
+                        width: 62,
+                        height: 62,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(17),
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF1599F4), Color(0xFF198BE4)],
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.notifications_rounded,
+                          color: Colors.white,
+                          size: 35,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       const Text(
                         'Notifications',
                         style: TextStyle(
                           color: Color(0xFF07135B),
-                          fontSize: 39,
+                          fontSize: 28,
                           height: 1,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      const SizedBox(height: 11),
+                      const SizedBox(height: 8),
                       Text(
-                        "Stay updated with important announcements, activities,\nand messages from your child's teacher.",
+                        "Stay updated with announcements, activities, and messages from your child's teacher.",
                         style: TextStyle(
                           color: const Color(0xFF526B9A).withValues(alpha: .9),
-                          height: 1.35,
-                          fontSize: compact ? 15 : 18,
+                          height: 1.3,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  )
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 96,
+                        height: 96,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(21),
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF1599F4), Color(0xFF198BE4)],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(
+                                0xFF168FEA,
+                              ).withValues(alpha: .22),
+                              blurRadius: 16,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.notifications_rounded,
+                          color: Colors.white,
+                          size: 53,
+                        ),
+                      ),
+                      const SizedBox(width: 24),
+                      Flexible(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Notifications',
+                              style: TextStyle(
+                                color: Color(0xFF07135B),
+                                fontSize: 39,
+                                height: 1,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 11),
+                            Text(
+                              "Stay updated with important announcements, activities,\nand messages from your child's teacher.",
+                              style: TextStyle(
+                                color: const Color(
+                                  0xFF526B9A,
+                                ).withValues(alpha: .9),
+                                height: 1.35,
+                                fontSize: 18,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                ),
-              ],
-            ),
           ),
         ],
       ),

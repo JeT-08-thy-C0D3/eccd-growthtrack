@@ -230,88 +230,139 @@ class _ParentFeedbackHistoryPageState extends State<ParentFeedbackHistoryPage> {
 class _HistoryHero extends StatelessWidget {
   const _HistoryHero();
   @override
-  Widget build(BuildContext context) => Container(
-    height: 190,
-    width: double.infinity,
-    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-    clipBehavior: Clip.antiAlias,
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(24),
-      gradient: const LinearGradient(
-        colors: [Color(0xFFEAF8FF), Color(0xFFD8F0FF)],
-      ),
-    ),
-    child: Stack(
-      children: [
-        Positioned(
-          right: 23,
-          bottom: -46,
-          child: Icon(
-            Icons.family_restroom_rounded,
-            size: 224,
-            color: const Color(0xFFFF8494).withValues(alpha: .75),
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 600;
+      return Container(
+        height: compact ? 250 : 190,
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 22 : 28,
+          vertical: compact ? 20 : 24,
+        ),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          gradient: const LinearGradient(
+            colors: [Color(0xFFEAF8FF), Color(0xFFD8F0FF)],
           ),
         ),
-        Positioned(
-          right: 192,
-          bottom: -16,
-          child: Icon(
-            Icons.spa_rounded,
-            size: 112,
-            color: BrandColors.green.withValues(alpha: .52),
-          ),
-        ),
-        Positioned(
-          right: 190,
-          top: 24,
-          child: const Icon(
-            Icons.history_rounded,
-            color: Color(0xFFFFA637),
-            size: 48,
-          ),
-        ),
-        Row(
+        child: Stack(
           children: [
-            Container(
-              width: 96,
-              height: 96,
-              decoration: BoxDecoration(
-                color: const Color(0xFF168FEA),
-                borderRadius: BorderRadius.circular(23),
+            if (!compact) ...[
+              Positioned(
+                right: 23,
+                bottom: -46,
+                child: Icon(
+                  Icons.family_restroom_rounded,
+                  size: 224,
+                  color: const Color(0xFFFF8494).withValues(alpha: .75),
+                ),
               ),
-              child: const Icon(
-                Icons.history_rounded,
-                size: 56,
-                color: Colors.white,
+              Positioned(
+                right: 192,
+                bottom: -16,
+                child: Icon(
+                  Icons.spa_rounded,
+                  size: 112,
+                  color: BrandColors.green.withValues(alpha: .52),
+                ),
               ),
-            ),
-            const SizedBox(width: 25),
-            const Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Feedback History',
-                    style: TextStyle(
-                      color: Color(0xFF07135B),
-                      fontSize: 39,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    'View and track all your submitted observations and feedback.',
-                    style: TextStyle(color: Color(0xFF526F9E), fontSize: 18),
-                  ),
-                ],
+              const Positioned(
+                right: 190,
+                top: 24,
+                child: Icon(
+                  Icons.history_rounded,
+                  color: Color(0xFFFFA637),
+                  size: 48,
+                ),
               ),
-            ),
+            ],
+            _HistoryHeroContent(compact: compact),
           ],
         ),
-      ],
-    ),
+      );
+    },
   );
+}
+
+class _HistoryHeroContent extends StatelessWidget {
+  const _HistoryHeroContent({required this.compact});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = Container(
+      width: compact ? 62 : 96,
+      height: compact ? 62 : 96,
+      decoration: BoxDecoration(
+        color: const Color(0xFF168FEA),
+        borderRadius: BorderRadius.circular(compact ? 17 : 23),
+      ),
+      child: Icon(
+        Icons.history_rounded,
+        size: compact ? 36 : 56,
+        color: Colors.white,
+      ),
+    );
+    final text = Text(
+      'View and track all your submitted observations and feedback.',
+      maxLines: compact ? 3 : null,
+      overflow: compact ? TextOverflow.ellipsis : null,
+      style: TextStyle(
+        color: const Color(0xFF526F9E),
+        fontSize: compact ? 14 : 18,
+        height: 1.3,
+      ),
+    );
+
+    if (compact) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          icon,
+          const SizedBox(height: 12),
+          const Text(
+            'Feedback History',
+            style: TextStyle(
+              color: Color(0xFF07135B),
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          text,
+        ],
+      );
+    }
+
+    return Row(
+      children: [
+        icon,
+        const SizedBox(width: 25),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Feedback History',
+                style: TextStyle(
+                  color: Color(0xFF07135B),
+                  fontSize: 39,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 10),
+              text,
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _HistoryEmptyState extends StatelessWidget {

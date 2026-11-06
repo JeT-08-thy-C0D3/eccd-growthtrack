@@ -12,7 +12,12 @@ class SystemSettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(32, 28, 32, 40),
+        padding: EdgeInsets.fromLTRB(
+          constraints.maxWidth < 600 ? 16 : 32,
+          28,
+          constraints.maxWidth < 600 ? 16 : 32,
+          40,
+        ),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 1280),
@@ -105,7 +110,7 @@ class _SettingsHero extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      height: 160,
+      height: compact ? 258 : 160,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
@@ -136,50 +141,24 @@ class _SettingsHero extends StatelessWidget {
           if (!compact)
             Positioned(right: 76, bottom: 0, child: _SettingsIllustration()),
           Positioned(
-            left: 30,
-            top: 30,
+            left: compact ? 24 : 30,
+            top: compact ? 24 : 30,
             right: compact ? 24 : 420,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 68,
-                  height: 68,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF9FD3FF),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: const Icon(
-                    Icons.settings_rounded,
-                    color: Color(0xFF1676D2),
-                    size: 39,
-                  ),
-                ),
-                const SizedBox(width: 22),
-                const Expanded(
-                  child: Column(
+            child: compact
+                ? Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'System Settings',
-                        style: TextStyle(
-                          color: Color(0xFF0D1A5B),
-                          fontSize: 32,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      SizedBox(height: 7),
-                      Text(
-                        'Manage system preferences, legal information, and platform details.',
-                        style: TextStyle(
-                          color: Color(0xFF386296),
-                          fontSize: 15,
-                          height: 1.35,
-                        ),
-                      ),
+                      _settingsIcon(compact: true),
+                      const SizedBox(height: 14),
+                      _settingsText(compact: true),
                     ],
-                  ),
-                ),
+                  )
+                : Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _settingsIcon(),
+                const SizedBox(width: 22),
+                Expanded(child: _settingsText()),
               ],
             ),
           ),
@@ -187,6 +166,48 @@ class _SettingsHero extends StatelessWidget {
       ),
     );
   }
+
+  Widget _settingsIcon({bool compact = false}) => Container(
+    width: compact ? 58 : 68,
+    height: compact ? 58 : 68,
+    decoration: BoxDecoration(
+      color: const Color(0xFF9FD3FF),
+      borderRadius: BorderRadius.circular(compact ? 16 : 18),
+    ),
+    child: Icon(
+      Icons.settings_rounded,
+      color: const Color(0xFF1676D2),
+      size: compact ? 33 : 39,
+    ),
+  );
+
+  Widget _settingsText({bool compact = false}) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'System Settings',
+        maxLines: compact ? 2 : null,
+        overflow: compact ? TextOverflow.ellipsis : null,
+        style: TextStyle(
+          color: const Color(0xFF0D1A5B),
+          fontSize: compact ? 28 : 32,
+          fontWeight: FontWeight.w800,
+          height: 1.12,
+        ),
+      ),
+      const SizedBox(height: 7),
+      Text(
+        'Manage system preferences, legal information, and platform details.',
+        maxLines: compact ? 3 : null,
+        overflow: compact ? TextOverflow.ellipsis : null,
+        style: TextStyle(
+          color: const Color(0xFF386296),
+          fontSize: compact ? 14 : 15,
+          height: 1.35,
+        ),
+      ),
+    ],
+  );
 }
 
 class _HeroCircle extends StatelessWidget {
@@ -379,9 +400,10 @@ class _SettingsTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(15),
           border: Border.all(color: const Color(0xFFD7E1F2)),
         ),
-        child: Row(
-          children: [
-            Container(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 330;
+            final leading = Container(
               width: 58,
               height: 58,
               decoration: BoxDecoration(
@@ -389,34 +411,57 @@ class _SettingsTile extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, color: iconColor, size: 31),
-            ),
-            const SizedBox(width: 20),
-            Expanded(
-              child: Column(
+            );
+            final text = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF121C53),
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: Color(0xFF6079A8),
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            );
+
+            if (compact) {
+              return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: Color(0xFF121C53),
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                    ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      leading,
+                      const SizedBox(width: 16),
+                      Expanded(child: text),
+                    ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      color: Color(0xFF6079A8),
-                      fontSize: 14,
-                    ),
-                  ),
+                  const SizedBox(height: 12),
+                  Align(alignment: Alignment.centerRight, child: trailing),
                 ],
-              ),
-            ),
-            const SizedBox(width: 14),
-            trailing,
-          ],
+              );
+            }
+
+            return Row(
+              children: [
+                leading,
+                const SizedBox(width: 20),
+                Expanded(child: text),
+                const SizedBox(width: 14),
+                trailing,
+              ],
+            );
+          },
         ),
       ),
     ),

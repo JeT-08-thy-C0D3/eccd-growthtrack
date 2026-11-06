@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/database/database_helper.dart';
@@ -248,6 +249,7 @@ class _ActivityManagementPageState extends State<ActivityManagementPage> {
                   TextFormField(
                     controller: maxScoreController,
                     keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     decoration: const InputDecoration(
                       labelText: 'Max Score (e.g. 20)',
                       helperText: 'Maximum points possible for this activity',

@@ -652,10 +652,12 @@ class _LoginPageState extends State<LoginPage>
                   ),
                   const SizedBox(height: 10),
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Checkbox(
                         value: _agreedToTerms,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
                         onChanged: (checked) {
                           if (checked ?? false) {
                             _reviewTermsAndAccept();

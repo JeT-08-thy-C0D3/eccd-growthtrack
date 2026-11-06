@@ -63,6 +63,45 @@ class _ParentDashboardState extends State<ParentDashboard> {
     }
   }
 
+  void _showNotificationsModal() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final screenSize = MediaQuery.sizeOf(dialogContext);
+        final isCompact = screenSize.width < 760;
+        return Dialog(
+          insetPadding: EdgeInsets.all(isCompact ? 16 : 32),
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: SizedBox(
+            width: isCompact ? screenSize.width - 32 : 1120,
+            height: screenSize.height * .86,
+            child: Stack(
+              children: [
+                const ParentNotificationsPage(),
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: Material(
+                    color: Colors.white.withValues(alpha: .9),
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Close notifications',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _showMoreSections() {
     showModalBottomSheet<void>(
       context: context,
@@ -72,11 +111,15 @@ class _ParentDashboardState extends State<ParentDashboard> {
           mainAxisSize: MainAxisSize.min,
           children: [
             _moreSectionTile(
-              'Practice activities',
-              Icons.self_improvement_outlined,
-              3,
+              'Updates',
+              Icons.notifications_outlined,
+              1,
             ),
-            _moreSectionTile('Send feedback', Icons.chat_bubble_outline, 4),
+            _moreSectionTile(
+              'Send feedback',
+              Icons.chat_bubble_outline,
+              4,
+            ),
             _moreSectionTile('Feedback history', Icons.history_edu_outlined, 5),
             _moreSectionTile(
               'Clarifications',
@@ -240,8 +283,7 @@ class _ParentDashboardState extends State<ParentDashboard> {
                     IconButton(
                       icon: const Icon(Icons.notifications_outlined),
                       tooltip: 'Notifications',
-                      onPressed: () =>
-                          Navigator.pushNamed(context, '/parent/notifications'),
+                      onPressed: _showNotificationsModal,
                     ),
                     if (unreadCount > 0)
                       Positioned(
@@ -296,14 +338,25 @@ class _ParentDashboardState extends State<ParentDashboard> {
         bottomNavigationBar: kIsWeb && MediaQuery.sizeOf(context).width > 900
             ? null
             : NavigationBar(
-                selectedIndex: _selectedSection <= 2 ? _selectedSection : 3,
+                selectedIndex: switch (_selectedSection) {
+                  0 => 0,
+                  3 => 1,
+                  2 => 2,
+                  _ => 3,
+                },
                 onDestinationSelected: (index) {
                   if (index == 3) {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (mounted) _showMoreSections();
                     });
                   } else {
-                    setState(() => _selectedSection = index);
+                    setState(
+                      () => _selectedSection = switch (index) {
+                        0 => 0,
+                        1 => 3,
+                        _ => 2,
+                      },
+                    );
                   }
                 },
                 destinations: const [
@@ -313,9 +366,9 @@ class _ParentDashboardState extends State<ParentDashboard> {
                     label: 'Home',
                   ),
                   NavigationDestination(
-                    icon: Icon(Icons.notifications_outlined),
-                    selectedIcon: Icon(Icons.notifications),
-                    label: 'Updates',
+                    icon: Icon(Icons.self_improvement_outlined),
+                    selectedIcon: Icon(Icons.self_improvement),
+                    label: 'Practice',
                   ),
                   NavigationDestination(
                     icon: Icon(Icons.home_work_outlined),
@@ -677,10 +730,16 @@ class _ParentHomeActivitiesHero extends StatelessWidget {
   const _ParentHomeActivitiesHero();
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 600;
+      return Container(
     width: double.infinity,
-    height: 205,
-    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+    height: compact ? 250 : 205,
+    padding: EdgeInsets.symmetric(
+      horizontal: compact ? 22 : 28,
+      vertical: compact ? 20 : 24,
+    ),
     clipBehavior: Clip.antiAlias,
     decoration: BoxDecoration(
       borderRadius: BorderRadius.circular(24),
@@ -690,6 +749,7 @@ class _ParentHomeActivitiesHero extends StatelessWidget {
     ),
     child: Stack(
       children: [
+        if (!compact)
         Positioned(
           right: 22,
           bottom: -48,
@@ -699,6 +759,7 @@ class _ParentHomeActivitiesHero extends StatelessWidget {
             color: const Color(0xFFFF8494).withValues(alpha: .76),
           ),
         ),
+        if (!compact)
         Positioned(
           right: 195,
           bottom: -15,
@@ -708,6 +769,7 @@ class _ParentHomeActivitiesHero extends StatelessWidget {
             color: BrandColors.green.withValues(alpha: .55),
           ),
         ),
+        if (!compact)
         Positioned(
           right: 28,
           top: 24,
@@ -717,7 +779,47 @@ class _ParentHomeActivitiesHero extends StatelessWidget {
             color: BrandColors.sunshine,
           ),
         ),
-        Row(
+        compact
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 62,
+                    height: 62,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF168FEA),
+                      borderRadius: BorderRadius.circular(17),
+                    ),
+                    child: const Icon(
+                      Icons.home_rounded,
+                      size: 35,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Home Activities',
+                    style: TextStyle(
+                      color: Color(0xFF07135B),
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Explore and complete activities for your child’s learning at home.',
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Color(0xFF526F9E),
+                      fontSize: 14,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              )
+            : Row(
           children: [
             Container(
               width: 96,
@@ -758,6 +860,8 @@ class _ParentHomeActivitiesHero extends StatelessWidget {
         ),
       ],
     ),
+      );
+    },
   );
 }
 
@@ -777,7 +881,7 @@ class _ParentWorkspaceHome extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isPhone = constraints.maxWidth < 600;
-        final columns = constraints.maxWidth >= 1000 ? 3 : (isPhone ? 1 : 2);
+        final columns = constraints.maxWidth >= 1000 ? 3 : 2;
         final horizontalPadding = isPhone ? 16.0 : 32.0;
         final childName = child == null
             ? 'your child'
@@ -796,7 +900,7 @@ class _ParentWorkspaceHome extends StatelessWidget {
               children: [
                 Container(
                   width: double.infinity,
-                  height: isPhone ? 196 : 215,
+                  height: isPhone ? 230 : 215,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 24,
                     vertical: 24,
@@ -867,7 +971,7 @@ class _ParentWorkspaceHome extends StatelessWidget {
                         alignment: Alignment.centerLeft,
                         child: SizedBox(
                           width: isPhone
-                              ? 190
+                              ? double.infinity
                               : constraints.maxWidth < 780
                               ? double.infinity
                               : 620,
@@ -888,7 +992,7 @@ class _ParentWorkspaceHome extends StatelessWidget {
                               const SizedBox(height: 8),
                               Text(
                                 'Stay connected to $childName\'s learning journey.',
-                                maxLines: 2,
+                                maxLines: isPhone ? 3 : 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   color: Color(0xFF517594),
@@ -920,13 +1024,14 @@ class _ParentWorkspaceHome extends StatelessWidget {
                   mainAxisSpacing: 16,
                   childAspectRatio: constraints.maxWidth >= 1000
                       ? 1.78
-                      : (isPhone ? 1.58 : 1.3),
+                      : (isPhone ? .76 : 1.3),
                   children: [
                     _ParentWorkspaceAction(
                       title: 'Notifications',
                       subtitle: 'See updates from your teacher',
                       icon: Icons.notifications_active_rounded,
                       color: BrandColors.sky,
+                      compact: isPhone,
                       onTap: () => onNavigate(1),
                     ),
                     _ParentWorkspaceAction(
@@ -934,6 +1039,7 @@ class _ParentWorkspaceHome extends StatelessWidget {
                       subtitle: 'Support learning at home',
                       icon: Icons.home_work_rounded,
                       color: BrandColors.green,
+                      compact: isPhone,
                       onTap: () => onNavigate(2),
                     ),
                     _ParentWorkspaceAction(
@@ -941,6 +1047,7 @@ class _ParentWorkspaceHome extends StatelessWidget {
                       subtitle: 'Explore guided learning tasks',
                       icon: Icons.auto_awesome_rounded,
                       color: BrandColors.sunshine,
+                      compact: isPhone,
                       onTap: () => onNavigate(3),
                     ),
                     _ParentWorkspaceAction(
@@ -948,6 +1055,7 @@ class _ParentWorkspaceHome extends StatelessWidget {
                       subtitle: 'Share an observation with the teacher',
                       icon: Icons.chat_bubble_rounded,
                       color: BrandColors.navy,
+                      compact: isPhone,
                       onTap: () => onNavigate(4),
                     ),
                     _ParentWorkspaceAction(
@@ -955,6 +1063,7 @@ class _ParentWorkspaceHome extends StatelessWidget {
                       subtitle: 'Review your previous messages',
                       icon: Icons.history_rounded,
                       color: const Color(0xFFE76F51),
+                      compact: isPhone,
                       onTap: () => onNavigate(5),
                     ),
                     _ParentWorkspaceAction(
@@ -962,6 +1071,7 @@ class _ParentWorkspaceHome extends StatelessWidget {
                       subtitle: 'Ask a question and get support',
                       icon: Icons.help_outline_rounded,
                       color: BrandColors.green,
+                      compact: isPhone,
                       onTap: () => onNavigate(6),
                     ),
                   ],
@@ -982,12 +1092,14 @@ class _ParentWorkspaceAction extends StatelessWidget {
     required this.icon,
     required this.color,
     required this.onTap,
+    this.compact = false,
   });
   final String title;
   final String subtitle;
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -997,7 +1109,12 @@ class _ParentWorkspaceAction extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(22),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(28, 23, 22, 20),
+        padding: EdgeInsets.fromLTRB(
+          compact ? 14 : 28,
+          compact ? 14 : 23,
+          compact ? 14 : 22,
+          compact ? 14 : 20,
+        ),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(22),
           border: Border.all(
@@ -1015,56 +1132,60 @@ class _ParentWorkspaceAction extends StatelessWidget {
         child: Stack(
           children: [
             Positioned(
-              right: -14,
-              top: 6,
-              child: Icon(icon, size: 118, color: color.withValues(alpha: .11)),
+              right: compact ? -8 : -14,
+              top: compact ? 4 : 6,
+              child: Icon(
+                icon,
+                size: compact ? 74 : 118,
+                color: color.withValues(alpha: .11),
+              ),
             ),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  width: 72,
-                  height: 72,
+                  width: compact ? 48 : 72,
+                  height: compact ? 48 : 72,
                   decoration: BoxDecoration(
                     color: color.withValues(alpha: .13),
-                    borderRadius: BorderRadius.circular(21),
+                    borderRadius: BorderRadius.circular(compact ? 15 : 21),
                   ),
-                  child: Icon(icon, color: color, size: 38),
+                  child: Icon(icon, color: color, size: compact ? 26 : 38),
                 ),
                 const Spacer(),
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Color(0xFF10245E),
                     fontWeight: FontWeight.w800,
-                    fontSize: 22,
+                    fontSize: compact ? 16 : 22,
                   ),
                 ),
-                const SizedBox(height: 5),
+                SizedBox(height: compact ? 4 : 5),
                 Row(
                   children: [
                     Expanded(
                       child: Text(
                         subtitle,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: Color(0xFF58709D),
-                          fontSize: 15,
+                          fontSize: compact ? 11 : 15,
                           height: 1.3,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: compact ? 4 : 8),
                     Container(
-                      width: 50,
-                      height: 50,
+                      width: compact ? 34 : 50,
+                      height: compact ? 34 : 50,
                       decoration: const BoxDecoration(
                         color: Colors.white,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.arrow_forward_rounded,
                         color: Color(0xFF10245E),
-                        size: 29,
+                        size: compact ? 20 : 29,
                       ),
                     ),
                   ],

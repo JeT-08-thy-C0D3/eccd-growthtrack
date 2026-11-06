@@ -58,15 +58,14 @@ class _PracticeActivitiesPageState extends State<PracticeActivitiesPage> {
   }
 
   Future<void> _openActivity(PracticeActivity activity) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ActivityDetailsPage(
-          activity: activity,
-          controller: _controller,
-          parentUid: _parentUid,
-          childId: _selectedChildId,
-        ),
+    await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => ActivityDetailsPage(
+        activity: activity,
+        controller: _controller,
+        parentUid: _parentUid,
+        childId: _selectedChildId,
       ),
     );
     if (mounted) setState(() {});
@@ -195,9 +194,13 @@ class _PracticeHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 600;
     return Container(
-      height: 156,
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+      height: compact ? 250 : 156,
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 22 : 28,
+        vertical: compact ? 20 : 24,
+      ),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
@@ -207,34 +210,76 @@ class _PracticeHero extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          Positioned(
-            right: 18,
-            bottom: -42,
-            child: Icon(
-              Icons.emoji_people_rounded,
-              size: 186,
-              color: BrandColors.sky.withValues(alpha: .72),
+          if (!compact) ...[
+            Positioned(
+              right: 18,
+              bottom: -42,
+              child: Icon(
+                Icons.emoji_people_rounded,
+                size: 186,
+                color: BrandColors.sky.withValues(alpha: .72),
+              ),
             ),
-          ),
-          Positioned(
-            right: 174,
-            bottom: -18,
-            child: Icon(
-              Icons.spa_rounded,
-              size: 105,
-              color: BrandColors.green.withValues(alpha: .54),
+            Positioned(
+              right: 174,
+              bottom: -18,
+              child: Icon(
+                Icons.spa_rounded,
+                size: 105,
+                color: BrandColors.green.withValues(alpha: .54),
+              ),
             ),
-          ),
-          Positioned(
-            right: 27,
-            top: 12,
-            child: Icon(
-              Icons.home_rounded,
-              size: 42,
-              color: BrandColors.sunshine,
+            Positioned(
+              right: 27,
+              top: 12,
+              child: Icon(
+                Icons.home_rounded,
+                size: 42,
+                color: BrandColors.sunshine,
+              ),
             ),
-          ),
-          Row(
+          ],
+          compact
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 62,
+                      height: 62,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1599F4),
+                        borderRadius: BorderRadius.circular(17),
+                      ),
+                      child: const Icon(
+                        Icons.directions_run_rounded,
+                        size: 35,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Practice Activities',
+                      style: TextStyle(
+                        color: Color(0xFF07135B),
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Fun and engaging activities to support your child’s development at home.',
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Color(0xFF166BB6),
+                        fontSize: 14,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                )
+              : Row(
             children: [
               Container(
                 width: 94,

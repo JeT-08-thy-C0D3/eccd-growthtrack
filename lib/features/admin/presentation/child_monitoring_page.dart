@@ -131,6 +131,7 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
   @override
   Widget build(BuildContext context) {
     final isWide = MediaQuery.of(context).size.width > 1000;
+    final isPhone = MediaQuery.sizeOf(context).width < 700;
     final totalItems = _filteredChildren.length;
     final totalPages = (totalItems / _itemsPerPage).ceil();
 
@@ -143,11 +144,47 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
         .take(_itemsPerPage)
         .toList();
 
+    if (isPhone) {
+      return Scaffold(
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : SingleChildScrollView(
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 28, 16, 10),
+                      child: _buildChildHero(),
+                    ),
+                    _buildSearchAndFilterBar(),
+                    if (_filteredChildren.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Text('No matching child records found.'),
+                      )
+                    else ...[
+                      _buildResponsiveList(
+                        paginatedChildren,
+                        false,
+                      ),
+                      _buildPaginationControls(totalItems, totalPages),
+                    ],
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+      );
+    }
+
     return Scaffold(
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(32, 28, 32, 10),
+            padding: EdgeInsets.fromLTRB(
+              MediaQuery.sizeOf(context).width < 600 ? 16 : 32,
+              28,
+              MediaQuery.sizeOf(context).width < 600 ? 16 : 32,
+              10,
+            ),
             child: _buildChildHero(),
           ),
           _buildSearchAndFilterBar(),
@@ -170,105 +207,119 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
     );
   }
 
-  Widget _buildChildHero() => Container(
-    width: double.infinity,
-    height: 164,
-    clipBehavior: Clip.antiAlias,
-    decoration: BoxDecoration(
-      gradient: const LinearGradient(
-        colors: [Color(0xFFE1F2FF), Color(0xFFF7FCFF)],
+  Widget _buildChildHero() {
+    final compact = MediaQuery.sizeOf(context).width < 600;
+    final icon = Container(
+      width: compact ? 58 : 68,
+      height: compact ? 58 : 68,
+      decoration: BoxDecoration(
+        color: const Color(0xFF168CF0),
+        borderRadius: BorderRadius.circular(compact ? 16 : 18),
       ),
-      borderRadius: BorderRadius.circular(24),
-    ),
-    child: Stack(
+      child: Icon(
+        Icons.child_friendly_rounded,
+        color: Colors.white,
+        size: compact ? 34 : 40,
+      ),
+    );
+    final text = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Positioned(
-          right: -45,
-          top: -65,
-          child: Container(
-            width: 230,
-            height: 230,
-            decoration: BoxDecoration(
-              color: BrandColors.sky.withValues(alpha: .14),
-              shape: BoxShape.circle,
-            ),
+        Text(
+          'Child Monitoring & Case Review (Admin)',
+          maxLines: compact ? 2 : null,
+          overflow: compact ? TextOverflow.ellipsis : null,
+          style: TextStyle(
+            color: const Color(0xFF0D1A5B),
+            fontSize: compact ? 28 : 30,
+            fontWeight: FontWeight.w800,
+            height: 1.12,
           ),
         ),
-        Positioned(
-          right: 62,
-          bottom: 0,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Icon(
-                Icons.assignment_turned_in_rounded,
-                color: BrandColors.green.withValues(alpha: .78),
-                size: 100,
-              ),
-              const SizedBox(width: 4),
-              Icon(
-                Icons.child_care_rounded,
-                color: Colors.orange.shade200,
-                size: 105,
-              ),
-              Icon(
-                Icons.person_rounded,
-                color: Colors.blue.shade300,
-                size: 118,
-              ),
-            ],
-          ),
-        ),
-        Positioned(
-          left: 30,
-          top: 36,
-          right: 410,
-          child: Row(
-            children: [
-              Container(
-                width: 68,
-                height: 68,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF168CF0),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Icon(
-                  Icons.child_friendly_rounded,
-                  color: Colors.white,
-                  size: 40,
-                ),
-              ),
-              const SizedBox(width: 22),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Child Monitoring & Case Review (Admin)',
-                      style: TextStyle(
-                        color: Color(0xFF0D1A5B),
-                        fontSize: 30,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    SizedBox(height: 7),
-                    Text(
-                      'Monitor children\'s profiles and review their cases and development status.',
-                      style: TextStyle(
-                        color: Color(0xFF386296),
-                        fontSize: 15,
-                        height: 1.35,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+        const SizedBox(height: 7),
+        Text(
+          'Monitor children\'s profiles and review their cases and development status.',
+          maxLines: compact ? 3 : null,
+          overflow: compact ? TextOverflow.ellipsis : null,
+          style: TextStyle(
+            color: const Color(0xFF386296),
+            fontSize: compact ? 14 : 15,
+            height: 1.35,
           ),
         ),
       ],
-    ),
-  );
+    );
+    return Container(
+      width: double.infinity,
+      height: compact ? 258 : 164,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFE1F2FF), Color(0xFFF7FCFF)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -45,
+            top: -65,
+            child: Container(
+              width: 230,
+              height: 230,
+              decoration: BoxDecoration(
+                color: BrandColors.sky.withValues(alpha: .14),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          if (!compact)
+            Positioned(
+              right: 62,
+              bottom: 0,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Icon(
+                    Icons.assignment_turned_in_rounded,
+                    color: BrandColors.green.withValues(alpha: .78),
+                    size: 100,
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.child_care_rounded,
+                    color: Colors.orange.shade200,
+                    size: 105,
+                  ),
+                  Icon(
+                    Icons.person_rounded,
+                    color: Colors.blue.shade300,
+                    size: 118,
+                  ),
+                ],
+              ),
+            ),
+          Positioned(
+            left: compact ? 24 : 30,
+            top: compact ? 24 : 36,
+            right: compact ? 24 : 410,
+            child: compact
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [icon, const SizedBox(height: 14), text],
+                  )
+                : Row(
+                    children: [
+                      icon,
+                      const SizedBox(width: 22),
+                      Expanded(child: text),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildSearchAndFilterBar() {
     return Padding(
@@ -278,7 +329,11 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
           final search = SearchBar(
             controller: _searchController,
             hintText: 'Search by name, child ID, teacher, or parent...',
-            leading: const Icon(Icons.search),
+            leading: const Icon(
+              Icons.search_rounded,
+              color: BrandColors.navy,
+              size: 25,
+            ),
             onChanged: (val) {
               _searchQuery = val;
               _currentPage = 0;
@@ -323,7 +378,11 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
     );
   }
 
-  Widget _buildResponsiveList(List<ChildModel> paginatedChildren, bool isWide) {
+  Widget _buildResponsiveList(
+    List<ChildModel> paginatedChildren,
+    bool isWide,
+  ) {
+    final embedded = MediaQuery.sizeOf(context).width < 700;
     if (isWide && kIsWeb) {
       return SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -444,6 +503,8 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
 
     return ListView.builder(
       padding: const EdgeInsets.all(16),
+      shrinkWrap: embedded,
+      physics: embedded ? const NeverScrollableScrollPhysics() : null,
       itemCount: paginatedChildren.length,
       itemBuilder: (context, index) {
         final child = paginatedChildren[index];

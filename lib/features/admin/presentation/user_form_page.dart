@@ -207,15 +207,23 @@ class _UserFormPageState extends State<UserFormPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: Text(widget.user == null ? 'Create Account' : 'Edit Account'),
+    final screenSize = MediaQuery.sizeOf(context);
+    final isCompact = screenSize.width < 600;
+
+    return Dialog(
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: isCompact ? 16 : 32,
+        vertical: 24,
       ),
-      body: Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 600),
-          padding: const EdgeInsets.all(24.0),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 640,
+          maxHeight: screenSize.height - 48,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
           child: Form(
             key: _formKey,
             autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -223,6 +231,25 @@ class _UserFormPageState extends State<UserFormPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          widget.user == null ? 'Create Account' : 'Edit Account',
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _isLoading ? null : () => Navigator.pop(context),
+                        icon: const Icon(Icons.close),
+                        tooltip: 'Close',
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+                  const SizedBox(height: 16),
                   Text(
                     widget.user == null
                         ? 'Register New User'
@@ -321,14 +348,16 @@ class _UserFormPageState extends State<UserFormPage> {
                   ),
                   const SizedBox(height: 16),
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Checkbox(
                         value: _agreedToTerms,
                         onChanged: (val) =>
                             setState(() => _agreedToTerms = val ?? false),
                       ),
+                      const SizedBox(width: 8),
                       Expanded(
-                        child: GestureDetector(
+                        child: InkWell(
                           onTap: () async {
                             final accepted =
                                 await TermsAndConditionsScreen.show(context);
@@ -336,12 +365,15 @@ class _UserFormPageState extends State<UserFormPage> {
                               setState(() => _agreedToTerms = true);
                             }
                           },
-                          child: const Text(
-                            'I agree to the Terms and Conditions (RA 10173 & RA 12199)',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.blue,
-                              decoration: TextDecoration.underline,
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              'I agree to the Terms and Conditions (RA 10173 & RA 12199)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.blue,
+                                decoration: TextDecoration.underline,
+                              ),
                             ),
                           ),
                         ),
@@ -349,24 +381,45 @@ class _UserFormPageState extends State<UserFormPage> {
                     ],
                   ),
                   const SizedBox(height: 32),
-                  ElevatedButton(
-                    onPressed: _isLoading ? null : _saveUser,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: _isLoading
+                            ? null
+                            : () => Navigator.pop(context),
+                        child: const Text('Cancel'),
                       ),
-                    ),
-                    child: _isLoading
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : Text(
-                            widget.user == null
-                                ? 'Create Account'
-                                : 'Update Account',
-                            style: const TextStyle(fontSize: 16),
+                      const SizedBox(width: 12),
+                      ElevatedButton(
+                        onPressed: _isLoading ? null : _saveUser,
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 16,
                           ),
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text(
+                                widget.user == null
+                                    ? 'Create Account'
+                                    : 'Update Account',
+                              ),
+                      ),
+                    ],
                   ),
                 ],
               ),

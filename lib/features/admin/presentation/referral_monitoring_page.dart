@@ -303,7 +303,7 @@ class _ReferralHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     width: double.infinity,
-    height: 182,
+    height: compact ? 258 : 182,
     clipBehavior: Clip.antiAlias,
     decoration: BoxDecoration(
       gradient: const LinearGradient(
@@ -336,55 +336,71 @@ class _ReferralHero extends StatelessWidget {
             child: _ReferralIllustration(),
           ),
         Positioned(
-          left: 28,
-          top: 42,
+          left: compact ? 24 : 28,
+          top: compact ? 24 : 42,
           right: compact ? 24 : 500,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 68,
-                height: 68,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E9CE5),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Icon(
-                  Icons.medical_services_rounded,
-                  color: Colors.white,
-                  size: 39,
-                ),
-              ),
-              const SizedBox(width: 22),
-              const Expanded(
-                child: Column(
+          child: compact
+              ? Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'MSWD Referral Monitoring',
-                      style: TextStyle(
-                        color: Color(0xFF0D1A5B),
-                        fontSize: 32,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    SizedBox(height: 7),
-                    Text(
-                      'Track and monitor child referrals, concerns, and their current status.',
-                      style: TextStyle(
-                        color: Color(0xFF386296),
-                        fontSize: 15,
-                        height: 1.35,
-                      ),
-                    ),
+                    _referralIcon(compact: true),
+                    const SizedBox(height: 14),
+                    _referralText(compact: true),
                   ],
-                ),
-              ),
+                )
+              : Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _referralIcon(),
+              const SizedBox(width: 22),
+              Expanded(child: _referralText()),
             ],
           ),
         ),
       ],
     ),
+  );
+
+  Widget _referralIcon({bool compact = false}) => Container(
+    width: compact ? 58 : 68,
+    height: compact ? 58 : 68,
+    decoration: BoxDecoration(
+      color: const Color(0xFF1E9CE5),
+      borderRadius: BorderRadius.circular(compact ? 16 : 18),
+    ),
+    child: Icon(
+      Icons.medical_services_rounded,
+      color: Colors.white,
+      size: compact ? 33 : 39,
+    ),
+  );
+
+  Widget _referralText({bool compact = false}) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'MSWD Referral Monitoring',
+        maxLines: compact ? 2 : null,
+        overflow: compact ? TextOverflow.ellipsis : null,
+        style: TextStyle(
+          color: const Color(0xFF0D1A5B),
+          fontSize: compact ? 28 : 32,
+          fontWeight: FontWeight.w800,
+          height: 1.12,
+        ),
+      ),
+      const SizedBox(height: 7),
+      Text(
+        'Track and monitor child referrals, concerns, and their current status.',
+        maxLines: compact ? 3 : null,
+        overflow: compact ? TextOverflow.ellipsis : null,
+        style: TextStyle(
+          color: const Color(0xFF386296),
+          fontSize: compact ? 14 : 15,
+          height: 1.35,
+        ),
+      ),
+    ],
   );
 }
 

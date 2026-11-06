@@ -193,7 +193,12 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
         body: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(32, 28, 32, 0),
+              padding: EdgeInsets.fromLTRB(
+                MediaQuery.sizeOf(context).width < 600 ? 16 : 32,
+                28,
+                MediaQuery.sizeOf(context).width < 600 ? 16 : 32,
+                0,
+              ),
               child: _buildReportsHero(),
             ),
             const TabBar(
@@ -244,101 +249,128 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     );
   }
 
-  Widget _buildReportsHero() => Container(
-    width: double.infinity,
-    height: 150,
-    decoration: BoxDecoration(
-      gradient: const LinearGradient(
-        colors: [Color(0xFFE1F2FF), Color(0xFFF7FCFF)],
+  Widget _buildReportsHero() {
+    final compact = MediaQuery.sizeOf(context).width < 600;
+    final icon = Container(
+      width: compact ? 58 : 68,
+      height: compact ? 58 : 68,
+      decoration: BoxDecoration(
+        color: const Color(0xFF168CF0),
+        borderRadius: BorderRadius.circular(compact ? 16 : 18),
       ),
-      borderRadius: BorderRadius.circular(24),
-    ),
-    child: Stack(
+      child: Icon(
+        Icons.bar_chart_rounded,
+        color: Colors.white,
+        size: compact ? 34 : 40,
+      ),
+    );
+    final text = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Positioned(
-          right: 42,
-          bottom: 16,
-          child: Container(
-            width: 224,
-            height: 106,
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: .56),
-              borderRadius: BorderRadius.circular(22),
-              boxShadow: const [
-                BoxShadow(color: Color(0x143A82B8), blurRadius: 18),
-              ],
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                const Icon(Icons.show_chart_rounded, color: BrandColors.sky, size: 62),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        _reportBar(32, const Color(0xFF83D6E7)),
-                        _reportBar(54, BrandColors.sky),
-                        _reportBar(42, const Color(0xFF59CBA2)),
-                        _reportBar(68, BrandColors.sunshine),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+        Text(
+          'Municipal Reports & Analytics',
+          maxLines: compact ? 2 : null,
+          overflow: compact ? TextOverflow.ellipsis : null,
+          style: TextStyle(
+            color: const Color(0xFF0D1A5B),
+            fontSize: compact ? 28 : 32,
+            fontWeight: FontWeight.w800,
+            height: 1.12,
           ),
         ),
-        Positioned(
-          left: 30,
-          top: 30,
-          right: 250,
-          child: Row(
-            children: [
-              Container(
-                width: 68,
-                height: 68,
+        const SizedBox(height: 7),
+        Text(
+          'Track progress, attendance, evaluation results, and referrals across the municipality.',
+          maxLines: compact ? 3 : null,
+          overflow: compact ? TextOverflow.ellipsis : null,
+          style: TextStyle(
+            color: const Color(0xFF386296),
+            fontSize: compact ? 14 : 15,
+            height: 1.35,
+          ),
+        ),
+      ],
+    );
+
+    return Container(
+      width: double.infinity,
+      height: compact ? 258 : 150,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFE1F2FF), Color(0xFFF7FCFF)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Stack(
+        children: [
+          if (!compact)
+            Positioned(
+              right: 42,
+              bottom: 16,
+              child: Container(
+                width: 224,
+                height: 106,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 15,
+                ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF168CF0),
-                  borderRadius: BorderRadius.circular(18),
+                  color: Colors.white.withValues(alpha: .56),
+                  borderRadius: BorderRadius.circular(22),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x143A82B8), blurRadius: 18),
+                  ],
                 ),
-                child: const Icon(
-                  Icons.bar_chart_rounded,
-                  color: Colors.white,
-                  size: 40,
-                ),
-              ),
-              const SizedBox(width: 22),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Text(
-                      'Municipal Reports & Analytics',
-                      style: TextStyle(
-                        color: Color(0xFF0D1A5B),
-                        fontSize: 32,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    const Icon(
+                      Icons.show_chart_rounded,
+                      color: BrandColors.sky,
+                      size: 62,
                     ),
-                    SizedBox(height: 7),
-                    Text(
-                      'Track progress, attendance, evaluation results, and referrals across the municipality.',
-                      style: TextStyle(color: Color(0xFF386296), fontSize: 15),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            _reportBar(32, const Color(0xFF83D6E7)),
+                            _reportBar(54, BrandColors.sky),
+                            _reportBar(42, const Color(0xFF59CBA2)),
+                            _reportBar(68, BrandColors.sunshine),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
-            ],
+            ),
+          Positioned(
+            left: compact ? 24 : 30,
+            top: compact ? 24 : 30,
+            right: compact ? 24 : 250,
+            child: compact
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [icon, const SizedBox(height: 14), text],
+                  )
+                : Row(
+                    children: [
+                      icon,
+                      const SizedBox(width: 22),
+                      Expanded(child: text),
+                    ],
+                  ),
           ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 
   Widget _reportBar(double height, Color color) => Container(
     width: 12,

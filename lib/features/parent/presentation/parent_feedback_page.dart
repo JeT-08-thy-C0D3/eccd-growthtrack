@@ -309,89 +309,124 @@ class _FeedbackHero extends StatelessWidget {
   final bool isEditing;
 
   @override
-  Widget build(BuildContext context) => Container(
-    height: 190,
-    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
-    clipBehavior: Clip.antiAlias,
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(24),
-      gradient: const LinearGradient(
-        colors: [Color(0xFFEAF8FF), Color(0xFFD9F0FF)],
-      ),
-    ),
-    child: Stack(
-      children: [
-        Positioned(
-          right: 27,
-          bottom: -50,
-          child: Icon(
-            Icons.family_restroom_rounded,
-            size: 230,
-            color: const Color(0xFFFF8B99).withValues(alpha: .75),
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 600;
+      return Container(
+        height: compact ? 266 : 190,
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 22 : 28,
+          vertical: compact ? 20 : 22,
+        ),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          gradient: const LinearGradient(
+            colors: [Color(0xFFEAF8FF), Color(0xFFD9F0FF)],
           ),
         ),
-        Positioned(
-          right: 188,
-          bottom: -14,
-          child: Icon(
-            Icons.spa_rounded,
-            size: 115,
-            color: BrandColors.green.withValues(alpha: .52),
-          ),
-        ),
-        Positioned(
-          right: 182,
-          top: 20,
-          child: const Icon(
-            Icons.favorite_rounded,
-            color: Color(0xFFFF7E96),
-            size: 43,
-          ),
-        ),
-        Row(
+        child: Stack(
           children: [
-            Container(
-              width: 96,
-              height: 96,
-              decoration: BoxDecoration(
-                color: const Color(0xFF168FEA),
-                borderRadius: BorderRadius.circular(23),
+            if (!compact) ...[
+              Positioned(
+                right: 27,
+                bottom: -50,
+                child: Icon(
+                  Icons.family_restroom_rounded,
+                  size: 230,
+                  color: const Color(0xFFFF8B99).withValues(alpha: .75),
+                ),
               ),
-              child: const Icon(
-                Icons.chat_bubble_rounded,
-                size: 51,
-                color: Colors.white,
+              Positioned(
+                right: 188,
+                bottom: -14,
+                child: Icon(
+                  Icons.spa_rounded,
+                  size: 115,
+                  color: BrandColors.green.withValues(alpha: .52),
+                ),
               ),
-            ),
-            const SizedBox(width: 25),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    isEditing ? 'Edit Feedback' : 'Parent Feedback',
-                    style: const TextStyle(
-                      color: Color(0xFF07135B),
-                      fontSize: 39,
-                      fontWeight: FontWeight.w800,
-                    ),
+              const Positioned(
+                right: 182,
+                top: 20,
+                child: Icon(
+                  Icons.favorite_rounded,
+                  color: Color(0xFFFF7E96),
+                  size: 43,
+                ),
+              ),
+            ],
+            compact
+                ? _FeedbackHeroContent(
+                    title: isEditing ? 'Edit Feedback' : 'Parent Feedback',
+                    compact: true,
+                  )
+                : _FeedbackHeroContent(
+                    title: isEditing ? 'Edit Feedback' : 'Parent Feedback',
                   ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    "Share your observations and insights about your child's learning\nand development.",
-                    style: TextStyle(
-                      color: Color(0xFF156BC0),
-                      fontSize: 17,
-                      height: 1.35,
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
-      ],
-    ),
+      );
+    },
   );
+}
+
+class _FeedbackHeroContent extends StatelessWidget {
+  const _FeedbackHeroContent({required this.title, this.compact = false});
+
+  final String title;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = Container(
+      width: compact ? 62 : 96,
+      height: compact ? 62 : 96,
+      decoration: BoxDecoration(
+        color: const Color(0xFF168FEA),
+        borderRadius: BorderRadius.circular(compact ? 17 : 23),
+      ),
+      child: Icon(
+        Icons.chat_bubble_rounded,
+        size: compact ? 35 : 51,
+        color: Colors.white,
+      ),
+    );
+    final text = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            color: const Color(0xFF07135B),
+            fontSize: compact ? 28 : 39,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        SizedBox(height: compact ? 8 : 10),
+        Text(
+          "Share your observations and insights about your child's learning and development.",
+          maxLines: compact ? 3 : null,
+          overflow: compact ? TextOverflow.ellipsis : null,
+          style: TextStyle(
+            color: const Color(0xFF156BC0),
+            fontSize: compact ? 14 : 17,
+            height: 1.35,
+          ),
+        ),
+      ],
+    );
+
+    if (compact) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [icon, const SizedBox(height: 12), text],
+      );
+    }
+    return Row(
+      children: [icon, const SizedBox(width: 25), Expanded(child: text)],
+    );
+  }
 }

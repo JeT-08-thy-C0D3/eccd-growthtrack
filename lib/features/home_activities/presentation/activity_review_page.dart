@@ -52,6 +52,18 @@ class _ActivityReviewPageState extends State<ActivityReviewPage> {
                 const SizedBox(height: 8),
                 const Text('Parent Observation Note:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                 Text(submission['parent_note'] as String? ?? 'No parent notes provided.'),
+                if ((submission['evidence_url'] as String?)?.isNotEmpty == true) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Parent activity evidence',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                  const SizedBox(height: 8),
+                  _SubmissionEvidencePreview(
+                    url: submission['evidence_url'] as String,
+                    mediaType: submission['evidence_media_type'] as String?,
+                  ),
+                ],
                 const Divider(height: 24),
                 TextFormField(
                   controller: scoreController,
@@ -157,6 +169,77 @@ class _ActivityReviewPageState extends State<ActivityReviewPage> {
                     );
                   },
                 ),
+    );
+  }
+}
+
+class _SubmissionEvidencePreview extends StatelessWidget {
+  const _SubmissionEvidencePreview({required this.url, this.mediaType});
+
+  final String url;
+  final String? mediaType;
+
+  bool get _isVideo => mediaType == 'video';
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isVideo) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.blue.withValues(alpha: .08),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.videocam_rounded, color: Colors.blue),
+            SizedBox(width: 10),
+            Expanded(child: Text('A video was attached by the parent.')),
+          ],
+        ),
+      );
+    }
+
+    return InkWell(
+      onTap: () => showDialog(
+        context: context,
+        builder: (context) => Dialog(
+          child: InteractiveViewer(
+            child: Image.network(
+              url,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('Unable to load the uploaded image.'),
+              ),
+            ),
+          ),
+        ),
+      ),
+      borderRadius: BorderRadius.circular(12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Image.network(
+            url,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(
+              color: Colors.blue.withValues(alpha: .08),
+              alignment: Alignment.center,
+              child: const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.broken_image_outlined, color: Colors.blue),
+                  SizedBox(height: 6),
+                  Text('Unable to load the uploaded image.'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

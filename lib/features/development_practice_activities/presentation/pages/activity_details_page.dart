@@ -64,13 +64,46 @@ class _ActivityDetailsPageState extends State<ActivityDetailsPage> {
       builder: (context, _) {
         final isCompleted = widget.controller.completedActivityIds.contains(widget.activity.id);
         final colors = Theme.of(context).colorScheme;
-        return Scaffold(
-          appBar: AppBar(title: const Text('Activity Details')),
-          body: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        final screenSize = MediaQuery.sizeOf(context);
+        final isCompact = screenSize.width < 600;
+        return Dialog(
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: isCompact ? 16 : 32,
+            vertical: 24,
+          ),
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 760,
+              maxHeight: screenSize.height - 48,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Activity Details',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Close',
+                    ),
+                  ],
+                ),
+                const Divider(),
+                const SizedBox(height: 18),
                 Row(
                   children: [
                     CircleAvatar(
@@ -159,6 +192,7 @@ class _ActivityDetailsPageState extends State<ActivityDetailsPage> {
                 ],
               ],
             ),
+          ),
           ),
         );
       },
