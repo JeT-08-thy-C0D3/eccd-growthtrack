@@ -1,4 +1,7 @@
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import '../../../core/database/database_helper.dart';
 import '../domain/development_summary_model.dart';
 import '../../../data/datasources/local_data_source.dart';
@@ -9,7 +12,12 @@ import '../../../core/utils/audit_logger.dart';
 abstract class DevelopmentSummaryRepository {
   Future<int> addSummary(DevelopmentSummaryModel summary);
   Future<List<Map<String, dynamic>>> getHistory(String childId);
-  Future<int> updateStatus(int id, String status, String approvedBy, String approvedDate);
+  Future<int> updateStatus(
+    int id,
+    String status,
+    String approvedBy,
+    String approvedDate,
+  );
 }
 
 class DevelopmentSummaryRepositoryImpl implements DevelopmentSummaryRepository {
@@ -26,11 +34,20 @@ class DevelopmentSummaryRepositoryImpl implements DevelopmentSummaryRepository {
       isSynced: await _connectivity.isOnline,
     );
 
-    final id = await _local.saveRecord('development_summaries', newSummary.toMap());
-    
-    if (await _connectivity.isOnline) {
+    // A web save must have a real document ID; SQLite's web placeholder is 0
+    // and would overwrite prior AI summaries.
+    final id = kIsWeb
+        ? DateTime.now().millisecondsSinceEpoch
+        : await _local.saveRecord('development_summaries', newSummary.toMap());
+
+    if (kIsWeb || await _connectivity.isOnline) {
       try {
-        await _remote.uploadRecord('development_summaries', id.toString(), newSummary.toMap());
+        await _remote.uploadRecord(
+          'development_summaries',
+          id.toString(),
+          newSummary.toMap(),
+          isCreate: true,
+        );
         await _local.markAsSynced('development_summaries', id);
       } catch (e) {
         print("Cloud Sync Failed: $e");
@@ -40,7 +57,8 @@ class DevelopmentSummaryRepositoryImpl implements DevelopmentSummaryRepository {
     await AuditLogger.log(
       action: 'Create AI Summary',
       module: 'Development Summary',
-      description: 'Drafted development summary for child ID ${summary.childId}.',
+      description:
+          'Drafted development summary for child ID ${summary.childId}.',
     );
 
     return id;
@@ -48,13 +66,43 @@ class DevelopmentSummaryRepositoryImpl implements DevelopmentSummaryRepository {
 
   @override
   Future<List<Map<String, dynamic>>> getHistory(String childId) async {
+    if (kIsWeb) {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('development_summaries')
+          .where('child_id', isEqualTo: childId)
+          .get(const GetOptions(source: Source.server));
+      final summaries = snapshot.docs
+          .map(
+            (document) => <String, dynamic>{
+              ...document.data(),
+              'id': document.data()['id'] ?? int.tryParse(document.id),
+            },
+          )
+          .toList();
+      summaries.sort(
+        (a, b) => (b['created_date']?.toString() ?? '').compareTo(
+          a['created_date']?.toString() ?? '',
+        ),
+      );
+      return summaries;
+    }
     return await _dbHelper.getDevelopmentSummaryHistory(childId);
   }
 
   @override
-  Future<int> updateStatus(int id, String status, String approvedBy, String approvedDate) async {
-    final result = await _dbHelper.updateDevelopmentSummaryStatus(id, status, approvedBy, approvedDate);
-    
+  Future<int> updateStatus(
+    int id,
+    String status,
+    String approvedBy,
+    String approvedDate,
+  ) async {
+    final result = await _dbHelper.updateDevelopmentSummaryStatus(
+      id,
+      status,
+      approvedBy,
+      approvedDate,
+    );
+
     await AuditLogger.log(
       action: 'Review Summary',
       module: 'Development Summary',

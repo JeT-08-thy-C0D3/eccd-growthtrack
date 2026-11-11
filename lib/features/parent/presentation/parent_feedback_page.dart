@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/database/database_helper.dart';
+import '../../../core/utils/validators.dart';
 import '../../../shared/models/child_model.dart';
 import '../../../shared/widgets/brand_widgets.dart';
 import '../../../shared/widgets/confirmation_dialog.dart';
 import '../../auth/data/auth_repository_impl.dart';
 import '../data/parent_feedback_repository.dart';
 import '../domain/parent_feedback_model.dart';
+import 'parent_feedback_history_page.dart';
 
 class ParentFeedbackPage extends StatefulWidget {
   final ParentFeedbackModel? feedback;
@@ -74,31 +76,51 @@ class _ParentFeedbackPageState extends State<ParentFeedbackPage> {
     }
   }
 
-  void _saveFeedback() async {
-    if (_formKey.currentState!.validate()) {
-      if (_selectedChild == null) return;
+  Future<void> _saveFeedback() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (_selectedChild == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a child first.')),
+      );
+      return;
+    }
 
-      if (widget.feedback != null) {
-        final confirmed = await ConfirmationDialog.showEdit(
-          context: context,
-          itemName: 'Feedback for ${_selectedChild!.firstName}',
-        );
-        if (!confirmed) return;
-      }
+    if (widget.feedback != null) {
+      final confirmed = await ConfirmationDialog.showEdit(
+        context: context,
+        itemName: 'Feedback for ${_selectedChild!.firstName}',
+      );
+      if (!confirmed) return;
+    }
 
-      setState(() => _isSaving = true);
-
+    setState(() => _isSaving = true);
+    try {
       final user = await AuthRepositoryImpl().getCurrentUser();
-      final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
-      final localUsers = await DatabaseHelper.instance.readAllUsers();
-      int parentId = user?.id ?? 0;
-      for (final localUser in localUsers) {
-        if (localUser.uid == user?.uid && localUser.id != null) {
-          parentId = localUser.id!;
-          break;
-        }
+      if (user == null) {
+        throw StateError(
+          'Your session is no longer available. Please sign in again.',
+        );
       }
 
+      // parent_id is only a local SQLite relation. Do not do a broad users
+      // collection read while a parent is submitting feedback on the web.
+      // That query is intentionally denied by Firestore rules and previously
+      // made the feedback screen appear to redirect or fail.
+      var parentId = user.id ?? 0;
+      try {
+        final localUsers = await DatabaseHelper.instance.readAllUsers();
+        for (final localUser in localUsers) {
+          if (localUser.uid == user.uid && localUser.id != null) {
+            parentId = localUser.id!;
+            break;
+          }
+        }
+      } catch (_) {
+        // Cloud identity is carried as parent_uid by the repository; local ID
+        // zero is valid for the web-only, cloud-backed flow.
+      }
+
+      final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
       final feedback = ParentFeedbackModel(
         id: widget.feedback?.id,
         childId: _selectedChild!.childId,
@@ -117,20 +139,69 @@ class _ParentFeedbackPageState extends State<ParentFeedbackPage> {
         await _repository.submitFeedback(feedback);
       }
 
-      setState(() => _isSaving = false);
+      if (!mounted) return;
+      if (widget.feedback == null) {
+        _observationController.clear();
+        _notesController.clear();
+        setState(() => _selectedAssistance = 'Independent');
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            widget.feedback != null
+                ? 'Feedback updated successfully.'
+                : 'Feedback submitted successfully.',
+          ),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
+      // This page is also embedded in ParentDashboard. Keep the parent in the
+      // feedback screen after a successful save; only show the confirmation.
+    } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              widget.feedback != null
-                  ? 'Feedback updated!'
-                  : 'Feedback submitted!',
-            ),
+            content: Text('Unable to submit feedback: $error'),
+            backgroundColor: Colors.red.shade700,
           ),
         );
-        Navigator.pop(context, true);
       }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  void _showFeedbackHistory() {
+    final screenSize = MediaQuery.sizeOf(context);
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          width: screenSize.width < 800 ? screenSize.width - 32 : 1060,
+          height: screenSize.height * .86,
+          child: Stack(
+            children: [
+              const ParentFeedbackHistoryPage(),
+              Positioned(
+                top: 12,
+                right: 12,
+                child: Material(
+                  color: Colors.white.withValues(alpha: .92),
+                  shape: const CircleBorder(),
+                  child: IconButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    tooltip: 'Close feedback history',
+                    icon: const Icon(Icons.close),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -199,7 +270,11 @@ class _ParentFeedbackPageState extends State<ParentFeedbackPage> {
                                   icon: Icons.visibility_outlined,
                                 ),
                                 validator: (value) =>
-                                    value!.isEmpty ? 'Required' : null,
+                                    Validators.validateAppropriateText(
+                                      value,
+                                      'Your Observation',
+                                      required: true,
+                                    ),
                               ),
                               const SizedBox(height: 26),
                               DropdownButtonFormField<String>(
@@ -230,8 +305,19 @@ class _ParentFeedbackPageState extends State<ParentFeedbackPage> {
                                       'Any other details you want to share?',
                                   icon: Icons.description_outlined,
                                 ),
+                                validator: (value) =>
+                                    Validators.validateAppropriateText(
+                                      value,
+                                      'Additional Notes',
+                                    ),
                               ),
                               const SizedBox(height: 32),
+                              OutlinedButton.icon(
+                                onPressed: _showFeedbackHistory,
+                                icon: const Icon(Icons.history_rounded),
+                                label: const Text('View Feedback History'),
+                              ),
+                              const SizedBox(height: 12),
                               SizedBox(
                                 height: 65,
                                 child: ElevatedButton.icon(
@@ -426,7 +512,11 @@ class _FeedbackHeroContent extends StatelessWidget {
       );
     }
     return Row(
-      children: [icon, const SizedBox(width: 25), Expanded(child: text)],
+      children: [
+        icon,
+        const SizedBox(width: 25),
+        Expanded(child: text),
+      ],
     );
   }
 }

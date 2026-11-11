@@ -16,7 +16,12 @@ abstract class ClarificationRepository {
   Future<List<ClarificationModel>> getRequestsByChild(String childId);
   Future<List<ClarificationModel>> getRequestsByParent(int parentId);
   Future<List<Map<String, dynamic>>> getAllRequestsWithChild();
-  Future<int> respondToRequest(int id, String response, int teacherId);
+  Future<int> respondToRequest(
+    int id,
+    String response,
+    int teacherId, {
+    String? documentId,
+  });
 }
 
 class ClarificationRepositoryImpl implements ClarificationRepository {
@@ -181,23 +186,51 @@ class ClarificationRepositoryImpl implements ClarificationRepository {
   }
 
   @override
-  Future<int> respondToRequest(int id, String response, int teacherId) async {
+  Future<int> respondToRequest(
+    int id,
+    String response,
+    int teacherId, {
+    String? documentId,
+  }) async {
     final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
 
     if (kIsWeb) {
-      final snapshot = await _firestore.collection('clarifications').get();
-      for (final doc in snapshot.docs) {
-        if (doc.data()['id'] == id || doc.id == id.toString()) {
-          await doc.reference.update({
-            'response': response,
-            'teacher_id': teacherId,
-            'status': 'Responded',
-            'updated_at': now,
-            'server_updated_at': FieldValue.serverTimestamp(),
-          });
-          break;
-        }
+      // Web requests use Firestore-generated document IDs, not the local
+      // SQLite integer ID. Updating by a hash of that ID never found the
+      // request, so the UI incorrectly reported a sent response while the
+      // record remained Pending.
+      final resolvedDocumentId = documentId?.trim();
+      if (resolvedDocumentId == null || resolvedDocumentId.isEmpty) {
+        throw StateError('The clarification request identifier is missing.');
       }
+      final document = _firestore
+          .collection('clarifications')
+          .doc(resolvedDocumentId);
+      final snapshot = await document.get(
+        const GetOptions(source: Source.server),
+      );
+      if (!snapshot.exists) {
+        throw StateError('The clarification request could not be found.');
+      }
+      await document.update({
+        'response': response,
+        'teacher_id': teacherId,
+        'status': 'Responded',
+        'updated_at': now,
+        'server_updated_at': FieldValue.serverTimestamp(),
+      });
+
+      await AuditLogger.log(
+        action: 'Respond to Clarification',
+        module: 'Teacher Module',
+        description:
+            'Teacher ID $teacherId responded to clarification request $resolvedDocumentId.',
+      );
+      await _sendResponseNotification(
+        childId: snapshot.data()?['child_id'] as String? ?? '',
+        category: snapshot.data()?['category'] as String? ?? 'General Concern',
+        referenceId: resolvedDocumentId,
+      );
       return id;
     }
 
@@ -267,19 +300,34 @@ class ClarificationRepositoryImpl implements ClarificationRepository {
         }
       }
 
-      if (childId.isNotEmpty) {
-        await NotificationRepositoryImpl().sendNotification(
-          childId: childId,
-          type: 'clarification_response',
-          title: 'Teacher Responded to Clarification',
-          body: 'Teacher responded to your question regarding "$category".',
-          referenceId: id.toString(),
-        );
-      }
+      await _sendResponseNotification(
+        childId: childId,
+        category: category,
+        referenceId: id.toString(),
+      );
     } catch (e) {
       print("Notification Error: $e");
     }
 
     return result;
+  }
+
+  Future<void> _sendResponseNotification({
+    required String childId,
+    required String category,
+    required String referenceId,
+  }) async {
+    if (childId.isEmpty) return;
+    try {
+      await NotificationRepositoryImpl().sendNotification(
+        childId: childId,
+        type: 'clarification_response',
+        title: 'Teacher Responded to Clarification',
+        body: 'Teacher responded to your question regarding "$category".',
+        referenceId: referenceId,
+      );
+    } catch (e) {
+      print("Notification Error: $e");
+    }
   }
 }

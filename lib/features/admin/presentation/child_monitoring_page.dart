@@ -23,8 +23,11 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
   List<ChildModel> _filteredChildren = [];
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _tableHorizontalController = ScrollController();
+  final ScrollController _tableVerticalController = ScrollController();
   String _searchQuery = '';
   String _selectedGenderFilter = 'All';
+  String _selectedSectionFilter = 'All Sections';
   int? _sortColumnIndex;
   bool _sortAscending = true;
   int _currentPage = 0;
@@ -66,8 +69,11 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
         final matchesGender =
             _selectedGenderFilter == 'All' ||
             child.gender.toLowerCase() == _selectedGenderFilter.toLowerCase();
+        final matchesSection =
+            _selectedSectionFilter == 'All Sections' ||
+            child.section.label == _selectedSectionFilter;
 
-        return matchesSearch && matchesGender;
+        return matchesSearch && matchesGender && matchesSection;
       }).toList();
 
       if (_sortColumnIndex != null) {
@@ -88,14 +94,17 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
               result = a.age.compareTo(b.age);
               break;
             case 3:
-              result = a.gender.compareTo(b.gender);
+              result = a.section.label.compareTo(b.section.label);
               break;
             case 4:
+              result = a.gender.compareTo(b.gender);
+              break;
+            case 5:
               result = a.teacherName.toLowerCase().compareTo(
                 b.teacherName.toLowerCase(),
               );
               break;
-            case 5:
+            case 6:
               result = a.parentName.toLowerCase().compareTo(
                 b.parentName.toLowerCase(),
               );
@@ -125,6 +134,8 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
   @override
   void dispose() {
     _searchController.dispose();
+    _tableHorizontalController.dispose();
+    _tableVerticalController.dispose();
     super.dispose();
   }
 
@@ -162,10 +173,7 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
                         child: Text('No matching child records found.'),
                       )
                     else ...[
-                      _buildResponsiveList(
-                        paginatedChildren,
-                        false,
-                      ),
+                      _buildResponsiveList(paginatedChildren, false),
                       _buildPaginationControls(totalItems, totalPages),
                     ],
                     const SizedBox(height: 24),
@@ -361,16 +369,53 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
               _applyFilterAndSort();
             },
           );
+          final sectionFilter = DropdownButtonFormField<String>(
+            initialValue: _selectedSectionFilter,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'Filter section',
+              prefixIcon: Icon(Icons.groups_rounded),
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            items: [
+              const DropdownMenuItem(
+                value: 'All Sections',
+                child: Text('All sections'),
+              ),
+              ...ChildSection.values.map(
+                (section) => DropdownMenuItem(
+                  value: section.label,
+                  child: Text('${section.label} (${section.ageRange})'),
+                ),
+              ),
+            ],
+            onChanged: (value) {
+              setState(() {
+                _selectedSectionFilter = value ?? 'All Sections';
+                _currentPage = 0;
+              });
+              _applyFilterAndSort();
+            },
+          );
           if (constraints.maxWidth < 680) {
             return Column(
-              children: [search, const SizedBox(height: 10), filter],
+              children: [
+                search,
+                const SizedBox(height: 10),
+                filter,
+                const SizedBox(height: 10),
+                sectionFilter,
+              ],
             );
           }
           return Row(
             children: [
               Expanded(child: search),
               const SizedBox(width: 16),
-              SizedBox(width: 210, child: filter),
+              SizedBox(width: 180, child: filter),
+              const SizedBox(width: 12),
+              SizedBox(width: 265, child: sectionFilter),
             ],
           );
         },
@@ -378,122 +423,245 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
     );
   }
 
-  Widget _buildResponsiveList(
-    List<ChildModel> paginatedChildren,
-    bool isWide,
-  ) {
+  Widget _buildResponsiveList(List<ChildModel> paginatedChildren, bool isWide) {
     final embedded = MediaQuery.sizeOf(context).width < 700;
     if (isWide && kIsWeb) {
-      return SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Center(
-          child: SizedBox(
-            width: 1200,
-            child: Card(
-              clipBehavior: Clip.antiAlias,
-              shape: RoundedRectangleBorder(
-                side: BorderSide(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: DataTable(
-                sortColumnIndex: _sortColumnIndex,
-                sortAscending: _sortAscending,
-                headingRowColor: WidgetStateProperty.all(
-                  Theme.of(context).colorScheme.surfaceContainer,
-                ),
-                columns: [
-                  DataColumn(
-                    label: const Text(
-                      'Child Name',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+      return LayoutBuilder(
+        builder: (context, constraints) => Padding(
+          padding: const EdgeInsets.all(24),
+          child: Scrollbar(
+            controller: _tableVerticalController,
+            thumbVisibility: true,
+            trackVisibility: true,
+            interactive: true,
+            notificationPredicate: (notification) =>
+                notification.metrics.axis == Axis.vertical,
+            child: SingleChildScrollView(
+              controller: _tableVerticalController,
+              child: Scrollbar(
+                controller: _tableHorizontalController,
+                thumbVisibility: true,
+                trackVisibility: true,
+                interactive: true,
+                notificationPredicate: (notification) =>
+                    notification.metrics.axis == Axis.horizontal,
+                child: SingleChildScrollView(
+                  controller: _tableHorizontalController,
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minWidth: constraints.maxWidth < 1120
+                          ? 1120
+                          : constraints.maxWidth,
                     ),
-                    onSort: (index, ascending) => _sort(index, ascending),
-                  ),
-                  DataColumn(
-                    label: const Text(
-                      'Child ID',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    onSort: (index, ascending) => _sort(index, ascending),
-                  ),
-                  DataColumn(
-                    label: const Text(
-                      'Age',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    onSort: (index, ascending) => _sort(index, ascending),
-                  ),
-                  DataColumn(
-                    label: const Text(
-                      'Gender',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    onSort: (index, ascending) => _sort(index, ascending),
-                  ),
-                  DataColumn(
-                    label: const Text(
-                      'Teacher',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    onSort: (index, ascending) => _sort(index, ascending),
-                  ),
-                  DataColumn(
-                    label: const Text(
-                      'Parent/Guardian',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    onSort: (index, ascending) => _sort(index, ascending),
-                  ),
-                  const DataColumn(
-                    label: Text(
-                      'Action',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-                rows: paginatedChildren.map((child) {
-                  return DataRow(
-                    cells: [
-                      DataCell(
-                        Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 14,
+                    child: Card(
+                      clipBehavior: Clip.antiAlias,
+                      shape: RoundedRectangleBorder(
+                        side: BorderSide(
+                          color: Theme.of(context).colorScheme.outlineVariant,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: DataTable(
+                        horizontalMargin: 16,
+                        columnSpacing: 16,
+                        sortColumnIndex: _sortColumnIndex,
+                        sortAscending: _sortAscending,
+                        headingRowColor: WidgetStateProperty.all(
+                          Theme.of(context).colorScheme.surfaceContainer,
+                        ),
+                        columns: [
+                          DataColumn(
+                            label: const SizedBox(
+                              width: 180,
                               child: Text(
-                                child.firstName[0].toUpperCase(),
-                                style: const TextStyle(fontSize: 12),
+                                'Child Name',
+                                style: TextStyle(fontWeight: FontWeight.bold),
                               ),
                             ),
-                            const SizedBox(width: 12),
-                            Text(
-                              '${child.firstName} ${child.lastName}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      DataCell(Text(child.childId)),
-                      DataCell(Text('${child.age} yrs')),
-                      DataCell(Text(child.gender)),
-                      DataCell(Text(child.teacherName)),
-                      DataCell(Text(child.parentName)),
-                      DataCell(
-                        IconButton(
-                          icon: const Icon(
-                            Icons.analytics_outlined,
-                            color: Colors.blue,
+                            onSort: (index, ascending) =>
+                                _sort(index, ascending),
                           ),
-                          onPressed: () => _viewChildDetails(child),
-                          tooltip: 'View Full Record & Case Assessment',
-                        ),
+                          DataColumn(
+                            label: const SizedBox(
+                              width: 130,
+                              child: Text(
+                                'Child ID',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            onSort: (index, ascending) =>
+                                _sort(index, ascending),
+                          ),
+                          DataColumn(
+                            label: const SizedBox(
+                              width: 50,
+                              child: Text(
+                                'Age',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            onSort: (index, ascending) =>
+                                _sort(index, ascending),
+                          ),
+                          DataColumn(
+                            label: const SizedBox(
+                              width: 100,
+                              child: Text(
+                                'Section',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            onSort: (index, ascending) =>
+                                _sort(index, ascending),
+                          ),
+                          DataColumn(
+                            label: const SizedBox(
+                              width: 70,
+                              child: Text(
+                                'Gender',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            onSort: (index, ascending) =>
+                                _sort(index, ascending),
+                          ),
+                          DataColumn(
+                            label: const SizedBox(
+                              width: 145,
+                              child: Text(
+                                'Teacher',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            onSort: (index, ascending) =>
+                                _sort(index, ascending),
+                          ),
+                          DataColumn(
+                            label: const SizedBox(
+                              width: 165,
+                              child: Text(
+                                'Parent/Guardian',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            onSort: (index, ascending) =>
+                                _sort(index, ascending),
+                          ),
+                          const DataColumn(
+                            label: SizedBox(
+                              width: 50,
+                              child: Text(
+                                'Action',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                        ],
+                        rows: paginatedChildren.map((child) {
+                          return DataRow(
+                            cells: [
+                              DataCell(
+                                SizedBox(
+                                  width: 180,
+                                  child: Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 14,
+                                        child: Text(
+                                          child.firstName[0].toUpperCase(),
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          '${child.firstName} ${child.lastName}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                SizedBox(
+                                  width: 130,
+                                  child: Text(
+                                    child.childId,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                SizedBox(
+                                  width: 50,
+                                  child: Text('${child.age} yrs'),
+                                ),
+                              ),
+                              DataCell(
+                                SizedBox(
+                                  width: 100,
+                                  child: Text(
+                                    child.section.label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                SizedBox(
+                                  width: 70,
+                                  child: Text(
+                                    child.gender,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                SizedBox(
+                                  width: 145,
+                                  child: Text(
+                                    child.teacherName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                SizedBox(
+                                  width: 165,
+                                  child: Text(
+                                    child.parentName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.analytics_outlined,
+                                    color: Colors.blue,
+                                  ),
+                                  onPressed: () => _viewChildDetails(child),
+                                  tooltip: 'View Full Record & Case Assessment',
+                                ),
+                              ),
+                            ],
+                          );
+                        }).toList(),
                       ),
-                    ],
-                  );
-                }).toList(),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -519,7 +687,7 @@ class _ChildMonitoringPageState extends State<ChildMonitoringPage> {
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             subtitle: Text(
-              'ID: ${child.childId} | Teacher: ${child.teacherName}',
+              'ID: ${child.childId} | ${child.section.label}\nTeacher: ${child.teacherName}',
             ),
             trailing: const Icon(Icons.analytics_outlined, color: Colors.blue),
             onTap: () => _viewChildDetails(child),
@@ -598,6 +766,7 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
   List<EvaluationModel> _evaluations = [];
   List<ParentFeedbackModel> _feedback = [];
   TriangulationModel? _latestTriangulation;
+  String? _loadWarning;
 
   @override
   void initState() {
@@ -609,64 +778,106 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
     final String cid = widget.child.childId;
 
     if (kIsWeb) {
-      final attSnap = await _firestore
-          .collection('attendance')
-          .where('child_id', isEqualTo: cid)
-          .get();
-      final evalSnap = await _firestore
-          .collection('evaluations')
-          .where('child_id', isEqualTo: cid)
-          .get();
-      final feedSnap = await _firestore
-          .collection('parent_feedback')
-          .where('child_id', isEqualTo: cid)
-          .get();
-      final triSnap = await _firestore
-          .collection('triangulations')
-          .where('child_id', isEqualTo: cid)
-          .get();
+      final warnings = <String>[];
+      var attendance = <AttendanceModel>[];
+      var evaluations = <EvaluationModel>[];
+      var feedback = <ParentFeedbackModel>[];
+      TriangulationModel? triangulation;
 
+      // Attendance is stored in attendance_events. Fetch every source
+      // independently so one inaccessible or empty source cannot keep the
+      // full-record screen loading forever.
+      try {
+        final snapshot = await _firestore
+            .collection('attendance_events')
+            .where('child_id', isEqualTo: cid)
+            .get();
+        attendance = snapshot.docs
+            .map((document) => AttendanceModel.fromMap(document.data()))
+            .toList();
+      } catch (_) {
+        warnings.add('attendance');
+      }
+      try {
+        final snapshot = await _firestore
+            .collection('evaluations')
+            .where('child_id', isEqualTo: cid)
+            .get();
+        evaluations = snapshot.docs
+            .map((document) => EvaluationModel.fromMap(document.data()))
+            .toList();
+      } catch (_) {
+        warnings.add('evaluations');
+      }
+      try {
+        final snapshot = await _firestore
+            .collection('parent_feedback')
+            .where('child_id', isEqualTo: cid)
+            .get();
+        feedback = snapshot.docs
+            .map((document) => ParentFeedbackModel.fromMap(document.data()))
+            .toList();
+      } catch (_) {
+        warnings.add('parent feedback');
+      }
+      try {
+        final snapshot = await _firestore
+            .collection('triangulations')
+            .where('child_id', isEqualTo: cid)
+            .get();
+        final records =
+            snapshot.docs
+                .map((document) => TriangulationModel.fromMap(document.data()))
+                .toList()
+              ..sort((a, b) => b.generatedDate.compareTo(a.generatedDate));
+        if (records.isNotEmpty) triangulation = records.first;
+      } catch (_) {
+        warnings.add('triangulation');
+      }
+
+      if (!mounted) return;
       setState(() {
-        _attendance = attSnap.docs
-            .map((d) => AttendanceModel.fromMap(d.data()))
-            .toList();
-        _evaluations = evalSnap.docs
-            .map((d) => EvaluationModel.fromMap(d.data()))
-            .toList();
-        _feedback = feedSnap.docs
-            .map((d) => ParentFeedbackModel.fromMap(d.data()))
-            .toList();
-        if (triSnap.docs.isNotEmpty) {
-          _latestTriangulation = TriangulationModel.fromMap(
-            triSnap.docs.first.data(),
-          );
-        }
+        _attendance = attendance;
+        _evaluations = evaluations;
+        _feedback = feedback;
+        _latestTriangulation = triangulation;
+        _loadWarning = warnings.isEmpty
+            ? null
+            : 'Some records could not be loaded: ${warnings.join(', ')}.';
         _isLoading = false;
       });
     } else {
-      final db = DatabaseHelper.instance;
-      final attendanceData = await db.getChildAttendanceHistory(cid);
-      final evaluationData = await db.getChildEvaluationHistory(cid);
-      final feedbackData = await db.getFeedbackByChild(cid);
-      final triangulationData = await db.getTriangulationHistory(cid);
-
-      setState(() {
-        _attendance = attendanceData
-            .map((e) => AttendanceModel.fromMap(e))
-            .toList();
-        _evaluations = evaluationData
-            .map((e) => EvaluationModel.fromMap(e))
-            .toList();
-        _feedback = feedbackData
-            .map((e) => ParentFeedbackModel.fromMap(e))
-            .toList();
-        if (triangulationData.isNotEmpty) {
-          _latestTriangulation = TriangulationModel.fromMap(
-            triangulationData.first,
-          );
-        }
-        _isLoading = false;
-      });
+      try {
+        final db = DatabaseHelper.instance;
+        final attendanceData = await db.getChildAttendanceHistory(cid);
+        final evaluationData = await db.getChildEvaluationHistory(cid);
+        final feedbackData = await db.getFeedbackByChild(cid);
+        final triangulationData = await db.getTriangulationHistory(cid);
+        if (!mounted) return;
+        setState(() {
+          _attendance = attendanceData
+              .map((item) => AttendanceModel.fromMap(item))
+              .toList();
+          _evaluations = evaluationData
+              .map((item) => EvaluationModel.fromMap(item))
+              .toList();
+          _feedback = feedbackData
+              .map((item) => ParentFeedbackModel.fromMap(item))
+              .toList();
+          if (triangulationData.isNotEmpty) {
+            _latestTriangulation = TriangulationModel.fromMap(
+              triangulationData.first,
+            );
+          }
+          _isLoading = false;
+        });
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _loadWarning = 'Child records could not be loaded on this device.';
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -691,6 +902,21 @@ class _ChildDetailDialogState extends State<_ChildDetailDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (_loadWarning != null) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withValues(alpha: .10),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          _loadWarning!,
+                          style: const TextStyle(color: Colors.deepOrange),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
                     _buildSectionHeader('Profile Information', Icons.person),
                     _buildProfileInfo(),
                     const SizedBox(height: 32),

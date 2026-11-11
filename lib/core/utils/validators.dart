@@ -3,6 +3,83 @@ class Validators {
 
   static final RegExp _phoneRegex = RegExp(r'^(09|\+639)\d{9}$');
 
+  static const Set<String> _blockedLanguage = {
+    'asshole',
+    'bastard',
+    'bitch',
+    'bobo',
+    'bugok',
+    'buang',
+    'bullshit',
+    'buwisit',
+    'cunt',
+    'dick',
+    'fuck',
+    'fucking',
+    'gago',
+    'gaga',
+    'gagi',
+    'hayop ka',
+    'hindot',
+    'inutil',
+    'kupal',
+    'mamatay ka',
+    'patayin kita',
+    'puki',
+    'pakyu',
+    'peste',
+    'puta',
+    'putang ina',
+    'putangina',
+    'putanginamo',
+    'putanginanyo',
+    'sira ulo',
+    'shit',
+    'slut',
+    'tanga',
+    'tangina',
+    'tanginamo',
+    'tanginanyo',
+    'tarantado',
+    'ulol',
+    'whore',
+    'yawa',
+  };
+
+  /// Validates messages intended for other users, including common Filipino
+  /// and English profanity, insults, and threatening phrases.
+  static String? validateAppropriateText(
+    String? value,
+    String fieldName, {
+    bool required = false,
+  }) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) {
+      return required ? '$fieldName is required' : null;
+    }
+    if (_containsBlockedLanguage(text)) {
+      return 'Please remove offensive, abusive, or inappropriate language from $fieldName.';
+    }
+    return null;
+  }
+
+  static bool _containsBlockedLanguage(String value) {
+    final normalized = value
+        .toLowerCase()
+        .replaceAll('@', 'a')
+        .replaceAll(r'$', 's')
+        .replaceAll('0', 'o')
+        .replaceAll('1', 'i')
+        .replaceAll('3', 'e')
+        .replaceAll('4', 'a')
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .trim();
+    final padded = ' $normalized ';
+    return _blockedLanguage.any(
+      (term) => RegExp('(^|\\s)${RegExp.escape(term)}(?=\\s)').hasMatch(padded),
+    );
+  }
+
   static String? validateEmail(String? value) {
     if (value == null || value.trim().isEmpty) {
       return 'Email address is required';
@@ -60,11 +137,32 @@ class Validators {
   static String? validatePersonName(String? value, String fieldName) {
     final name = value?.trim() ?? '';
     if (name.isEmpty) return '$fieldName is required';
-    if (name.length < 2) {
+    if (!RegExp(r'^[A-Za-z]+(?: [A-Za-z]+)*$').hasMatch(name)) {
+      return '$fieldName may contain letters and spaces only; numbers and special characters are not allowed';
+    }
+    final letterCount = RegExp(r'[A-Za-z]').allMatches(name).length;
+    if (letterCount < 2) {
       return '$fieldName must contain at least 2 letters';
     }
-    if (!RegExp(r'^[A-Za-z]+(?: [A-Za-z]+)*$').hasMatch(name)) {
-      return '$fieldName may contain letters and spaces only (no special characters)';
+    return null;
+  }
+
+  /// Teacher names may include a period for a middle initial or title, such as
+  /// "Jericho A. Taleon". Child and parent name validation remains stricter.
+  static String? validateTeacherName(String? value, String fieldName) {
+    final name = value?.trim() ?? '';
+    if (name.isEmpty) return '$fieldName is required';
+
+    // Accept words separated by one space, or a period optionally followed by
+    // one space. This permits initials without accepting arbitrary symbols.
+    if (!RegExp(r'^[A-Za-z]+(?: [A-Za-z]+|\. ?[A-Za-z]+)*\.?$')
+        .hasMatch(name)) {
+      return '$fieldName may contain letters, spaces, and periods only';
+    }
+
+    final letterCount = RegExp(r'[A-Za-z]').allMatches(name).length;
+    if (letterCount < 2) {
+      return '$fieldName must contain at least 2 letters';
     }
     return null;
   }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/database/database_helper.dart';
+import '../../../shared/models/child_model.dart';
 import '../../../shared/widgets/brand_widgets.dart';
 import '../../referral/data/referral_repository.dart';
 import '../../referral/domain/referral_model.dart';
@@ -16,8 +18,10 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
   final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> _allReferrals = [];
   List<Map<String, dynamic>> _filteredReferrals = [];
+  List<ChildModel> _children = [];
   String _searchQuery = '';
   String _selectedFilter = 'All';
+  String _selectedSectionFilter = 'All Sections';
   bool _isLoading = true;
   String? _errorMessage;
   int? _sortColumnIndex;
@@ -28,6 +32,7 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
   static const _statusFilters = [
     'All',
     'Pending',
+    'Under Review',
     'Referred',
     'For Follow-Up',
     'Completed',
@@ -46,10 +51,16 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
       _errorMessage = null;
     });
     try {
-      final data = await _repository.getAllReferrals();
+      final results = await Future.wait([
+        _repository.getAllReferrals(),
+        DatabaseHelper.instance.getAllChildren(includeInactive: true),
+      ]);
+      final data = results[0] as List<Map<String, dynamic>>;
+      final children = results[1] as List<ChildModel>;
       if (!mounted) return;
       setState(() {
         _allReferrals = data;
+        _children = children;
         _applyFilterAndSort();
       });
     } catch (_) {
@@ -63,6 +74,12 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
 
   void _applyFilterAndSort() {
     final query = _searchQuery.trim().toLowerCase();
+    final sectionChildIds = _selectedSectionFilter == 'All Sections'
+        ? null
+        : _children
+              .where((child) => child.section.label == _selectedSectionFilter)
+              .map((child) => child.childId)
+              .toSet();
     _filteredReferrals = _allReferrals.where((referral) {
       final childName =
           '${referral['first_name'] ?? ''} ${referral['last_name'] ?? ''}'
@@ -73,7 +90,9 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
               childName.contains(query) ||
               concern.contains(query) ||
               status.contains(query)) &&
-          (_selectedFilter == 'All' || referral['status'] == _selectedFilter);
+          (_selectedFilter == 'All' || referral['status'] == _selectedFilter) &&
+          (sectionChildIds == null ||
+              sectionChildIds.contains(referral['child_id']));
     }).toList();
 
     if (_sortColumnIndex != null) {
@@ -86,6 +105,7 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
           1 => ('${a['concern'] ?? ''}', '${b['concern'] ?? ''}'),
           2 => ('${a['referral_date'] ?? ''}', '${b['referral_date'] ?? ''}'),
           3 => ('${a['follow_up_date'] ?? ''}', '${b['follow_up_date'] ?? ''}'),
+          4 => ('${a['admin_guidance'] ?? ''}', '${b['admin_guidance'] ?? ''}'),
           _ => ('${a['status'] ?? ''}', '${b['status'] ?? ''}'),
         };
         final result = values.$1.compareTo(values.$2);
@@ -107,29 +127,105 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
 
   Future<void> _updateStatus(Map<String, dynamic> referralData) async {
     final referral = ReferralModel.fromMap(referralData);
-    final status = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Update Referral Status'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: _statusFilters
-              .where((item) => item != 'All')
-              .map(
-                (item) => RadioListTile<String>(
-                  title: Text(item),
-                  value: item,
-                  groupValue: referral.status,
-                  onChanged: (value) => Navigator.pop(context, value),
-                ),
-              )
-              .toList(),
-        ),
-      ),
+    final guidanceController = TextEditingController(
+      text: referral.adminGuidance ?? '',
     );
-    if (status == null || status == referral.status) return;
-    await _repository.updateReferral(referral.copyWith(status: status));
-    await _loadReferrals();
+    final update = await showDialog<_AdminReferralUpdate>(
+      context: context,
+      builder: (context) {
+        var selectedStatus = referral.status;
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Review Referral & Guide Teacher'),
+            content: SizedBox(
+              width: 440,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Case status',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 4),
+                    ..._statusFilters
+                        .where((item) => item != 'All')
+                        .map(
+                          (item) => RadioListTile<String>(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(item),
+                            value: item,
+                            groupValue: selectedStatus,
+                            onChanged: (value) => setDialogState(
+                              () => selectedStatus = value ?? selectedStatus,
+                            ),
+                          ),
+                        ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: guidanceController,
+                      minLines: 3,
+                      maxLines: 5,
+                      maxLength: 1200,
+                      decoration: const InputDecoration(
+                        labelText: 'Admin guidance for teacher',
+                        alignLabelWithHint: true,
+                        hintText: 'Example: Use visual cues during group activities, observe for two weeks, then add a progress note.',
+                        border: OutlineInputBorder(),
+                        helperText: 'Visible to the assigned teacher. Do not include a diagnosis.',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(
+                  context,
+                  _AdminReferralUpdate(
+                    status: selectedStatus,
+                    guidance: guidanceController.text.trim(),
+                  ),
+                ),
+                child: const Text('Save guidance'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    guidanceController.dispose();
+    if (update == null) return;
+    final currentGuidance = referral.adminGuidance?.trim() ?? '';
+    if (update.status == referral.status &&
+        update.guidance == currentGuidance) {
+      return;
+    }
+    try {
+      final reviewedAt = DateTime.now();
+      await _repository.updateReferral(
+        referral.copyWith(
+          status: update.status,
+          adminGuidance: update.guidance,
+          adminGuidanceUpdatedAt: update.guidance.isEmpty
+              ? referral.adminGuidanceUpdatedAt
+              : reviewedAt.toIso8601String(),
+          updatedAt: reviewedAt.toIso8601String(),
+        ),
+      );
+      await _loadReferrals();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to save referral guidance: $error')),
+      );
+    }
   }
 
   @override
@@ -221,13 +317,47 @@ class _ReferralMonitoringPageState extends State<ReferralMonitoringPage> {
         _updateFilter();
       },
     );
+    final sectionFilter = DropdownButtonFormField<String>(
+      initialValue: _selectedSectionFilter,
+      isExpanded: true,
+      decoration: _fieldDecoration(
+        hint: 'Filter section',
+        icon: Icons.groups_rounded,
+      ),
+      items: [
+        const DropdownMenuItem(
+          value: 'All Sections',
+          child: Text('All sections'),
+        ),
+        ...ChildSection.values.map(
+          (section) => DropdownMenuItem(
+            value: section.label,
+            child: Text('${section.label} (${section.ageRange})'),
+          ),
+        ),
+      ],
+      onChanged: (value) {
+        _selectedSectionFilter = value ?? 'All Sections';
+        _updateFilter();
+      },
+    );
     return stacked
-        ? Column(children: [search, const SizedBox(height: 12), filter])
+        ? Column(
+            children: [
+              search,
+              const SizedBox(height: 12),
+              filter,
+              const SizedBox(height: 12),
+              sectionFilter,
+            ],
+          )
         : Row(
             children: [
-              Expanded(flex: 3, child: search),
+              Expanded(flex: 2, child: search),
               const SizedBox(width: 16),
               Expanded(child: filter),
+              const SizedBox(width: 12),
+              Expanded(flex: 2, child: sectionFilter),
             ],
           );
   }
@@ -349,13 +479,13 @@ class _ReferralHero extends StatelessWidget {
                   ],
                 )
               : Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _referralIcon(),
-              const SizedBox(width: 22),
-              Expanded(child: _referralText()),
-            ],
-          ),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _referralIcon(),
+                    const SizedBox(width: 22),
+                    Expanded(child: _referralText()),
+                  ],
+                ),
         ),
       ],
     ),
@@ -528,7 +658,8 @@ class _ReferralTable extends StatelessWidget {
               _column('Concern', Icons.assignment_late_rounded, 1),
               _column('Referral Date', Icons.calendar_month_rounded, 2),
               _column('Follow-Up', Icons.event_repeat_rounded, 3),
-              _column('Status', Icons.flag_rounded, 4),
+              _column('Admin Guidance', Icons.lightbulb_outline_rounded, 4),
+              _column('Status', Icons.flag_rounded, 5),
               const DataColumn(label: Text('')),
             ],
             rows: records.map(_row).toList(),
@@ -590,17 +721,37 @@ class _ReferralTable extends StatelessWidget {
             style: const TextStyle(color: Color(0xFF53698D)),
           ),
         ),
+        DataCell(
+          SizedBox(
+            width: 240,
+            child: Text(
+              (record['admin_guidance']?.toString().trim().isNotEmpty ?? false)
+                  ? record['admin_guidance'].toString()
+                  : 'No guidance added yet',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Color(0xFF53698D)),
+            ),
+          ),
+        ),
         DataCell(_StatusBadge(status: status)),
         DataCell(
           IconButton(
             icon: const Icon(Icons.edit_note_rounded, color: BrandColors.sky),
-            tooltip: 'Update status',
+            tooltip: 'Review referral and guide teacher',
             onPressed: () => onUpdateStatus(record),
           ),
         ),
       ],
     );
   }
+}
+
+class _AdminReferralUpdate {
+  const _AdminReferralUpdate({required this.status, required this.guidance});
+
+  final String status;
+  final String guidance;
 }
 
 class _StatusBadge extends StatelessWidget {
@@ -610,6 +761,7 @@ class _StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = switch (status) {
       'Pending' => const Color(0xFFF39A15),
+      'Under Review' => const Color(0xFF5B70C9),
       'Referred' => BrandColors.sky,
       'For Follow-Up' => const Color(0xFF9B34D2),
       'Completed' => BrandColors.green,

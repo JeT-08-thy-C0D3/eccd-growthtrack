@@ -132,8 +132,11 @@ class _TeacherClarificationsPageState extends State<TeacherClarificationsPage> {
                     hintText: 'Enter your response for the parent...',
                     alignLabelWithHint: true,
                   ),
-                  validator: (v) =>
-                      Validators.validateRequired(v, 'Teacher Response'),
+                  validator: (v) => Validators.validateAppropriateText(
+                    v,
+                    'Teacher Response',
+                    required: true,
+                  ),
                 ),
               ],
             ),
@@ -154,17 +157,31 @@ class _TeacherClarificationsPageState extends State<TeacherClarificationsPage> {
                     ? rawId
                     : int.tryParse(rawId.toString()) ?? 0;
 
-                await _repository.respondToRequest(
-                  id,
-                  responseController.text.trim(),
-                  teacherId,
-                );
-
-                if (mounted) {
-                  Navigator.pop(context);
-                  _loadRequests();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Response sent to parent!')),
+                try {
+                  await _repository.respondToRequest(
+                    id,
+                    responseController.text.trim(),
+                    teacherId,
+                    documentId: item['doc_id']?.toString(),
+                  );
+                  if (!mounted) return;
+                  Navigator.of(this.context).pop();
+                  await _loadRequests();
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(this.context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Response saved. This request is now Responded.',
+                      ),
+                    ),
+                  );
+                } catch (error) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(this.context).showSnackBar(
+                    SnackBar(
+                      content: Text('Unable to save response: $error'),
+                      backgroundColor: Colors.red,
+                    ),
                   );
                 }
               }
@@ -223,7 +240,10 @@ class _TeacherClarificationsPageState extends State<TeacherClarificationsPage> {
                     itemCount: _filteredRequests.length,
                     itemBuilder: (context, index) {
                       final item = _filteredRequests[index];
-                      final isResponded = item['status'] == 'Responded';
+                      final isResponded =
+                          (item['status']?.toString() ?? '').toLowerCase() ==
+                          'responded';
+                      final response = item['response']?.toString().trim();
 
                       return Card(
                         margin: const EdgeInsets.only(bottom: 12),
@@ -294,10 +314,12 @@ class _TeacherClarificationsPageState extends State<TeacherClarificationsPage> {
                                 'Q: ${item['message']}',
                                 style: const TextStyle(fontSize: 14),
                               ),
-                              if (isResponded && item['response'] != null) ...[
+                              if (isResponded &&
+                                  response != null &&
+                                  response.isNotEmpty) ...[
                                 const SizedBox(height: 8),
                                 Text(
-                                  'Response: ${item['response']}',
+                                  'Teacher response: $response',
                                   style: const TextStyle(
                                     fontSize: 13,
                                     color: Colors.green,

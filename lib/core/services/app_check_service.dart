@@ -1,17 +1,8 @@
-/// Firebase App Check Service
-///
-/// Implements Firebase App Check to prevent abuse and ensure
-/// only legitimate clients access Firebase services.
-///
-/// Supports:
-/// - SafetyNet (Android)
-/// - DeviceCheck (iOS)
-/// - reCAPTCHA v3 (Web)
-/// - Custom token provider (for testing)
+/// Firebase App Check setup for Firebase-protected app features.
 library;
 
 import 'package:firebase_app_check/firebase_app_check.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 
 class AppCheckService {
   static final AppCheckService _instance = AppCheckService._init();
@@ -20,76 +11,65 @@ class AppCheckService {
 
   factory AppCheckService() => _instance;
 
-  /// Initialize Firebase App Check
-  ///
-  /// Must be called BEFORE FirebaseApp initialization for full coverage.
-  /// In main.dart:
-  ///   await Firebase.initializeApp();
-  ///   await AppCheckService().initialize();
+  /// Call this after Firebase.initializeApp().
   Future<void> initialize() async {
     try {
-      await FirebaseAppCheck.instance.activate(
-        webProvider: kIsWeb
-            ? ReCaptchaV3Provider('YOUR_RECAPTCHA_V3_PUBLIC_KEY')
-            : null,
-        androidProvider: AndroidProvider.safetyNet,
-        appleProvider: AppleProvider.deviceCheck,
-      );
+      // Firebase now registers web App Check through Google Cloud Fraud
+      // Defense (formerly reCAPTCHA Enterprise). Avoid activating a
+      // placeholder because it would break every protected request.
+      if (kIsWeb) {
+        const webSiteKey = String.fromEnvironment(
+          'RECAPTCHA_ENTERPRISE_SITE_KEY',
+        );
+        if (webSiteKey.isEmpty) return;
+        await FirebaseAppCheck.instance.activate(
+          webProvider: ReCaptchaEnterpriseProvider(webSiteKey),
+        );
+        // Request a token at startup so a localhost debug build immediately
+        // prints the Firebase debug secret in Chrome DevTools. Without this,
+        // the token is only requested later by Firebase AI and is easy to
+        // miss among the request errors.
+        await FirebaseAppCheck.instance.setTokenAutoRefreshEnabled(true);
+        await FirebaseAppCheck.instance.getToken(true);
+        debugPrint('Firebase App Check web token acquired.');
+        return;
+      }
 
-      print('✓ Firebase App Check initialized successfully');
-    } catch (e) {
-      print('⚠️ Firebase App Check initialization warning: $e');
-      // Don't fail app startup - App Check failures shouldn't break app
-      // but will reduce Firebase functionality
+      await FirebaseAppCheck.instance.activate(
+        // Copy the debug token shown in the run log into Firebase App Check
+        // during development. Release builds use device attestation instead.
+        androidProvider: kDebugMode
+            ? AndroidProvider.debug
+            : AndroidProvider.playIntegrity,
+        appleProvider: kDebugMode
+            ? AppleProvider.debug
+            : AppleProvider.deviceCheck,
+      );
+      debugPrint('Firebase App Check initialized successfully');
+    } catch (error) {
+      // App Check registration should not stop the whole application from
+      // launching; Firebase AI requests will report their own actionable error.
+      debugPrint('Firebase App Check initialization warning: $error');
     }
   }
 
-  /// Get current App Check token
-  ///
-  /// This token is automatically attached to Firestore, Storage,
-  /// and Cloud Functions requests.
   Future<String?> getToken() async {
     try {
       return await FirebaseAppCheck.instance.getToken(false);
-    } catch (e) {
-      print('Error getting App Check token: $e');
+    } catch (error) {
+      debugPrint('Error getting App Check token: $error');
       return null;
     }
   }
 
-  /// Refresh App Check token
   Future<String?> refreshToken() async {
     try {
       return await FirebaseAppCheck.instance.getToken(true);
-    } catch (e) {
-      print('Error refreshing App Check token: $e');
+    } catch (error) {
+      debugPrint('Error refreshing App Check token: $error');
       return null;
     }
   }
 
-  /// Listen to App Check token changes
-  ///
-  /// Token is automatically refreshed periodically by Firebase.
-  /// Use this to update your app state if needed.
-  Stream<String?> get tokenStream {
-    return FirebaseAppCheck.instance.onTokenChange;
-  }
-
-  /// Set App Check enforcement level (debug only)
-  ///
-  /// WARNING: Only use for testing. Production requires valid app provisioning.
-  static Future<void> setDebugMode() async {
-    if (kIsWeb) {
-      // Web debug mode not recommended in production
-      print('⚠️ App Check debug mode on web - review for production');
-    } else {
-      try {
-        // Note: setCustomTokenProvider for Android/iOS testing
-        // This should only be used with test backend
-        print('⚠️ Debug mode enabled - only use for development');
-      } catch (e) {
-        print('Error enabling debug mode: $e');
-      }
-    }
-  }
+  Stream<String?> get tokenStream => FirebaseAppCheck.instance.onTokenChange;
 }

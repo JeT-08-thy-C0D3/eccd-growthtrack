@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/database/database_helper.dart';
+import '../../../core/utils/validators.dart';
 import '../../../shared/models/child_model.dart';
 import '../../../shared/widgets/brand_widgets.dart';
 import '../../auth/data/auth_repository_impl.dart';
@@ -28,7 +29,9 @@ class _EvaluationPageState extends State<EvaluationPage> {
   ];
   List<ChildModel> _children = [];
   ChildModel? _selectedChild;
+  String _selectedSectionFilter = 'All Sections';
   String _selectedDomain = 'Gross Motor';
+  int _selectedScore = 0;
   bool _isLoading = true;
 
   @override
@@ -68,7 +71,7 @@ class _EvaluationPageState extends State<EvaluationPage> {
       EvaluationModel(
         childId: _selectedChild!.childId,
         domain: _selectedDomain,
-        score: 0,
+        score: _selectedScore,
         remarks: _remarksController.text.trim(),
         evaluationDate: DateFormat('yyyy-MM-dd').format(now),
         updatedAt: now.toIso8601String(),
@@ -76,9 +79,32 @@ class _EvaluationPageState extends State<EvaluationPage> {
     );
     if (!mounted) return;
     _remarksController.clear();
+    setState(() => _selectedScore = 0);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Evaluation saved successfully!')),
     );
+  }
+
+  List<ChildModel> get _sectionChildren =>
+      _selectedSectionFilter == 'All Sections'
+      ? _children
+      : _children
+            .where((child) => child.section.label == _selectedSectionFilter)
+            .toList();
+
+  void _onSectionChanged(String? section) {
+    final selectedSection = section ?? 'All Sections';
+    final children = selectedSection == 'All Sections'
+        ? _children
+        : _children
+              .where((child) => child.section.label == selectedSection)
+              .toList();
+    setState(() {
+      _selectedSectionFilter = selectedSection;
+      _selectedChild = children.contains(_selectedChild)
+          ? _selectedChild
+          : (children.isEmpty ? null : children.first);
+    });
   }
 
   @override
@@ -101,6 +127,35 @@ class _EvaluationPageState extends State<EvaluationPage> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           _hero(isPhone),
+                          const SizedBox(height: 24),
+                          const Text(
+                            'Workspace modules',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF102A72),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          _EvaluationWorkspaceModule(
+                            title: 'Triangulation',
+                            description: 'Compare teacher assessment, parent feedback, and historical records.',
+                            actionLabel: 'Review insights',
+                            icon: Icons.account_tree_rounded,
+                            color: BrandColors.sky,
+                            onTap: () =>
+                                Navigator.pushNamed(context, '/triangulation'),
+                          ),
+                          const SizedBox(height: 12),
+                          _EvaluationWorkspaceModule(
+                            title: 'AI-Assisted Summary',
+                            description: 'Create an editable development summary and parent recommendations for review.',
+                            actionLabel: 'Generate summary',
+                            icon: Icons.auto_awesome_rounded,
+                            color: const Color(0xFF7B1FA2),
+                            onTap: () =>
+                                Navigator.pushNamed(context, '/ai-summary'),
+                          ),
                           const SizedBox(height: 24),
                           Container(
                             padding: EdgeInsets.all(isPhone ? 18 : 28),
@@ -126,6 +181,31 @@ class _EvaluationPageState extends State<EvaluationPage> {
                                   compact: isPhone,
                                 ),
                                 const SizedBox(height: 14),
+                                DropdownButtonFormField<String>(
+                                  initialValue: _selectedSectionFilter,
+                                  isExpanded: true,
+                                  decoration: _input(
+                                    'Filter by Section',
+                                    Icons.groups_rounded,
+                                  ),
+                                  items: [
+                                    const DropdownMenuItem(
+                                      value: 'All Sections',
+                                      child: Text('All sections'),
+                                    ),
+                                    ...ChildSection.values.map(
+                                      (section) => DropdownMenuItem(
+                                        value: section.label,
+                                        child: Text(
+                                          '${section.label} (${section.ageRange})',
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  onChanged: _onSectionChanged,
+                                ),
+                                const SizedBox(height: 14),
                                 DropdownButtonFormField<ChildModel>(
                                   initialValue: _selectedChild,
                                   isExpanded: true,
@@ -133,7 +213,7 @@ class _EvaluationPageState extends State<EvaluationPage> {
                                     'Select Child',
                                     Icons.person,
                                   ),
-                                  items: _children
+                                  items: _sectionChildren
                                       .map(
                                         (child) => DropdownMenuItem(
                                           value: child,
@@ -175,6 +255,53 @@ class _EvaluationPageState extends State<EvaluationPage> {
                                 ),
                                 const SizedBox(height: 24),
                                 _section(
+                                  Icons.bar_chart_rounded,
+                                  'Assessment Score',
+                                  'Rate the observed skill for triangulation: 0 = not yet observed, 4 = consistently demonstrated.',
+                                  BrandColors.sky,
+                                  compact: isPhone,
+                                ),
+                                const SizedBox(height: 14),
+                                DropdownButtonFormField<int>(
+                                  initialValue: _selectedScore,
+                                  decoration: _input(
+                                    'Score (0–4)',
+                                    Icons.star_rate_rounded,
+                                  ),
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 0,
+                                      child: Text('0 — Not yet observed'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 1,
+                                      child: Text(
+                                        '1 — Emerging / needs full support',
+                                      ),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 2,
+                                      child: Text(
+                                        '2 — Developing / needs some support',
+                                      ),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 3,
+                                      child: Text('3 — Meets expectation'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 4,
+                                      child: Text(
+                                        '4 — Consistently demonstrated',
+                                      ),
+                                    ),
+                                  ],
+                                  onChanged: (score) => setState(
+                                    () => _selectedScore = score ?? 0,
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+                                _section(
                                   Icons.chat_bubble_rounded,
                                   'Remarks',
                                   'Add remarks or observations about the child’s progress.',
@@ -191,9 +318,11 @@ class _EvaluationPageState extends State<EvaluationPage> {
                                     Icons.comment_outlined,
                                   ).copyWith(alignLabelWithHint: true),
                                   validator: (value) =>
-                                      value == null || value.trim().isEmpty
-                                      ? 'Remarks are required'
-                                      : null,
+                                      Validators.validateAppropriateText(
+                                        value,
+                                        'Remarks',
+                                        required: true,
+                                      ),
                                 ),
                                 const SizedBox(height: 12),
                                 ElevatedButton.icon(
@@ -333,5 +462,86 @@ class _EvaluationPageState extends State<EvaluationPage> {
         ),
       ),
     ],
+  );
+}
+
+class _EvaluationWorkspaceModule extends StatelessWidget {
+  const _EvaluationWorkspaceModule({
+    required this.title,
+    required this.description,
+    required this.actionLabel,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String title;
+  final String description;
+  final String actionLabel;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(20),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: .2)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: .12),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(icon, color: color),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    actionLabel,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: color),
+          ],
+        ),
+      ),
+    ),
   );
 }

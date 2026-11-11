@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../auth/data/auth_repository_impl.dart';
 import '../../../core/database/database_helper.dart';
@@ -13,11 +14,13 @@ import '../../reports/presentation/reports_page.dart';
 import '../../reports/domain/development_summary_model.dart';
 import '../../notification/data/notification_repository.dart';
 import '../../notification/presentation/parent_notifications_page.dart';
+import '../../home_activities/data/activity_repository.dart';
+import '../../home_activities/domain/activity_model.dart';
+import '../../home_activities/domain/activity_submission_model.dart';
 import 'parent_home_activities_page.dart';
 import '../../development_practice_activities/presentation/pages/practice_activities_page.dart';
 import 'child_development_summary_view.dart';
 import 'parent_clarification_page.dart';
-import 'parent_feedback_history_page.dart';
 import 'parent_feedback_page.dart';
 import '../../../shared/widgets/brand_widgets.dart';
 import '../../../shared/widgets/confirmation_dialog.dart';
@@ -35,8 +38,10 @@ class _ParentDashboardState extends State<ParentDashboard> {
   List<ChildModel> _children = [];
   ChildModel? _selectedChild;
   DevelopmentSummaryModel? _latestSummary;
-  bool _isLoading = true;
+  bool _isLoadingChildAnalytics = false;
   int _selectedSection = 0;
+  final ActivityRepository _activityRepository = ActivityRepositoryImpl();
+  _ParentChildAnalytics? _childAnalytics;
 
   Widget _buildSelectedSection() {
     switch (_selectedSection) {
@@ -50,8 +55,6 @@ class _ParentDashboardState extends State<ParentDashboard> {
         return const PracticeActivitiesPage();
       case 4:
         return const ParentFeedbackPage();
-      case 5:
-        return const ParentFeedbackHistoryPage();
       case 6:
         return const ParentClarificationPage();
       default:
@@ -110,17 +113,8 @@ class _ParentDashboardState extends State<ParentDashboard> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _moreSectionTile(
-              'Updates',
-              Icons.notifications_outlined,
-              1,
-            ),
-            _moreSectionTile(
-              'Send feedback',
-              Icons.chat_bubble_outline,
-              4,
-            ),
-            _moreSectionTile('Feedback history', Icons.history_edu_outlined, 5),
+            _moreSectionTile('Updates', Icons.notifications_outlined, 1),
+            _moreSectionTile('Send feedback', Icons.chat_bubble_outline, 4),
             _moreSectionTile(
               'Clarifications',
               Icons.question_answer_outlined,
@@ -142,6 +136,21 @@ class _ParentDashboardState extends State<ParentDashboard> {
     },
   );
 
+  Future<void> _logout() async {
+    final confirmed = await ConfirmationDialog.show(
+      context: context,
+      title: 'Confirm Logout',
+      message: 'Are you sure you want to log out from ECCD GrowthTrack?',
+      confirmLabel: 'Logout',
+      confirmColor: Colors.red,
+      icon: Icons.logout,
+    );
+    if (!confirmed) return;
+    await AuthRepositoryImpl().logout();
+    if (!mounted) return;
+    Navigator.pushReplacementNamed(context, '/login');
+  }
+
   @override
   void initState() {
     super.initState();
@@ -149,8 +158,6 @@ class _ParentDashboardState extends State<ParentDashboard> {
   }
 
   Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-
     // Mobile renders its saved SQLite records first. This avoids holding the
     // whole dashboard on a network request every time it is opened.
     if (!kIsWeb) {
@@ -163,8 +170,8 @@ class _ParentDashboardState extends State<ParentDashboard> {
           _parentUser = cachedUser;
           _children = cachedChildren;
           _selectedChild = cachedChildren.isEmpty ? null : cachedChildren.first;
-          _isLoading = false;
         });
+        unawaited(_loadChildAnalytics(_selectedChild));
         // Refresh after the cached view is visible; any newly saved cloud data
         // is cached by DatabaseHelper for the next dashboard open.
         unawaited(_refreshFromCloud());
@@ -186,39 +193,29 @@ class _ParentDashboardState extends State<ParentDashboard> {
   }
 
   Future<void> _refreshFromCloud() async {
-    try {
-      final user = await AuthRepositoryImpl().getCurrentUser();
-      if (user != null) {
-        final children = kIsWeb
-            ? await _readChildrenFromFirestore(user.uid, user.name)
-            : await DatabaseHelper.instance.readChildrenByParent(user.uid);
+    final user = await AuthRepositoryImpl().getCurrentUser();
+    if (user != null) {
+      final children = kIsWeb
+          ? await _readChildrenFromFirestore(user.uid, user.name)
+          : await DatabaseHelper.instance.readChildrenByParent(user.uid);
 
-        final selectedChild = children.isEmpty
-            ? null
-            : children.firstWhere(
-                (child) => child.childId == _selectedChild?.childId,
-                orElse: () => children.first,
-              );
-        DevelopmentSummaryModel? summary;
-        if (selectedChild != null) {
-          final summaryMap = await _getLatestApprovedSummary(
-            selectedChild.childId,
-          );
-          if (summaryMap != null) {
-            summary = DevelopmentSummaryModel.fromMap(summaryMap);
-          }
-        }
-
-        if (!mounted) return;
-        setState(() {
-          _parentUser = user;
-          _children = children;
-          _selectedChild = selectedChild;
-          _latestSummary = summary;
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      final selectedChild = children.isEmpty
+          ? null
+          : children.firstWhere(
+              (child) => child.childId == _selectedChild?.childId,
+              orElse: () => children.first,
+            );
+      if (!mounted) return;
+      setState(() {
+        _parentUser = user;
+        _children = children;
+        _selectedChild = selectedChild;
+        _latestSummary = null;
+      });
+      // Keep the dashboard usable while the slower summary and activity
+      // queries finish in the background.
+      unawaited(_loadLatestSummary(selectedChild));
+      unawaited(_loadChildAnalytics(selectedChild));
     }
   }
 
@@ -252,6 +249,184 @@ class _ParentDashboardState extends State<ParentDashboard> {
         .limit(1)
         .get();
     return snapshot.docs.isEmpty ? null : snapshot.docs.first.data();
+  }
+
+  Future<void> _loadLatestSummary(ChildModel? child) async {
+    if (child == null) return;
+    try {
+      final summaryMap = await _getLatestApprovedSummary(child.childId);
+      if (!mounted) return;
+      setState(
+        () => _latestSummary = summaryMap == null
+            ? null
+            : DevelopmentSummaryModel.fromMap(summaryMap),
+      );
+    } catch (_) {
+      // A missing or unavailable report should never delay the dashboard.
+    }
+  }
+
+  Future<void> _loadChildAnalytics(ChildModel? child) async {
+    if (child == null) {
+      if (mounted) {
+        setState(() {
+          _childAnalytics = null;
+          _isLoadingChildAnalytics = false;
+        });
+      }
+      return;
+    }
+
+    try {
+      List<Map<String, dynamic>> attendance;
+      List<ActivityModel> activities;
+      List<ActivitySubmissionModel> submissions;
+
+      if (kIsWeb) {
+        final parentUid =
+            _parentUser?.uid ?? AuthRepositoryImpl().firebaseUserId;
+        if (parentUid == null || parentUid.isEmpty) {
+          throw StateError('The parent session is not available.');
+        }
+        // Fetch each dashboard source independently. A missing permission or
+        // a temporary attendance error must not erase a valid completed home
+        // activity and turn every card into 0.
+        attendance = const [];
+        activities = const [];
+        submissions = const [];
+        try {
+          final activitySnapshot = await FirebaseFirestore.instance
+              .collection('activities')
+              .where('child_id', isEqualTo: child.childId)
+              .where('parent_uid', isEqualTo: parentUid)
+              .get(const GetOptions(source: Source.server));
+          activities = activitySnapshot.docs
+              .map(
+                (doc) => ActivityModel.fromMap({
+                  ...doc.data(),
+                  'id': doc.data()['id'] ?? int.tryParse(doc.id),
+                }),
+              )
+              .toList();
+        } catch (_) {}
+        try {
+          final submissionSnapshot = await FirebaseFirestore.instance
+              .collection('activity_submissions')
+              .where('child_id', isEqualTo: child.childId)
+              .where('parent_uid', isEqualTo: parentUid)
+              .get(const GetOptions(source: Source.server));
+          submissions = submissionSnapshot.docs
+              .map(
+                (doc) => ActivitySubmissionModel.fromMap({
+                  ...doc.data(),
+                  'id': doc.data()['id'] ?? int.tryParse(doc.id),
+                }),
+              )
+              .toList();
+        } catch (_) {}
+        try {
+          final attendanceSnapshot = await FirebaseFirestore.instance
+              .collection('attendance_events')
+              .where('child_id', isEqualTo: child.childId)
+              .get(const GetOptions(source: Source.server));
+          attendance = attendanceSnapshot.docs
+              .map((doc) => <String, dynamic>{...doc.data()})
+              .toList();
+        } catch (_) {}
+      } else {
+        attendance = await DatabaseHelper.instance.getChildAttendanceHistory(
+          child.childId,
+        );
+        activities = await _activityRepository.getActivitiesForChild(
+          child.childId,
+        );
+        submissions = (await _activityRepository.getAllSubmissions())
+            .where((item) => item['child_id'] == child.childId)
+            .map(ActivitySubmissionModel.fromMap)
+            .toList();
+      }
+
+      attendance.sort(
+        (a, b) => '${b['attendance_date'] ?? ''} ${b['attendance_time'] ?? ''}'
+            .compareTo(
+              '${a['attendance_date'] ?? ''} ${a['attendance_time'] ?? ''}',
+            ),
+      );
+      activities.sort((a, b) => b.createdDate.compareTo(a.createdDate));
+      final activityById = {
+        for (final activity in activities)
+          if (activity.id != null) activity.id!: activity,
+      };
+      final submittedActivityIds = submissions
+          .map((submission) => submission.activityId)
+          .toSet();
+      final completedActivities = activities
+          .where(
+            (activity) =>
+                activity.status.trim().toLowerCase() == 'completed' ||
+                (activity.id != null &&
+                    submittedActivityIds.contains(activity.id)),
+          )
+          .length;
+      final scoredSubmissions = submissions
+          .where(
+            (submission) =>
+                submission.score != null &&
+                (activityById[submission.activityId]?.maxScore ?? 0) > 0,
+          )
+          .toList();
+      final averageScore = scoredSubmissions.isEmpty
+          ? null
+          : scoredSubmissions
+                    .map(
+                      (submission) =>
+                          submission.score! /
+                          activityById[submission.activityId]!.maxScore,
+                    )
+                    .reduce((total, value) => total + value) /
+                scoredSubmissions.length;
+      final present = attendance
+          .where(
+            (item) => item['status']?.toString().toLowerCase() == 'present',
+          )
+          .length;
+
+      if (!mounted) return;
+      setState(() {
+        _childAnalytics = _ParentChildAnalytics(
+          attendanceStatus: attendance.isEmpty
+              ? 'No attendance record'
+              : attendance.first['status']?.toString() ?? 'Recorded',
+          attendanceDate: attendance.isEmpty
+              ? null
+              : attendance.first['attendance_date']?.toString(),
+          attendanceRate: attendance.isEmpty
+              ? null
+              : present / attendance.length,
+          assignedActivities: activities.isEmpty
+              ? submittedActivityIds.length
+              : activities.length,
+          completedActivities: completedActivities,
+          averageScore: averageScore,
+          recentActivities: activities.take(3).toList(),
+        );
+        _isLoadingChildAnalytics = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _childAnalytics = const _ParentChildAnalytics();
+        _isLoadingChildAnalytics = false;
+      });
+    }
+  }
+
+  void _openDashboard() {
+    setState(() => _selectedSection = 0);
+    // Home Activities updates its activity document while the parent is in
+    // that section. Refresh this metric on return instead of showing a stale
+    // completed count from the initial dashboard load.
+    unawaited(_loadChildAnalytics(_selectedChild));
   }
 
   @override
@@ -314,25 +489,14 @@ class _ParentDashboardState extends State<ParentDashboard> {
                 );
               },
             ),
-            IconButton(
-              icon: const Icon(Icons.logout),
-              onPressed: () async {
-                final confirmed = await ConfirmationDialog.show(
-                  context: context,
-                  title: 'Confirm Logout',
-                  message:
-                      'Are you sure you want to log out from ECCD GrowthTrack?',
-                  confirmLabel: 'Logout',
-                  confirmColor: Colors.red,
-                  icon: Icons.logout,
-                );
-                if (!confirmed) return;
-                await AuthRepositoryImpl().logout();
-                if (!context.mounted) return;
-                Navigator.pushReplacementNamed(context, '/login');
-              },
-            ),
-            const SizedBox(width: 8),
+            if (!(kIsWeb && MediaQuery.sizeOf(context).width > 900)) ...[
+              IconButton(
+                icon: const Icon(Icons.logout),
+                tooltip: 'Logout',
+                onPressed: _logout,
+              ),
+              const SizedBox(width: 8),
+            ],
           ],
         ),
         bottomNavigationBar: kIsWeb && MediaQuery.sizeOf(context).width > 900
@@ -349,6 +513,8 @@ class _ParentDashboardState extends State<ParentDashboard> {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (mounted) _showMoreSections();
                     });
+                  } else if (index == 0) {
+                    _openDashboard();
                   } else {
                     setState(
                       () => _selectedSection = switch (index) {
@@ -382,20 +548,20 @@ class _ParentDashboardState extends State<ParentDashboard> {
                   ),
                 ],
               ),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : LayoutBuilder(
-                builder: (context, constraints) {
-                  final isWide = constraints.maxWidth > 700;
-                  final isNarrow = constraints.maxWidth < 480;
-
-                  final dashboard = _ParentWorkspaceHome(
-                    parentName: _parentUser?.name ?? 'Parent',
-                    child: _selectedChild,
-                    onNavigate: (section) =>
-                        setState(() => _selectedSection = section),
-                  );
-                  /*final dashboard = SingleChildScrollView(
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            final firebaseDisplayName =
+                FirebaseAuth.instance.currentUser?.displayName?.trim() ?? '';
+            final dashboard = _ParentWorkspaceHome(
+              parentName: _parentUser?.name.trim().isNotEmpty == true
+                  ? _parentUser!.name
+                  : firebaseDisplayName,
+              child: _selectedChild,
+              analytics: _childAnalytics,
+              isLoadingAnalytics: _isLoadingChildAnalytics,
+              developmentSummary: _latestSummary,
+            );
+            /*final dashboard = SingleChildScrollView(
                     padding: const EdgeInsets.all(24),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -586,71 +752,63 @@ class _ParentDashboardState extends State<ParentDashboard> {
                       ],
                     ),
                   );*/
-                  if (kIsWeb && constraints.maxWidth > 900) {
-                    return Row(
-                      children: [
-                        RoleWebSidebar(
-                          title: 'Parent Portal',
-                          subtitle: 'FAMILY WORKSPACE',
-                          showIdentityLogo: false,
-                          items: [
-                            RoleWebNavItem(
-                              label: 'Dashboard',
-                              icon: Icons.dashboard_outlined,
-                              selected: _selectedSection == 0,
-                              onTap: () => setState(() => _selectedSection = 0),
-                            ),
-                            RoleWebNavItem(
-                              label: 'Notifications',
-                              icon: Icons.notifications_outlined,
-                              selected: _selectedSection == 1,
-                              onTap: () => setState(() => _selectedSection = 1),
-                            ),
-                            RoleWebNavItem(
-                              label: 'Home Activities',
-                              icon: Icons.home_work_outlined,
-                              selected: _selectedSection == 2,
-                              onTap: () => setState(() => _selectedSection = 2),
-                            ),
-                            RoleWebNavItem(
-                              label: 'Practice Activities',
-                              icon: Icons.self_improvement_outlined,
-                              selected: _selectedSection == 3,
-                              onTap: () => setState(() => _selectedSection = 3),
-                            ),
-                            RoleWebNavItem(
-                              label: 'Submit Feedback',
-                              icon: Icons.chat_bubble_outline,
-                              selected: _selectedSection == 4,
-                              onTap: () => setState(() => _selectedSection = 4),
-                            ),
-                            RoleWebNavItem(
-                              label: 'Feedback History',
-                              icon: Icons.history_edu_outlined,
-                              selected: _selectedSection == 5,
-                              onTap: () => setState(() => _selectedSection = 5),
-                            ),
-                            RoleWebNavItem(
-                              label: 'Clarifications',
-                              icon: Icons.question_answer_outlined,
-                              selected: _selectedSection == 6,
-                              onTap: () => setState(() => _selectedSection = 6),
-                            ),
-                          ],
-                        ),
-                        Expanded(
-                          child: _selectedSection == 0
-                              ? dashboard
-                              : _buildSelectedSection(),
-                        ),
-                      ],
-                    );
-                  }
-                  return _selectedSection == 0
-                      ? dashboard
-                      : _buildSelectedSection();
-                },
-              ),
+            if (kIsWeb && constraints.maxWidth > 900) {
+              return Row(
+                children: [
+                  RoleWebSidebar(
+                    title: 'Parent Portal',
+                    subtitle: 'FAMILY WORKSPACE',
+                    showIdentityLogo: false,
+                    items: [
+                      RoleWebNavItem(
+                        label: 'Dashboard',
+                        icon: Icons.dashboard_outlined,
+                        selected: _selectedSection == 0,
+                        onTap: _openDashboard,
+                      ),
+                      RoleWebNavItem(
+                        label: 'Home Activities',
+                        icon: Icons.home_work_outlined,
+                        selected: _selectedSection == 2,
+                        onTap: () => setState(() => _selectedSection = 2),
+                      ),
+                      RoleWebNavItem(
+                        label: 'Practice Activities',
+                        icon: Icons.self_improvement_outlined,
+                        selected: _selectedSection == 3,
+                        onTap: () => setState(() => _selectedSection = 3),
+                      ),
+                      RoleWebNavItem(
+                        label: 'Submit Feedback',
+                        icon: Icons.chat_bubble_outline,
+                        selected: _selectedSection == 4,
+                        onTap: () => setState(() => _selectedSection = 4),
+                      ),
+                      RoleWebNavItem(
+                        label: 'Clarifications',
+                        icon: Icons.question_answer_outlined,
+                        selected: _selectedSection == 6,
+                        onTap: () => setState(() => _selectedSection = 6),
+                      ),
+                    ],
+                    bottomItem: RoleWebNavItem(
+                      label: 'Logout',
+                      icon: Icons.logout_rounded,
+                      isDestructive: true,
+                      onTap: _logout,
+                    ),
+                  ),
+                  Expanded(
+                    child: _selectedSection == 0
+                        ? dashboard
+                        : _buildSelectedSection(),
+                  ),
+                ],
+              );
+            }
+            return _selectedSection == 0 ? dashboard : _buildSelectedSection();
+          },
+        ),
       ),
     );
   }
@@ -734,132 +892,135 @@ class _ParentHomeActivitiesHero extends StatelessWidget {
     builder: (context, constraints) {
       final compact = constraints.maxWidth < 600;
       return Container(
-    width: double.infinity,
-    height: compact ? 250 : 205,
-    padding: EdgeInsets.symmetric(
-      horizontal: compact ? 22 : 28,
-      vertical: compact ? 20 : 24,
-    ),
-    clipBehavior: Clip.antiAlias,
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(24),
-      gradient: const LinearGradient(
-        colors: [Color(0xFFEAF8FF), Color(0xFFD8F0FF)],
-      ),
-    ),
-    child: Stack(
-      children: [
-        if (!compact)
-        Positioned(
-          right: 22,
-          bottom: -48,
-          child: Icon(
-            Icons.family_restroom_rounded,
-            size: 230,
-            color: const Color(0xFFFF8494).withValues(alpha: .76),
+        width: double.infinity,
+        height: compact ? 250 : 205,
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 22 : 28,
+          vertical: compact ? 20 : 24,
+        ),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          gradient: const LinearGradient(
+            colors: [Color(0xFFEAF8FF), Color(0xFFD8F0FF)],
           ),
         ),
-        if (!compact)
-        Positioned(
-          right: 195,
-          bottom: -15,
-          child: Icon(
-            Icons.spa_rounded,
-            size: 116,
-            color: BrandColors.green.withValues(alpha: .55),
-          ),
-        ),
-        if (!compact)
-        Positioned(
-          right: 28,
-          top: 24,
-          child: const Icon(
-            Icons.home_rounded,
-            size: 46,
-            color: BrandColors.sunshine,
-          ),
-        ),
-        compact
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 62,
-                    height: 62,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF168FEA),
-                      borderRadius: BorderRadius.circular(17),
-                    ),
-                    child: const Icon(
-                      Icons.home_rounded,
-                      size: 35,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Home Activities',
-                    style: TextStyle(
-                      color: Color(0xFF07135B),
-                      fontSize: 28,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Explore and complete activities for your child’s learning at home.',
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Color(0xFF526F9E),
-                      fontSize: 14,
-                      height: 1.3,
-                    ),
-                  ),
-                ],
-              )
-            : Row(
+        child: Stack(
           children: [
-            Container(
-              width: 96,
-              height: 96,
-              decoration: BoxDecoration(
-                color: const Color(0xFF168FEA),
-                borderRadius: BorderRadius.circular(23),
+            if (!compact)
+              Positioned(
+                right: 22,
+                bottom: -48,
+                child: Icon(
+                  Icons.family_restroom_rounded,
+                  size: 230,
+                  color: const Color(0xFFFF8494).withValues(alpha: .76),
+                ),
               ),
-              child: const Icon(
-                Icons.home_rounded,
-                size: 52,
-                color: Colors.white,
+            if (!compact)
+              Positioned(
+                right: 195,
+                bottom: -15,
+                child: Icon(
+                  Icons.spa_rounded,
+                  size: 116,
+                  color: BrandColors.green.withValues(alpha: .55),
+                ),
               ),
-            ),
-            const SizedBox(width: 25),
-            const Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Home Activities',
-                    style: TextStyle(
-                      color: Color(0xFF07135B),
-                      fontSize: 39,
-                      fontWeight: FontWeight.w800,
-                    ),
+            if (!compact)
+              Positioned(
+                right: 28,
+                top: 24,
+                child: const Icon(
+                  Icons.home_rounded,
+                  size: 46,
+                  color: BrandColors.sunshine,
+                ),
+              ),
+            compact
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 62,
+                        height: 62,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF168FEA),
+                          borderRadius: BorderRadius.circular(17),
+                        ),
+                        child: const Icon(
+                          Icons.home_rounded,
+                          size: 35,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Home Activities',
+                        style: TextStyle(
+                          color: Color(0xFF07135B),
+                          fontSize: 28,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Explore and complete activities for your child’s learning at home.',
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Color(0xFF526F9E),
+                          fontSize: 14,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  )
+                : Row(
+                    children: [
+                      Container(
+                        width: 96,
+                        height: 96,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF168FEA),
+                          borderRadius: BorderRadius.circular(23),
+                        ),
+                        child: const Icon(
+                          Icons.home_rounded,
+                          size: 52,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 25),
+                      const Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Home Activities',
+                              style: TextStyle(
+                                color: Color(0xFF07135B),
+                                fontSize: 39,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            SizedBox(height: 10),
+                            Text(
+                              'Explore and complete activities for your child’s learning at home.',
+                              style: TextStyle(
+                                color: Color(0xFF526F9E),
+                                fontSize: 18,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  SizedBox(height: 10),
-                  Text(
-                    'Explore and complete activities for your child’s learning at home.',
-                    style: TextStyle(color: Color(0xFF526F9E), fontSize: 18),
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
-      ],
-    ),
       );
     },
   );
@@ -869,20 +1030,26 @@ class _ParentWorkspaceHome extends StatelessWidget {
   const _ParentWorkspaceHome({
     required this.parentName,
     required this.child,
-    required this.onNavigate,
+    required this.analytics,
+    required this.isLoadingAnalytics,
+    required this.developmentSummary,
   });
 
   final String parentName;
   final ChildModel? child;
-  final ValueChanged<int> onNavigate;
+  final _ParentChildAnalytics? analytics;
+  final bool isLoadingAnalytics;
+  final DevelopmentSummaryModel? developmentSummary;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isPhone = constraints.maxWidth < 600;
-        final columns = constraints.maxWidth >= 1000 ? 3 : 2;
         final horizontalPadding = isPhone ? 16.0 : 32.0;
+        final welcomeText = parentName.trim().isEmpty
+            ? 'Welcome!'
+            : 'Welcome, $parentName!';
         final childName = child == null
             ? 'your child'
             : '${child!.firstName} ${child!.lastName}';
@@ -894,7 +1061,7 @@ class _ParentWorkspaceHome extends StatelessWidget {
             32,
           ),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1280),
+            constraints: const BoxConstraints(),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -980,7 +1147,7 @@ class _ParentWorkspaceHome extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Welcome back, $parentName',
+                                welcomeText,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -1007,8 +1174,10 @@ class _ParentWorkspaceHome extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 22),
+                _ConnectedChildCard(child: child),
+                const SizedBox(height: 22),
                 const Text(
-                  'Family workspace',
+                  'Child overview',
                   style: TextStyle(
                     color: Color(0xFF10245E),
                     fontSize: 29,
@@ -1016,71 +1185,358 @@ class _ParentWorkspaceHome extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 18),
-                GridView.count(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: columns,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  childAspectRatio: constraints.maxWidth >= 1000
-                      ? 1.78
-                      : (isPhone ? .76 : 1.3),
-                  children: [
-                    _ParentWorkspaceAction(
-                      title: 'Notifications',
-                      subtitle: 'See updates from your teacher',
-                      icon: Icons.notifications_active_rounded,
-                      color: BrandColors.sky,
-                      compact: isPhone,
-                      onTap: () => onNavigate(1),
+                if (isLoadingAnalytics)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(28),
+                      child: CircularProgressIndicator(),
                     ),
-                    _ParentWorkspaceAction(
-                      title: 'Home activities',
-                      subtitle: 'Support learning at home',
-                      icon: Icons.home_work_rounded,
-                      color: BrandColors.green,
-                      compact: isPhone,
-                      onTap: () => onNavigate(2),
+                  )
+                else ...[
+                  LayoutBuilder(
+                    builder: (context, cardConstraints) {
+                      final analyticsCardWidth =
+                          cardConstraints.maxWidth >= 1450
+                          ? (cardConstraints.maxWidth - 64) / 5
+                          : cardConstraints.maxWidth >= 1000
+                          ? (cardConstraints.maxWidth - 32) / 3
+                          : (isPhone
+                                ? cardConstraints.maxWidth
+                                : (cardConstraints.maxWidth - 16) / 2);
+                      return Wrap(
+                        spacing: 16,
+                        runSpacing: 16,
+                        children: [
+                          _ChildAnalyticsMetric(
+                            label: 'Latest attendance',
+                            value: analytics?.attendanceStatus ?? 'No record',
+                            detail: analytics?.attendanceDate == null
+                                ? 'No attendance recorded yet'
+                                : 'Latest record: ${analytics!.attendanceDate}',
+                            icon: Icons.contactless_rounded,
+                            color: _attendanceColor(
+                              analytics?.attendanceStatus,
+                            ),
+                            width: analyticsCardWidth,
+                          ),
+                          _ChildAnalyticsMetric(
+                            label: 'Attendance rate',
+                            value: analytics?.attendanceRate == null
+                                ? '—'
+                                : '${(analytics!.attendanceRate! * 100).round()}%',
+                            detail: 'Based on recorded attendance',
+                            icon: Icons.calendar_month_rounded,
+                            color: BrandColors.green,
+                            width: analyticsCardWidth,
+                          ),
+                          _ChildAnalyticsMetric(
+                            label: 'Activities completed',
+                            value: '${analytics?.completedActivities ?? 0}',
+                            detail:
+                                'of ${analytics?.assignedActivities ?? 0} assigned activities',
+                            icon: Icons.task_alt_rounded,
+                            color: BrandColors.green,
+                            width: analyticsCardWidth,
+                          ),
+                          _ChildAnalyticsMetric(
+                            label: 'Activities to complete',
+                            value: '${analytics?.remainingActivities ?? 0}',
+                            detail: 'Activities still waiting to be completed',
+                            icon: Icons.pending_actions_rounded,
+                            color: BrandColors.sky,
+                            width: analyticsCardWidth,
+                          ),
+                          _ChildAnalyticsMetric(
+                            label: 'Learning performance',
+                            value: analytics?.averageScore == null
+                                ? (developmentSummary == null
+                                      ? 'Pending'
+                                      : 'Ready')
+                                : '${(analytics!.averageScore! * 100).round()}%',
+                            detail: analytics?.averageScore == null
+                                ? (developmentSummary == null
+                                      ? 'Awaiting teacher review'
+                                      : 'Development summary is available')
+                                : '${analytics!.completedActivities} of ${analytics!.assignedActivities} activities completed',
+                            icon: Icons.auto_graph_rounded,
+                            color: BrandColors.sunshine,
+                            width: analyticsCardWidth,
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 28),
+                  const Text(
+                    'Recent teacher activities',
+                    style: TextStyle(
+                      color: Color(0xFF10245E),
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
                     ),
-                    _ParentWorkspaceAction(
-                      title: 'Practice activities',
-                      subtitle: 'Explore guided learning tasks',
-                      icon: Icons.auto_awesome_rounded,
-                      color: BrandColors.sunshine,
-                      compact: isPhone,
-                      onTap: () => onNavigate(3),
-                    ),
-                    _ParentWorkspaceAction(
-                      title: 'Send feedback',
-                      subtitle: 'Share an observation with the teacher',
-                      icon: Icons.chat_bubble_rounded,
-                      color: BrandColors.navy,
-                      compact: isPhone,
-                      onTap: () => onNavigate(4),
-                    ),
-                    _ParentWorkspaceAction(
-                      title: 'Feedback history',
-                      subtitle: 'Review your previous messages',
-                      icon: Icons.history_rounded,
-                      color: const Color(0xFFE76F51),
-                      compact: isPhone,
-                      onTap: () => onNavigate(5),
-                    ),
-                    _ParentWorkspaceAction(
-                      title: 'Clarifications',
-                      subtitle: 'Ask a question and get support',
-                      icon: Icons.help_outline_rounded,
-                      color: BrandColors.green,
-                      compact: isPhone,
-                      onTap: () => onNavigate(6),
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 12),
+                  _RecentTeacherActivities(
+                    activities: analytics?.recentActivities ?? const [],
+                  ),
+                ],
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  Color _attendanceColor(String? status) {
+    switch (status?.toLowerCase()) {
+      case 'present':
+        return BrandColors.green;
+      case 'late':
+        return BrandColors.sunshine;
+      case 'absent':
+        return const Color(0xFFE76F51);
+      default:
+        return BrandColors.sky;
+    }
+  }
+}
+
+class _ParentChildAnalytics {
+  const _ParentChildAnalytics({
+    this.attendanceStatus = 'No attendance record',
+    this.attendanceDate,
+    this.attendanceRate,
+    this.assignedActivities = 0,
+    this.completedActivities = 0,
+    this.averageScore,
+    this.recentActivities = const [],
+  });
+
+  final String attendanceStatus;
+  final String? attendanceDate;
+  final double? attendanceRate;
+  final int assignedActivities;
+  final int completedActivities;
+  final double? averageScore;
+  final List<ActivityModel> recentActivities;
+
+  int get remainingActivities => completedActivities >= assignedActivities
+      ? 0
+      : assignedActivities - completedActivities;
+}
+
+class _ConnectedChildCard extends StatelessWidget {
+  const _ConnectedChildCard({required this.child});
+
+  final ChildModel? child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (child == null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: BrandColors.sky.withValues(alpha: .22)),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.person_search_rounded, color: BrandColors.sky, size: 34),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'No child profile is connected to this parent account yet.',
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: BrandColors.sky.withValues(alpha: .22)),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 30,
+            backgroundColor: BrandColors.sky.withValues(alpha: .12),
+            child: const Icon(
+              Icons.child_care_rounded,
+              color: BrandColors.sky,
+              size: 34,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Connected child',
+                  style: TextStyle(
+                    color: Color(0xFF58709D),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${child!.firstName} ${child!.lastName}',
+                  style: const TextStyle(
+                    color: Color(0xFF10245E),
+                    fontSize: 21,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'Age ${child!.age} • Child ID: ${child!.childId}',
+                  style: const TextStyle(
+                    color: Color(0xFF58709D),
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChildAnalyticsMetric extends StatelessWidget {
+  const _ChildAnalyticsMetric({
+    required this.label,
+    required this.value,
+    required this.detail,
+    required this.icon,
+    required this.color,
+    required this.width,
+  });
+
+  final String label;
+  final String value;
+  final String detail;
+  final IconData icon;
+  final Color color;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: width,
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: color.withValues(alpha: .22)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: color),
+        const SizedBox(height: 16),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 2),
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 6),
+        Text(
+          detail,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontSize: 12,
+            height: 1.3,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _RecentTeacherActivities extends StatelessWidget {
+  const _RecentTeacherActivities({required this.activities});
+
+  final List<ActivityModel> activities;
+
+  @override
+  Widget build(BuildContext context) {
+    if (activities.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: BrandColors.sky.withValues(alpha: .2)),
+        ),
+        child: const Text('No teacher activities have been uploaded yet.'),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: BrandColors.sky.withValues(alpha: .2)),
+      ),
+      child: ListView.separated(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: activities.length,
+        separatorBuilder: (_, _) =>
+            Divider(height: 1, color: BrandColors.sky.withValues(alpha: .14)),
+        itemBuilder: (context, index) {
+          final activity = activities[index];
+          final completed = activity.status == 'Completed';
+          return ListTile(
+            leading: CircleAvatar(
+              backgroundColor: (completed ? BrandColors.green : BrandColors.sky)
+                  .withValues(alpha: .12),
+              child: Icon(
+                completed
+                    ? Icons.check_circle_rounded
+                    : Icons.assignment_outlined,
+                color: completed ? BrandColors.green : BrandColors.sky,
+              ),
+            ),
+            title: Text(
+              activity.activityTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: Text(
+              '${activity.developmentalDomain} • Uploaded: ${activity.createdDate}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: Text(
+              activity.status,
+              style: TextStyle(
+                color: completed ? BrandColors.green : BrandColors.sky,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }

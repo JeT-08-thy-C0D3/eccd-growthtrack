@@ -65,13 +65,23 @@ class SyncService {
 
   Future<void> _syncTable(String table) async {
     final String idField = _getIdField(table);
+    final String collection = _collectionForTable(table);
 
     // 1. UPLOAD (Local -> Cloud)
     final unsynced = await _local.getUnsyncedRecords(table);
     for (var row in unsynced) {
       try {
+        // Migration path for offline records created before RFID attendance.
+        // Assigning this once preserves the original record and gives retries a
+        // stable Firestore document instead of duplicating attendance.
+        if (table == 'attendance' &&
+            (row['attendance_event_id'] as String? ?? '').isEmpty) {
+          final legacyId = 'legacy-attendance-${row['id']}';
+          row['attendance_event_id'] = legacyId;
+          await _local.saveRecord(table, row);
+        }
         final docId = row[idField].toString();
-        await _remote.uploadRecord(table, docId, row);
+        await _remote.uploadRecord(collection, docId, row);
         await _local.markAsSynced(table, row[idField]);
       } catch (e) {
         print("UPLOAD ERROR [$table]: $e");
@@ -85,7 +95,7 @@ class SyncService {
       final lastSyncDate =
           prefs.getString(lastSyncKey) ?? '1970-01-01T00:00:00.000';
 
-      final updates = await _remote.fetchUpdates(table, lastSyncDate);
+      final updates = await _remote.fetchUpdates(collection, lastSyncDate);
       for (var doc in updates) {
         final remoteData = doc.data();
         // The Firestore document ID is the stable local ID for activities and
@@ -109,7 +119,11 @@ class SyncService {
   String _getIdField(String table) {
     if (table == 'children') return 'child_id';
     if (table == 'users') return 'uid';
+    if (table == 'attendance') return 'attendance_event_id';
     if (table == 'file_uploads') return 'file_id';
     return 'id';
   }
+
+  String _collectionForTable(String table) =>
+      table == 'attendance' ? 'attendance_events' : table;
 }

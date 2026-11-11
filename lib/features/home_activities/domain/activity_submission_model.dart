@@ -12,6 +12,9 @@ class ActivitySubmissionModel {
   final int? score;
   final String? evidenceUrl;
   final String? evidenceMediaType;
+  final String? evidenceFileName;
+  final String? teacherUid;
+  final String? parentUid;
 
   ActivitySubmissionModel({
     this.id,
@@ -27,6 +30,9 @@ class ActivitySubmissionModel {
     this.score,
     this.evidenceUrl,
     this.evidenceMediaType,
+    this.evidenceFileName,
+    this.teacherUid,
+    this.parentUid,
   });
 
   Map<String, dynamic> toMap() {
@@ -44,6 +50,9 @@ class ActivitySubmissionModel {
       'storage_placeholder': null,
       'evidence_url': evidenceUrl,
       'evidence_media_type': evidenceMediaType,
+      'evidence_file_name': evidenceFileName,
+      'teacher_uid': teacherUid,
+      'parent_uid': parentUid,
       'score': score,
     };
   }
@@ -63,6 +72,9 @@ class ActivitySubmissionModel {
       score: map['score'] as int?,
       evidenceUrl: map['evidence_url'] as String?,
       evidenceMediaType: map['evidence_media_type'] as String?,
+      evidenceFileName: map['evidence_file_name'] as String?,
+      teacherUid: map['teacher_uid'] as String?,
+      parentUid: map['parent_uid'] as String?,
     );
   }
 
@@ -80,6 +92,9 @@ class ActivitySubmissionModel {
     int? score,
     String? evidenceUrl,
     String? evidenceMediaType,
+    String? evidenceFileName,
+    String? teacherUid,
+    String? parentUid,
   }) {
     return ActivitySubmissionModel(
       id: id ?? this.id,
@@ -95,6 +110,9 @@ class ActivitySubmissionModel {
       score: score ?? this.score,
       evidenceUrl: evidenceUrl ?? this.evidenceUrl,
       evidenceMediaType: evidenceMediaType ?? this.evidenceMediaType,
+      evidenceFileName: evidenceFileName ?? this.evidenceFileName,
+      teacherUid: teacherUid ?? this.teacherUid,
+      parentUid: parentUid ?? this.parentUid,
     );
   }
 }

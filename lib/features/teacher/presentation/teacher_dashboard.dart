@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
@@ -7,6 +8,9 @@ import '../../auth/data/auth_repository_impl.dart';
 import '../../attendance/presentation/attendance_page.dart';
 import '../../child_profile/presentation/child_list_page.dart';
 import '../../eccd_evaluation/presentation/evaluation_page.dart';
+import '../../home_activities/data/activity_repository.dart';
+import '../../home_activities/domain/activity_model.dart';
+import '../../home_activities/domain/activity_submission_model.dart';
 import '../../home_activities/presentation/activity_management_page.dart';
 import '../../referral/presentation/referral_page.dart';
 import '../../reports/presentation/reports_page.dart';
@@ -15,6 +19,9 @@ import '../../../shared/widgets/brand_widgets.dart';
 import '../../../shared/widgets/confirmation_dialog.dart';
 import '../../../shared/widgets/role_web_sidebar.dart';
 import '../../../core/database/database_helper.dart';
+import '../../../core/sync/sync_service.dart';
+import '../../../shared/models/child_model.dart';
+import '../../../shared/models/user_model.dart';
 
 class TeacherDashboard extends StatefulWidget {
   const TeacherDashboard({super.key});
@@ -27,7 +34,12 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
   int _selectedSection = 0;
   int _childCount = 0;
   bool _isLoadingClassroom = true;
+  bool _isLoadingActivityAnalytics = true;
   bool _isMoreOpen = false;
+  final ActivityRepository _activityRepository = ActivityRepositoryImpl();
+  List<_ChildActivityAnalytics> _activityAnalytics = const [];
+  List<ChildModel> _assignedChildren = const [];
+  UserModel? _loggedInTeacher;
 
   @override
   void initState() {
@@ -36,8 +48,24 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
   }
 
   Future<void> _loadClassroomCount() async {
-    final uid = AuthRepositoryImpl().firebaseUserId;
-    if (uid == null) return;
+    final authRepository = AuthRepositoryImpl();
+    final teacher = await authRepository.getCurrentUser();
+    final uid = teacher?.uid.trim().isNotEmpty == true
+        ? teacher!.uid
+        : authRepository.firebaseUserId;
+    if (uid == null || uid.trim().isEmpty) {
+      if (mounted) setState(() => _isLoadingClassroom = false);
+      return;
+    }
+
+    if (teacher?.role == UserRole.teacher) {
+      final repaired = await DatabaseHelper.instance
+          .repairLegacyTeacherAssignments(
+            teacherUid: uid,
+            teacherName: teacher!.name,
+          );
+      if (repaired > 0) unawaited(SyncService().performSync());
+    }
 
     final cached = await DatabaseHelper.instance.readChildrenByTeacher(
       uid,
@@ -45,9 +73,12 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     );
     if (!mounted) return;
     setState(() {
+      _loggedInTeacher = teacher;
+      _assignedChildren = cached;
       _childCount = cached.length;
       _isLoadingClassroom = false;
     });
+    unawaited(_loadActivityAnalytics(cached));
 
     // Fetch/cache cloud records after the local count is already visible.
     unawaited(() async {
@@ -55,11 +86,185 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         uid,
       );
       if (!mounted) return;
-      setState(() => _childCount = refreshed.length);
+      setState(() {
+        _assignedChildren = refreshed;
+        _childCount = refreshed.length;
+      });
+      await _loadActivityAnalytics(refreshed);
     }());
   }
 
+  Future<void> _loadActivityAnalytics(List<ChildModel> children) async {
+    if (mounted) setState(() => _isLoadingActivityAnalytics = true);
+    try {
+      final childIds = children.map((child) => child.childId).toSet();
+      List<ActivityModel> activities;
+      List<ActivitySubmissionModel> submissions;
+
+      if (kIsWeb) {
+        final teacherUid = _loggedInTeacher?.uid.trim().isNotEmpty == true
+            ? _loggedInTeacher!.uid
+            : AuthRepositoryImpl().firebaseUserId;
+        if (teacherUid == null || teacherUid.trim().isEmpty) {
+          throw StateError('The teacher session is not available.');
+        }
+
+        // Firestore rules only allow a teacher to read activities assigned to
+        // their account. A collection-wide read is rejected by those rules,
+        // which previously made every dashboard card fall back to zero.
+        // Keep the two sources independent so one temporary failure never
+        // hides valid activity progress from the other source.
+        activities = const [];
+        submissions = const [];
+        try {
+          final activitySnapshot = await FirebaseFirestore.instance
+              .collection('activities')
+              .where('assigned_teacher_uid', isEqualTo: teacherUid)
+              .get(const GetOptions(source: Source.server));
+          activities = activitySnapshot.docs
+              .map(
+                (doc) => ActivityModel.fromMap({
+                  ...doc.data(),
+                  'id': doc.data()['id'] ?? int.tryParse(doc.id),
+                }),
+              )
+              .where((activity) => childIds.contains(activity.childId))
+              .toList();
+        } catch (_) {}
+        try {
+          final submissionSnapshot = await FirebaseFirestore.instance
+              .collection('activity_submissions')
+              .where('teacher_uid', isEqualTo: teacherUid)
+              .get(const GetOptions(source: Source.server));
+          submissions = submissionSnapshot.docs
+              .map(
+                (doc) => ActivitySubmissionModel.fromMap({
+                  ...doc.data(),
+                  'id': doc.data()['id'] ?? int.tryParse(doc.id),
+                }),
+              )
+              .where((submission) => childIds.contains(submission.childId))
+              .toList();
+        } catch (_) {}
+      } else {
+        activities = (await _activityRepository.getAllActivities())
+            .where((activity) => childIds.contains(activity.childId))
+            .toList();
+        submissions = (await _activityRepository.getAllSubmissions())
+            .map(ActivitySubmissionModel.fromMap)
+            .toList();
+      }
+
+      final activitiesById = {
+        for (final activity in activities)
+          if (activity.id != null) activity.id!: activity,
+      };
+      final analytics = children.map((child) {
+        final childActivities = activities
+            .where((activity) => activity.childId == child.childId)
+            .toList();
+        final childActivityIds = childActivities
+            .map((activity) => activity.id)
+            .whereType<int>()
+            .toSet();
+        final childSubmissions = submissions
+            .where(
+              (submission) => childActivityIds.contains(submission.activityId),
+            )
+            .toList();
+        final scoredSubmissions = childSubmissions
+            .where(
+              (submission) =>
+                  submission.score != null &&
+                  (activitiesById[submission.activityId]?.maxScore ?? 0) > 0,
+            )
+            .toList();
+        final averageScore = scoredSubmissions.isEmpty
+            ? null
+            : scoredSubmissions
+                      .map(
+                        (submission) =>
+                            submission.score! /
+                            activitiesById[submission.activityId]!.maxScore,
+                      )
+                      .reduce((total, score) => total + score) /
+                  scoredSubmissions.length;
+
+        return _ChildActivityAnalytics(
+          childName: '${child.firstName} ${child.lastName}'.trim(),
+          assigned: childActivities.length,
+          completed: childActivities
+              .where(
+                (activity) =>
+                    activity.status.trim().toLowerCase() == 'completed' ||
+                    (activity.id != null &&
+                        childSubmissions.any(
+                          (submission) => submission.activityId == activity.id,
+                        )),
+              )
+              .length,
+          awaitingReview: childSubmissions
+              .where(
+                (submission) =>
+                    submission.reviewStatus.trim().toLowerCase() == 'pending',
+              )
+              .length,
+          averageScore: averageScore,
+        );
+      }).toList();
+
+      if (!mounted) return;
+      setState(() {
+        _activityAnalytics = analytics;
+        _isLoadingActivityAnalytics = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _activityAnalytics = children
+            .map(
+              (child) => _ChildActivityAnalytics(
+                childName: '${child.firstName} ${child.lastName}'.trim(),
+              ),
+            )
+            .toList();
+        _isLoadingActivityAnalytics = false;
+      });
+    }
+  }
+
   void _selectSection(int index) => setState(() => _selectedSection = index);
+
+  Future<void> _openChildProfiles() async {
+    // Keep Child Profiles inside the teacher workspace on web so it uses the
+    // same persistent sidebar navigation as the other desktop sections.
+    if (kIsWeb) {
+      _selectSection(1);
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => ChildListPage(
+          teacherMode: true,
+          onTeacherSectionSelected: _navigateFromChildProfiles,
+        ),
+      ),
+    );
+    if (mounted) _loadClassroomCount();
+  }
+
+  void _navigateFromChildProfiles(int index) {
+    if (!mounted) return;
+    if (index == 3) {
+      setState(() => _isMoreOpen = true);
+      return;
+    }
+    setState(() {
+      _selectedSection = index;
+      _isMoreOpen = false;
+    });
+  }
 
   Future<void> _logout() async {
     final confirmed = await ConfirmationDialog.show(
@@ -96,7 +301,10 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
   Widget _buildSelectedSection() {
     switch (_selectedSection) {
       case 1:
-        return const ChildListPage();
+        return const ChildListPage(
+          teacherMode: true,
+          showTeacherBottomNavigation: false,
+        );
       case 2:
         return const AttendancePage();
       case 3:
@@ -116,10 +324,12 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final keyboardVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
 
     return PopScope(
       canPop: false,
       child: Scaffold(
+        resizeToAvoidBottomInset: false,
         appBar: AppBar(
           automaticallyImplyLeading: false,
           title: const EccdAppBarTitle(
@@ -129,16 +339,10 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
           backgroundColor: colorScheme.surface,
           elevation: 0,
           scrolledUnderElevation: 0,
-          actions: [
-            if (kIsWeb && MediaQuery.sizeOf(context).width > 900)
-              IconButton(
-                icon: const Icon(Icons.logout),
-                tooltip: 'Logout',
-                onPressed: _logout,
-              ),
-          ],
         ),
-        bottomNavigationBar: kIsWeb && MediaQuery.sizeOf(context).width > 900
+        bottomNavigationBar:
+            keyboardVisible ||
+                (kIsWeb && MediaQuery.sizeOf(context).width > 900)
             ? null
             : SafeArea(
                 top: false,
@@ -147,6 +351,10 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                   onDestinationSelected: (index) {
                     if (index == 3) {
                       _showMoreSections();
+                    } else if (index == 1 &&
+                        !(kIsWeb && MediaQuery.sizeOf(context).width > 900)) {
+                      setState(() => _isMoreOpen = false);
+                      _openChildProfiles();
                     } else {
                       setState(() => _isMoreOpen = false);
                       _selectSection(index);
@@ -178,14 +386,18 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
               ),
         body: Stack(
           children: [
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final dashboard = _TeacherWorkspaceHome(
-                  childCount: _childCount,
-                  isLoading: _isLoadingClassroom,
-                  onNavigate: _selectSection,
-                );
-                /*final dashboard = Padding(
+            Positioned.fill(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final dashboard = _TeacherWorkspaceHome(
+                    childCount: _childCount,
+                    isLoading: _isLoadingClassroom,
+                    activityAnalytics: _activityAnalytics,
+                    isLoadingActivityAnalytics: _isLoadingActivityAnalytics,
+                    teacherName: _loggedInTeacher?.name ?? 'Teacher',
+                    assignedChildren: _assignedChildren,
+                  );
+                  /*final dashboard = Padding(
               padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -365,70 +577,77 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
               ),
             );*/
 
-                if (kIsWeb && constraints.maxWidth > 900) {
-                  return Row(
-                    children: [
-                      RoleWebSidebar(
-                        title: 'Teacher Workspace',
-                        subtitle: 'CLASSROOM PORTAL',
-                        showIdentityLogo: false,
-                        items: [
-                          RoleWebNavItem(
-                            label: 'Dashboard',
-                            icon: Icons.dashboard_outlined,
-                            selected: _selectedSection == 0,
-                            onTap: () => _selectSection(0),
+                  if (kIsWeb && constraints.maxWidth > 900) {
+                    return Row(
+                      children: [
+                        RoleWebSidebar(
+                          title: 'Teacher Workspace',
+                          subtitle: 'CLASSROOM PORTAL',
+                          showIdentityLogo: false,
+                          items: [
+                            RoleWebNavItem(
+                              label: 'Dashboard',
+                              icon: Icons.dashboard_outlined,
+                              selected: _selectedSection == 0,
+                              onTap: () => _selectSection(0),
+                            ),
+                            RoleWebNavItem(
+                              label: 'Child Profiles',
+                              icon: Icons.person_add_outlined,
+                              selected: _selectedSection == 1,
+                              onTap: _openChildProfiles,
+                            ),
+                            RoleWebNavItem(
+                              label: 'Attendance',
+                              icon: Icons.calendar_today_outlined,
+                              selected: _selectedSection == 2,
+                              onTap: () => _selectSection(2),
+                            ),
+                            RoleWebNavItem(
+                              label: 'ECCD Evaluation',
+                              icon: Icons.assignment_outlined,
+                              selected: _selectedSection == 3,
+                              onTap: () => _selectSection(3),
+                            ),
+                            RoleWebNavItem(
+                              label: 'Home Activities',
+                              icon: Icons.home_work_outlined,
+                              selected: _selectedSection == 4,
+                              onTap: () => _selectSection(4),
+                            ),
+                            RoleWebNavItem(
+                              label: 'Referrals',
+                              icon: Icons.medical_services_outlined,
+                              selected: _selectedSection == 5,
+                              onTap: () => _selectSection(5),
+                            ),
+                            RoleWebNavItem(
+                              label: 'Clarifications',
+                              icon: Icons.question_answer_outlined,
+                              selected: _selectedSection == 6,
+                              onTap: () => _selectSection(6),
+                            ),
+                          ],
+                          bottomItem: RoleWebNavItem(
+                            label: 'Logout',
+                            icon: Icons.logout_rounded,
+                            isDestructive: true,
+                            onTap: _logout,
                           ),
-                          RoleWebNavItem(
-                            label: 'Register Child',
-                            icon: Icons.person_add_outlined,
-                            selected: _selectedSection == 1,
-                            onTap: () => _selectSection(1),
-                          ),
-                          RoleWebNavItem(
-                            label: 'Attendance',
-                            icon: Icons.calendar_today_outlined,
-                            selected: _selectedSection == 2,
-                            onTap: () => _selectSection(2),
-                          ),
-                          RoleWebNavItem(
-                            label: 'ECCD Evaluation',
-                            icon: Icons.assignment_outlined,
-                            selected: _selectedSection == 3,
-                            onTap: () => _selectSection(3),
-                          ),
-                          RoleWebNavItem(
-                            label: 'Home Activities',
-                            icon: Icons.home_work_outlined,
-                            selected: _selectedSection == 4,
-                            onTap: () => _selectSection(4),
-                          ),
-                          RoleWebNavItem(
-                            label: 'Referrals',
-                            icon: Icons.medical_services_outlined,
-                            selected: _selectedSection == 5,
-                            onTap: () => _selectSection(5),
-                          ),
-                          RoleWebNavItem(
-                            label: 'Clarifications',
-                            icon: Icons.question_answer_outlined,
-                            selected: _selectedSection == 6,
-                            onTap: () => _selectSection(6),
-                          ),
-                        ],
-                      ),
-                      Expanded(
-                        child: _selectedSection == 0
-                            ? dashboard
-                            : _buildSelectedSection(),
-                      ),
-                    ],
-                  );
-                }
-                return _selectedSection == 0
-                    ? dashboard
-                    : _buildSelectedSection();
-              },
+                        ),
+                        Expanded(
+                          child: _selectedSection == 0
+                              ? dashboard
+                              : _buildSelectedSection(),
+                        ),
+                      ],
+                    );
+                  }
+                  return _selectedSection == 0
+                      ? dashboard
+                      : _buildSelectedSection();
+                },
+              ),
             ),
             if (_isMoreOpen &&
                 !(kIsWeb && MediaQuery.sizeOf(context).width > 900))
@@ -489,12 +708,18 @@ class _TeacherWorkspaceHome extends StatelessWidget {
   const _TeacherWorkspaceHome({
     required this.childCount,
     required this.isLoading,
-    required this.onNavigate,
+    required this.activityAnalytics,
+    required this.isLoadingActivityAnalytics,
+    required this.teacherName,
+    required this.assignedChildren,
   });
 
   final int childCount;
   final bool isLoading;
-  final ValueChanged<int> onNavigate;
+  final List<_ChildActivityAnalytics> activityAnalytics;
+  final bool isLoadingActivityAnalytics;
+  final String teacherName;
+  final List<ChildModel> assignedChildren;
 
   @override
   Widget build(BuildContext context) {
@@ -505,6 +730,11 @@ class _TeacherWorkspaceHome extends StatelessWidget {
         final horizontalPadding = isPhone ? 16.0 : 32.0;
         final contentWidth = constraints.maxWidth - (horizontalPadding * 2);
         final metricWidth = isPhone ? (contentWidth - 16) / 2 : 296.0;
+        final childCardWidth = isPhone
+            ? contentWidth
+            : constraints.maxWidth >= 1050
+            ? (contentWidth - 32) / 3
+            : (contentWidth - 16) / 2;
         return SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(
             horizontalPadding,
@@ -577,7 +807,7 @@ class _TeacherWorkspaceHome extends StatelessWidget {
                             ),
                             const SizedBox(height: 10),
                             Text(
-                              'Teacher Workspace',
+                              'Welcome, $teacherName',
                               style: TextStyle(
                                 color: Color(0xFF102A72),
                                 fontSize: isPhone ? 28 : 34,
@@ -586,11 +816,9 @@ class _TeacherWorkspaceHome extends StatelessWidget {
                             ),
                             const SizedBox(height: 9),
                             Text(
-                              'Keep your classroom organized and every child\'s progress visible.',
+                              'Logged in as teacher. Keep your active child profiles and parent links visible.',
                               maxLines: isPhone ? 4 : null,
-                              overflow: isPhone
-                                  ? TextOverflow.ellipsis
-                                  : null,
+                              overflow: isPhone ? TextOverflow.ellipsis : null,
                               style: const TextStyle(
                                 color: Color(0xFF54769B),
                                 fontSize: 15,
@@ -614,6 +842,7 @@ class _TeacherWorkspaceHome extends StatelessWidget {
                       icon: Icons.groups_rounded,
                       color: BrandColors.green,
                       width: metricWidth,
+                      compact: isPhone,
                     ),
                     _TeacherMetric(
                       label: 'Attendance',
@@ -621,6 +850,7 @@ class _TeacherWorkspaceHome extends StatelessWidget {
                       icon: Icons.fact_check_rounded,
                       color: BrandColors.sky,
                       width: metricWidth,
+                      compact: isPhone,
                     ),
                     _TeacherMetric(
                       label: 'Evaluations',
@@ -628,6 +858,7 @@ class _TeacherWorkspaceHome extends StatelessWidget {
                       icon: Icons.auto_graph_rounded,
                       color: BrandColors.sunshine,
                       width: metricWidth,
+                      compact: isPhone,
                     ),
                     _TeacherMetric(
                       label: 'Referrals',
@@ -635,81 +866,216 @@ class _TeacherWorkspaceHome extends StatelessWidget {
                       icon: Icons.medical_services_rounded,
                       color: Color(0xFFE76F51),
                       width: metricWidth,
+                      compact: isPhone,
                     ),
                   ],
                 ),
                 const SizedBox(height: 32),
                 const Text(
-                  'Quick actions',
+                  'My active children',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Children assigned to your teacher account and their linked parent.',
+                  style: TextStyle(color: Color(0xFF54769B)),
+                ),
+                const SizedBox(height: 14),
+                if (isLoading)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                else if (assignedChildren.isEmpty)
+                  const _TeacherChildrenEmptyState()
+                else
+                  Wrap(
+                    spacing: 16,
+                    runSpacing: 16,
+                    children: assignedChildren
+                        .map(
+                          (child) => _TeacherChildAssignmentCard(
+                            child: child,
+                            width: childCardWidth,
+                          ),
+                        )
+                        .toList(),
+                  ),
+                const SizedBox(height: 32),
+                const Text(
+                  'Child activity analytics',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 14),
-                GridView.count(
-                  crossAxisCount: columns,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  childAspectRatio: constraints.maxWidth >= 800
-                      ? 1.7
-                      : (isPhone ? 1.55 : 1.3),
-                  children: [
-                    _WorkspaceAction(
-                      title: 'Register a child',
-                      subtitle: 'Create a new child profile and add to your classroom.',
-                      actionLabel: 'Register Child',
-                      icon: Icons.person_add_alt_1_rounded,
-                      color: BrandColors.sky,
-                      onTap: () => onNavigate(1),
+                if (isLoadingActivityAnalytics)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: CircularProgressIndicator(),
                     ),
-                    _WorkspaceAction(
-                      title: 'Take attendance',
-                      subtitle: 'Record today\'s classroom attendance',
-                      actionLabel: 'Take Attendance',
-                      icon: Icons.calendar_month_rounded,
-                      color: BrandColors.green,
-                      onTap: () => onNavigate(2),
-                    ),
-                    _WorkspaceAction(
-                      title: 'Start evaluation',
-                      subtitle:
-                          'Update and record a child\'s development progress.',
-                      actionLabel: 'Start Evaluation',
-                      icon: Icons.assignment_turned_in_rounded,
-                      color: BrandColors.sunshine,
-                      onTap: () => onNavigate(3),
-                    ),
-                    _WorkspaceAction(
-                      title: 'Home activities',
-                      subtitle: 'Send and manage home learning activities.',
-                      actionLabel: 'Manage Home Activities',
-                      icon: Icons.home_work_rounded,
-                      color: BrandColors.navy,
-                      onTap: () => onNavigate(4),
-                    ),
-                    _WorkspaceAction(
-                      title: 'Referrals',
-                      subtitle: 'Create and track child referrals to support services.',
-                      actionLabel: 'Manage Referrals',
-                      icon: Icons.medical_services_rounded,
-                      color: const Color(0xFFE76F51),
-                      onTap: () => onNavigate(5),
-                    ),
-                    _WorkspaceAction(
-                      title: 'Clarifications',
-                      subtitle: 'Respond to parent questions',
-                      actionLabel: 'Send Clarification',
-                      icon: Icons.forum_rounded,
-                      color: BrandColors.green,
-                      onTap: () => onNavigate(6),
-                    ),
-                  ],
-                ),
+                  )
+                else if (activityAnalytics.isEmpty)
+                  const _ActivityAnalyticsEmptyState()
+                else
+                  GridView.count(
+                    crossAxisCount: columns,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 16,
+                    childAspectRatio: constraints.maxWidth >= 800
+                        ? 1.65
+                        : (isPhone ? 1.25 : 1.35),
+                    children: activityAnalytics
+                        .map(
+                          (analytics) =>
+                              _ChildActivityAnalyticsCard(analytics: analytics),
+                        )
+                        .toList(),
+                  ),
               ],
             ),
           ),
         );
       },
+    );
+  }
+}
+
+class _TeacherChildrenEmptyState extends StatelessWidget {
+  const _TeacherChildrenEmptyState();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(22),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: BrandColors.sky.withValues(alpha: .18)),
+    ),
+    child: const Row(
+      children: [
+        Icon(Icons.groups_outlined, color: BrandColors.sky, size: 34),
+        SizedBox(width: 14),
+        Expanded(
+          child: Text(
+            'No active child profiles are linked to your account yet. Use Register Child to create and link a child to a parent.',
+            style: TextStyle(color: Color(0xFF54769B)),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _TeacherChildAssignmentCard extends StatelessWidget {
+  const _TeacherChildAssignmentCard({required this.child, required this.width});
+
+  final ChildModel child;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = '${child.firstName} ${child.lastName}'.trim();
+    final initial = name.isEmpty ? '?' : name[0].toUpperCase();
+    final parentName = child.parentName.trim();
+    return Container(
+      width: width,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: BrandColors.green.withValues(alpha: .24)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: BrandColors.sky.withValues(alpha: .13),
+                foregroundColor: BrandColors.navy,
+                child: Text(
+                  initial,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name.isEmpty ? 'Unnamed child' : name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      'Child ID: ${child.childId}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF54769B),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: BrandColors.green.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'Active',
+                  style: TextStyle(
+                    color: BrandColors.green,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              const Icon(
+                Icons.family_restroom_rounded,
+                size: 18,
+                color: BrandColors.navy,
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  parentName.isEmpty
+                      ? 'No parent linked yet'
+                      : 'Parent: $parentName',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF355875),
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -721,48 +1087,50 @@ class _TeacherMetric extends StatelessWidget {
     required this.icon,
     required this.color,
     required this.width,
+    required this.compact,
   });
   final String label;
   final String value;
   final IconData icon;
   final Color color;
   final double width;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) => Container(
     width: width,
-    padding: const EdgeInsets.all(18),
+    height: compact ? 104 : null,
+    padding: EdgeInsets.all(compact ? 14 : 18),
     decoration: BoxDecoration(
       color: Colors.white,
       borderRadius: BorderRadius.circular(18),
       border: Border.all(color: color.withValues(alpha: .18)),
     ),
-    child: Row(
-      children: [
-        Container(
-          width: 42,
-          height: 42,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: .12),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(icon, color: color),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
+    child: compact
+        ? Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                ),
+              Row(
+                children: [
+                  _MetricIcon(icon: icon, color: color, compact: true),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
               ),
+              const Spacer(),
               Text(
                 label,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 12,
@@ -770,112 +1138,226 @@ class _TeacherMetric extends StatelessWidget {
                 ),
               ),
             ],
+          )
+        : Row(
+            children: [
+              _MetricIcon(icon: icon, color: color),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      value,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
+  );
+}
+
+class _MetricIcon extends StatelessWidget {
+  const _MetricIcon({
+    required this.icon,
+    required this.color,
+    this.compact = false,
+  });
+
+  final IconData icon;
+  final Color color;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = compact ? 38.0 : 42.0;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Icon(icon, color: color, size: compact ? 20 : 24),
+    );
+  }
+}
+
+class _ChildActivityAnalytics {
+  const _ChildActivityAnalytics({
+    required this.childName,
+    this.assigned = 0,
+    this.completed = 0,
+    this.awaitingReview = 0,
+    this.averageScore,
+  });
+
+  final String childName;
+  final int assigned;
+  final int completed;
+  final int awaitingReview;
+  final double? averageScore;
+
+  double get completionRate => assigned == 0 ? 0 : completed / assigned;
+}
+
+class _ChildActivityAnalyticsCard extends StatelessWidget {
+  const _ChildActivityAnalyticsCard({required this.analytics});
+
+  final _ChildActivityAnalytics analytics;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: BrandColors.sky.withValues(alpha: .2)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: BrandColors.sky.withValues(alpha: .12),
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: const Icon(
+                Icons.child_care_rounded,
+                color: BrandColors.sky,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                analytics.childName.isEmpty ? 'Child' : analytics.childName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        Text(
+          analytics.assigned == 0
+              ? 'No teacher activities assigned yet'
+              : '${analytics.completed} of ${analytics.assigned} activities completed',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontSize: 12,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: LinearProgressIndicator(
+            value: analytics.completionRate,
+            minHeight: 8,
+            backgroundColor: BrandColors.sky.withValues(alpha: .12),
+            valueColor: const AlwaysStoppedAnimation(BrandColors.green),
+          ),
+        ),
+        const Spacer(),
+        Row(
+          children: [
+            _AnalyticsValue(
+              icon: Icons.rate_review_outlined,
+              value: '${analytics.awaitingReview}',
+              label: 'for review',
+              color: BrandColors.sunshine,
+            ),
+            const SizedBox(width: 18),
+            _AnalyticsValue(
+              icon: Icons.auto_graph_rounded,
+              value: analytics.averageScore == null
+                  ? '—'
+                  : '${(analytics.averageScore! * 100).round()}%',
+              label: 'avg. score',
+              color: BrandColors.navy,
+            ),
+          ],
         ),
       ],
     ),
   );
 }
 
-class _WorkspaceAction extends StatelessWidget {
-  const _WorkspaceAction({
-    required this.title,
-    required this.subtitle,
-    required this.actionLabel,
+class _AnalyticsValue extends StatelessWidget {
+  const _AnalyticsValue({
     required this.icon,
+    required this.value,
+    required this.label,
     required this.color,
-    required this.onTap,
   });
-  final String title;
-  final String subtitle;
-  final String actionLabel;
+
   final IconData icon;
+  final String value;
+  final String label;
   final Color color;
-  final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: Colors.white,
-    borderRadius: BorderRadius.circular(20),
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(18, 15, 18, 14),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color.withValues(alpha: .18)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 54,
-                  height: 54,
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: .12),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Icon(icon, color: color, size: 30),
-                ),
-                const Spacer(),
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFF0F8FF),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.arrow_forward_ios_rounded,
-                    size: 18,
-                    color: BrandColors.sky,
-                  ),
-                ),
-              ],
-            ),
-            const Spacer(),
-            Text(
-              title,
-              style: const TextStyle(
-                color: Color(0xFF07135B),
-                fontWeight: FontWeight.w800,
-                fontSize: 18,
-              ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              subtitle,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontSize: 13,
-                height: 1.3,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: .12),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Center(
-                child: Text(
-                  actionLabel,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ),
-          ],
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(icon, size: 18, color: color),
+      const SizedBox(width: 5),
+      Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
+      const SizedBox(width: 4),
+      Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
       ),
+    ],
+  );
+}
+
+class _ActivityAnalyticsEmptyState extends StatelessWidget {
+  const _ActivityAnalyticsEmptyState();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(28),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: BrandColors.sky.withValues(alpha: .2)),
+    ),
+    child: const Row(
+      children: [
+        Icon(Icons.insights_rounded, color: BrandColors.sky, size: 38),
+        SizedBox(width: 14),
+        Expanded(
+          child: Text(
+            'Assign activities to children to see their progress analytics here.',
+          ),
+        ),
+      ],
     ),
   );
 }

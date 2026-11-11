@@ -132,12 +132,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           elevation: 0,
           scrolledUnderElevation: 0,
           actions: [
-            IconButton(
-              icon: const Icon(Icons.logout_rounded),
-              tooltip: 'Logout',
-              onPressed: _logout,
-            ),
-            const SizedBox(width: 12),
+            if (!(kIsWeb && MediaQuery.sizeOf(context).width > 900)) ...[
+              IconButton(
+                icon: const Icon(Icons.logout_rounded),
+                tooltip: 'Logout',
+                onPressed: _logout,
+              ),
+              const SizedBox(width: 12),
+            ],
           ],
         ),
         bottomNavigationBar: kIsWeb && MediaQuery.sizeOf(context).width > 900
@@ -229,6 +231,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         onTap: () => _selectSection(6),
                       ),
                     ],
+                    bottomItem: RoleWebNavItem(
+                      label: 'Logout',
+                      icon: Icons.logout_rounded,
+                      isDestructive: true,
+                      onTap: _logout,
+                    ),
                   ),
                   Expanded(child: _buildSelectedSection()),
                 ],

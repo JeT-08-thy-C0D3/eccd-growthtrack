@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../../shared/models/child_model.dart';
 import '../data/attendance_repository.dart';
 
@@ -42,12 +43,19 @@ class _AttendanceHistoryPageState extends State<AttendanceHistoryPage> {
       _filteredHistory = _allHistory.where((record) {
         final date = (record['attendance_date'] as String? ?? '').toLowerCase();
         final time = (record['attendance_time'] as String? ?? '').toLowerCase();
-        final childName = "${widget.child.firstName} ${widget.child.lastName}".toLowerCase();
+        final childName = "${widget.child.firstName} ${widget.child.lastName}"
+            .toLowerCase();
         final childId = widget.child.childId.toLowerCase();
 
-        final matchesSearch = date.contains(q) || time.contains(q) || childName.contains(q) || childId.contains(q);
-        final matchesStatus = _selectedStatusFilter == 'All' ||
-            (record['status'] as String? ?? '').toLowerCase() == _selectedStatusFilter.toLowerCase();
+        final matchesSearch =
+            date.contains(q) ||
+            time.contains(q) ||
+            childName.contains(q) ||
+            childId.contains(q);
+        final matchesStatus =
+            _selectedStatusFilter == 'All' ||
+            (record['status'] as String? ?? '').toLowerCase() ==
+                _selectedStatusFilter.toLowerCase();
 
         return matchesSearch && matchesStatus;
       }).toList();
@@ -74,12 +82,17 @@ class _AttendanceHistoryPageState extends State<AttendanceHistoryPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('History: ${widget.child.firstName} (${widget.child.childId})'),
+        title: Text(
+          'History: ${widget.child.firstName} (${widget.child.childId})',
+        ),
       ),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 8.0,
+            ),
             child: SearchBar(
               controller: _searchController,
               hintText: 'Search by Date, Time, Name, or Child ID...',
@@ -95,34 +108,38 @@ class _AttendanceHistoryPageState extends State<AttendanceHistoryPage> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _filteredHistory.isEmpty
-                    ? const Center(child: Text('No matching attendance records found.'))
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _filteredHistory.length,
-                        itemBuilder: (context, index) {
-                          final record = _filteredHistory[index];
-                          final isPresent = record['status'] == 'Present';
+                ? const Center(
+                    child: Text('No matching attendance records found.'),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _filteredHistory.length,
+                    itemBuilder: (context, index) {
+                      final record = _filteredHistory[index];
+                      final isPresent = record['status'] == 'Present';
 
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              leading: Icon(
-                                isPresent ? Icons.check_circle : Icons.cancel,
-                                color: isPresent ? Colors.green : Colors.red,
-                              ),
-                              title: Text(record['attendance_date']),
-                              subtitle: Text('Time recorded: ${record['attendance_time']}'),
-                              trailing: Text(
-                                record['status'],
-                                style: TextStyle(
-                                  color: isPresent ? Colors.green : Colors.red,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          leading: Icon(
+                            isPresent ? Icons.check_circle : Icons.cancel,
+                            color: isPresent ? Colors.green : Colors.red,
+                          ),
+                          title: Text(record['attendance_date']),
+                          subtitle: Text(
+                            'Time In: ${record['attendance_time']} • Method: ${(record['attendance_method'] ?? 'manual').toString().toUpperCase()}',
+                          ),
+                          trailing: Text(
+                            record['status'],
+                            style: TextStyle(
+                              color: isPresent ? Colors.green : Colors.red,
+                              fontWeight: FontWeight.bold,
                             ),
-                          );
-                        },
-                      ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -136,7 +153,10 @@ class _AttendanceHistoryPageState extends State<AttendanceHistoryPage> {
         children: [
           const Icon(Icons.filter_list, size: 18),
           const SizedBox(width: 8),
-          const Text('Status:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+          const Text(
+            'Status:',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: SingleChildScrollView(
@@ -168,7 +188,12 @@ class _AttendanceHistoryPageState extends State<AttendanceHistoryPage> {
             underline: const SizedBox(),
             icon: const Icon(Icons.sort, size: 20),
             items: ['Newest First', 'Oldest First']
-                .map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 12))))
+                .map(
+                  (s) => DropdownMenuItem(
+                    value: s,
+                    child: Text(s, style: const TextStyle(fontSize: 12)),
+                  ),
+                )
                 .toList(),
             onChanged: (val) {
               if (val != null) {

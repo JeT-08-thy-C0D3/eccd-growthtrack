@@ -15,7 +15,7 @@ class UserRepositoryImpl implements UserRepository {
   final AuditRepository _auditRepo = AuditRepository();
 
   @override
-  Future<void> createUser(UserModel user) async {
+  Future<UserModel> createUser(UserModel user) async {
     if (user.role == UserRole.admin) {
       throw StateError('Creating additional ADMIN accounts is not allowed.');
     }
@@ -30,6 +30,7 @@ class UserRepositoryImpl implements UserRepository {
         finalUid = await _remoteDataSource.createAuthAccount(
           user.email,
           user.password,
+          displayName: user.name,
         );
       } catch (e) {
         debugPrint('Firebase Auth creation failed: $e');
@@ -56,6 +57,8 @@ class UserRepositoryImpl implements UserRepository {
       targetRecord:
           '${newUser.name} (${newUser.email} • ${newUser.role.name.toUpperCase()})',
     );
+
+    return newUser;
   }
 
   @override
@@ -96,12 +99,12 @@ class UserRepositoryImpl implements UserRepository {
     }
     final emailChanged =
         existingUser != null &&
-        existingUser.email.trim().toLowerCase() != user.email.trim().toLowerCase();
-    if (emailChanged && user.role != UserRole.teacher) {
-      throw StateError('Only teacher account emails can be changed here.');
-    }
+        existingUser.email.trim().toLowerCase() !=
+            user.email.trim().toLowerCase();
     if (emailChanged && !await _connectivity.isOnline) {
-      throw StateError('Connect to the internet before changing a login email.');
+      throw StateError(
+        'Connect to the internet before changing a login email.',
+      );
     }
     final updatedUser = user.copyWith(isSynced: await _connectivity.isOnline);
 
@@ -118,7 +121,9 @@ class UserRepositoryImpl implements UserRepository {
           await _remoteDataSource.saveUserToFirestore(updatedUser);
         }
       } on FirebaseFunctionsException catch (error) {
-        throw StateError(error.message ?? 'Unable to change the account email.');
+        throw StateError(
+          error.message ?? 'Unable to change the account email.',
+        );
       }
     }
 

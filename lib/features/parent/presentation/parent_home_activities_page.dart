@@ -1,8 +1,14 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../../shared/models/child_model.dart';
 import '../../home_activities/data/activity_repository.dart';
 import '../../home_activities/domain/activity_model.dart';
+import '../../home_activities/presentation/activity_submission_page.dart';
 
 class ParentHomeActivitiesPage extends StatefulWidget {
   final ChildModel child;
@@ -18,11 +24,46 @@ class _ParentHomeActivitiesPageState extends State<ParentHomeActivitiesPage> {
   List<ActivityModel> _activities = [];
   bool _isLoading = true;
   String? _loadError;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _activityChanges;
 
   @override
   void initState() {
     super.initState();
     _loadActivities();
+    _listenForAssignedActivities();
+  }
+
+  /// A parent who already has this page open sees newly assigned teacher work
+  /// immediately, without needing to sign out, reopen the page, or refresh.
+  void _listenForAssignedActivities() {
+    if (!kIsWeb) return;
+    final parentUid = FirebaseAuth.instance.currentUser?.uid;
+    if (parentUid == null || parentUid.isEmpty) return;
+
+    _activityChanges = FirebaseFirestore.instance
+        .collection('activities')
+        .where('child_id', isEqualTo: widget.child.childId)
+        .where('parent_uid', isEqualTo: parentUid)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            final activities =
+                snapshot.docs
+                    .map((doc) => ActivityModel.fromMap(doc.data()))
+                    .toList()
+                  ..sort((a, b) => b.createdDate.compareTo(a.createdDate));
+            if (!mounted) return;
+            setState(() {
+              _activities = activities;
+              _loadError = null;
+              _isLoading = false;
+            });
+          },
+          onError: (_) {
+            // Keep the result of the normal one-time load visible if a live
+            // listener temporarily loses its network connection.
+          },
+        );
   }
 
   Future<void> _loadActivities() async {
@@ -44,16 +85,22 @@ class _ParentHomeActivitiesPageState extends State<ParentHomeActivitiesPage> {
     }
   }
 
-  Future<void> _markAsDone(int activityId) async {
-    await _repository.updateActivityStatus(activityId, 'Completed');
-    _loadActivities();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Activity marked as completed! Good job!'),
-        ),
-      );
+  Future<void> _submitActivity(ActivityModel activity) async {
+    final submitted = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ActivitySubmissionPage(activity: activity),
+      ),
+    );
+    if (submitted == true && mounted) {
+      await _loadActivities();
     }
+  }
+
+  @override
+  void dispose() {
+    _activityChanges?.cancel();
+    super.dispose();
   }
 
   @override
@@ -171,13 +218,25 @@ class _ParentHomeActivitiesPageState extends State<ParentHomeActivitiesPage> {
                             child: ElevatedButton.icon(
                               onPressed: activity.id == null
                                   ? null
-                                  : () => _markAsDone(activity.id!),
-                              icon: const Icon(Icons.check),
-                              label: const Text('Mark as Done'),
+                                  : () => _submitActivity(activity),
+                              icon: const Icon(Icons.upload_file_rounded),
+                              label: const Text('Submit with Proof'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
                                 foregroundColor: Colors.white,
                               ),
+                            ),
+                          ),
+                        ] else ...[
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: activity.id == null
+                                  ? null
+                                  : () => _submitActivity(activity),
+                              icon: const Icon(Icons.visibility_outlined),
+                              label: const Text('View Submitted Activity'),
                             ),
                           ),
                         ],

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class RemoteDataSource {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -6,8 +7,9 @@ class RemoteDataSource {
   Future<void> uploadRecord(
     String collection,
     String docId,
-    Map<String, dynamic> data,
-  ) async {
+    Map<String, dynamic> data, {
+    bool isCreate = false,
+  }) async {
     // Remove SQLite specific flags before uploading
     final uploadData = Map<String, dynamic>.from(data);
     uploadData.remove('is_synced');
@@ -20,6 +22,38 @@ class RemoteDataSource {
     if (collection == 'activities' || collection == 'activity_submissions') {
       final localId = int.tryParse(docId);
       if (localId != null) uploadData['id'] = localId;
+    }
+    // Referral security rules scope every document to its referring teacher.
+    // Native records may be queued locally first, so attach the active
+    // teacher's identity when the queued record reaches Firestore.
+    if (collection == 'referrals') {
+      final teacherUid = FirebaseAuth.instance.currentUser?.uid;
+      if (teacherUid != null && teacherUid.isNotEmpty) {
+        uploadData.putIfAbsent('referrerId', () => teacherUid);
+      }
+    }
+
+    // New child and activity documents are intentionally unreadable until
+    // their owner fields have been stored (see the Firestore rules). A
+    // Firestore transaction performs a read before its write, so it fails with
+    // a 403 `batchGet` even though the teacher is allowed to create the
+    // document. A direct merge write is evaluated as a create by Firestore.
+    if (collection == 'children' ||
+        collection == 'activities' ||
+        collection == 'activity_submissions' ||
+        collection == 'attendance_events' ||
+        collection == 'referrals' ||
+        collection == 'evaluations' ||
+        collection == 'parent_feedback' ||
+        collection == 'triangulations' ||
+        collection == 'development_summaries') {
+      await _writeWithoutPreread(
+        collection,
+        docId,
+        uploadData,
+        isCreate: isCreate,
+      );
+      return;
     }
 
     await _writeWithServerTimestamps(collection, docId, uploadData);
@@ -83,5 +117,18 @@ class RemoteDataSource {
       };
       transaction.set(document, serverData, SetOptions(merge: true));
     });
+  }
+
+  Future<void> _writeWithoutPreread(
+    String collection,
+    String docId,
+    Map<String, dynamic> data, {
+    bool isCreate = false,
+  }) async {
+    await _firestore.collection(collection).doc(docId).set({
+      ...data,
+      'server_updated_at': FieldValue.serverTimestamp(),
+      if (isCreate) 'server_created_at': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 }

@@ -265,6 +265,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "7.0.1"
+  file_picker:
+    dependency: "direct main"
+    description:
+      name: file_picker
+      sha256: ab13ae8ef5580a411c458d6207b6774a6c237d77ac37011b13994879f68a8810
+      url: "https://pub.dev"
+    source: hosted
+    version: "8.3.7"
   file_selector_linux:
     dependency: transitive
     description:
@@ -297,6 +305,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.9.3+6"
+  firebase_ai:
+    dependency: "direct main"
+    description:
+      name: firebase_ai
+      sha256: "5e67e2138dd6ef8f58e6b03aaa27243937724117cc68c684b5f5b8b9f4d49b42"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.3.0"
   firebase_app_check:
     dependency: "direct main"
     description:
@@ -920,6 +936,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.4.1"
+  skio_core:
+    dependency: transitive
+    description:
+      name: skio_core
+      sha256: aa9217ccc7b580313c47a7dcec288e6b1bccaf90e5d61314f72875ac1d1116ea
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.1.3"
+  skio_usb_serial:
+    dependency: "direct main"
+    description:
+      name: skio_usb_serial
+      sha256: bcdd04d422b776a8c9acc341a803f852fcfab397fbed5f09f8d61ea1c54f6426
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.1.3"
   sky_engine:
     dependency: transitive
     description: flutter
@@ -1062,7 +1094,7 @@ packages:
     source: hosted
     version: "1.4.0"
   url_launcher:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: url_launcher
       sha256: f6a7e5c4835bb4e3026a04793a4199ca2d14c739ec378fdfe23fc8075d0439f8
@@ -1165,6 +1197,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.3"
+  win32:
+    dependency: transitive
+    description:
+      name: win32
+      sha256: d7cb55e04cd34096cd3a79b3330245f54cb96a370a1c27adb3c84b917de8b08e
+      url: "https://pub.dev"
+    source: hosted
+    version: "5.15.0"
   xdg_directories:
     dependency: transitive
     description:
@@ -1199,4 +1239,4 @@ packages:
     version: "2.1.1"
 sdks:
   dart: ">=3.13.2 <4.0.0"
-  flutter: ">=3.44.0"
+  flutter: ">=3.47.0"

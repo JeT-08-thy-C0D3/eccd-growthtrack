@@ -1,7 +1,9 @@
 import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:intl/intl.dart';
+
 import '../../../core/database/database_helper.dart';
 import '../../../core/network/connectivity_service.dart';
 import '../../../data/datasources/local_data_source.dart';
@@ -18,7 +20,9 @@ abstract class NotificationRepository {
     String? referenceId,
   });
 
-  Stream<List<NotificationModel>> getParentNotificationsStream(String parentUid);
+  Stream<List<NotificationModel>> getParentNotificationsStream(
+    String parentUid,
+  );
   Stream<int> getUnreadCountStream(String parentUid);
   Future<void> markAsRead(NotificationModel notification);
   Future<void> markAllAsRead(String parentUid);
@@ -45,13 +49,18 @@ class NotificationRepositoryImpl implements NotificationRepository {
 
       // 1. Resolve Child & Parent UID
       if (kIsWeb) {
-        final childDocs = await _firestore
+        // Child profiles use child_id as their Firestore document ID. Reading
+        // that one assigned profile is permitted for the teacher, unlike a
+        // broad child_id query that Firestore cannot prove is classroom-scoped.
+        final childDoc = await _firestore
             .collection('children')
-            .where('child_id', isEqualTo: childId)
+            .doc(childId)
             .get();
-        if (childDocs.docs.isNotEmpty) {
-          final childData = childDocs.docs.first.data();
-          childName = "${childData['first_name'] ?? ''} ${childData['last_name'] ?? ''}".trim();
+        if (childDoc.exists) {
+          final childData = childDoc.data()!;
+          childName =
+              "${childData['first_name'] ?? ''} ${childData['last_name'] ?? ''}"
+                  .trim();
           // Prefer a stored parent UID when it is available; older child
           // records are linked through the registered parent's name.
           recipientUid = childData['parent_uid'] as String? ?? '';
@@ -117,11 +126,15 @@ class NotificationRepositoryImpl implements NotificationRepository {
       );
 
       // 2. Save to Firestore
-      final docRef = await _firestore.collection('notifications').add(notification.toMap());
-      
+      final docRef = await _firestore
+          .collection('notifications')
+          .add(notification.toMap());
+
       // 3. Save to Local SQLite
       if (!kIsWeb) {
-        final localMap = notification.copyWith(docId: docRef.id, isSynced: true).toMap();
+        final localMap = notification
+            .copyWith(docId: docRef.id, isSynced: true)
+            .toMap();
         await _dbHelper.insertNotification(localMap);
       }
 
@@ -129,7 +142,10 @@ class NotificationRepositoryImpl implements NotificationRepository {
       if (recipientUid.isNotEmpty) {
         String parentFcmToken = '';
         if (kIsWeb) {
-          final userDoc = await _firestore.collection('users').doc(recipientUid).get();
+          final userDoc = await _firestore
+              .collection('users')
+              .doc(recipientUid)
+              .get();
           if (userDoc.exists) {
             parentFcmToken = userDoc.data()?['fcm_token'] as String? ?? '';
           }
@@ -160,7 +176,9 @@ class NotificationRepositoryImpl implements NotificationRepository {
   }
 
   @override
-  Stream<List<NotificationModel>> getParentNotificationsStream(String parentUid) {
+  Stream<List<NotificationModel>> getParentNotificationsStream(
+    String parentUid,
+  ) {
     if (parentUid.isEmpty) return Stream.value([]);
 
     return _firestore
@@ -168,17 +186,14 @@ class NotificationRepositoryImpl implements NotificationRepository {
         .where('recipient_uid', isEqualTo: parentUid)
         .snapshots()
         .map((snapshot) {
-      final items = snapshot.docs.map((doc) {
-        final data = doc.data();
-        return NotificationModel.fromMap({
-          ...data,
-          'doc_id': doc.id,
-        });
-      }).toList();
+          final items = snapshot.docs.map((doc) {
+            final data = doc.data();
+            return NotificationModel.fromMap({...data, 'doc_id': doc.id});
+          }).toList();
 
-      items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      return items;
-    });
+          items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          return items;
+        });
   }
 
   @override
@@ -194,7 +209,10 @@ class NotificationRepositoryImpl implements NotificationRepository {
   Future<void> markAsRead(NotificationModel notification) async {
     try {
       if (notification.docId != null && notification.docId!.isNotEmpty) {
-        await _firestore.collection('notifications').doc(notification.docId!).update({'is_read': true});
+        await _firestore
+            .collection('notifications')
+            .doc(notification.docId!)
+            .update({'is_read': true});
       }
       if (notification.id != null) {
         await _dbHelper.markNotificationAsRead(notification.id!);

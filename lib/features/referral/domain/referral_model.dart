@@ -7,6 +7,8 @@ class ReferralModel {
   final String followUpDate;
   final String status; // Pending, Referred, For Follow-Up, Completed, Closed
   final String? followUpNotes;
+  final String? adminGuidance;
+  final String? adminGuidanceUpdatedAt;
   final String updatedAt;
   final bool isSynced;
 
@@ -19,6 +21,8 @@ class ReferralModel {
     required this.followUpDate,
     required this.status,
     this.followUpNotes,
+    this.adminGuidance,
+    this.adminGuidanceUpdatedAt,
     required this.updatedAt,
     this.isSynced = false,
   });
@@ -33,6 +37,8 @@ class ReferralModel {
       'follow_up_date': followUpDate,
       'status': status,
       'follow_up_notes': followUpNotes,
+      'admin_guidance': adminGuidance,
+      'admin_guidance_updated_at': adminGuidanceUpdatedAt,
       'updated_at': updatedAt,
       'is_synced': isSynced ? 1 : 0,
     };
@@ -48,6 +54,8 @@ class ReferralModel {
       followUpDate: map['follow_up_date'] ?? '',
       status: map['status'] ?? 'Pending',
       followUpNotes: map['follow_up_notes'],
+      adminGuidance: map['admin_guidance'],
+      adminGuidanceUpdatedAt: map['admin_guidance_updated_at'],
       updatedAt: map['updated_at'] ?? DateTime.now().toIso8601String(),
       isSynced: (map['is_synced'] ?? 0) == 1,
     );
@@ -62,6 +70,8 @@ class ReferralModel {
     String? followUpDate,
     String? status,
     String? followUpNotes,
+    String? adminGuidance,
+    String? adminGuidanceUpdatedAt,
     String? updatedAt,
     bool? isSynced,
   }) {
@@ -74,6 +84,9 @@ class ReferralModel {
       followUpDate: followUpDate ?? this.followUpDate,
       status: status ?? this.status,
       followUpNotes: followUpNotes ?? this.followUpNotes,
+      adminGuidance: adminGuidance ?? this.adminGuidance,
+      adminGuidanceUpdatedAt:
+          adminGuidanceUpdatedAt ?? this.adminGuidanceUpdatedAt,
       updatedAt: updatedAt ?? this.updatedAt,
       isSynced: isSynced ?? this.isSynced,
     );

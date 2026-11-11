@@ -32,6 +32,7 @@ class _ActivityManagementPageState extends State<ActivityManagementPage> {
   UserModel? _currentUser;
   String _searchQuery = '';
   String _selectedStatusFilter = 'All';
+  String _selectedSectionFilter = 'All Sections';
   String _sortBy = 'Due Date Newest First';
   bool _isLoading = true;
 
@@ -61,7 +62,13 @@ class _ActivityManagementPageState extends State<ActivityManagementPage> {
           _currentUser!.uid,
         );
         final teacherChildIds = _children.map((child) => child.childId).toSet();
-        _allActivities = (await _repository.getAllActivities())
+        final activityGroups = await Future.wait<List<ActivityModel>>(
+          _children.map(
+            (child) => _repository.getActivitiesForChild(child.childId),
+          ),
+        );
+        _allActivities = activityGroups
+            .expand((activities) => activities)
             .where((activity) => teacherChildIds.contains(activity.childId))
             .toList();
       } else if (_currentUser?.role == UserRole.parent) {
@@ -101,6 +108,23 @@ class _ActivityManagementPageState extends State<ActivityManagementPage> {
     if (mounted) setState(() => _isLoading = false);
   }
 
+  Future<void> _openSubmissionReviews() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const ActivityReviewPage()),
+    );
+    if (mounted) _loadData();
+  }
+
+  String _sectionForActivity(ActivityModel activity) {
+    final savedSection = activity.section?.trim();
+    if (savedSection != null && savedSection.isNotEmpty) return savedSection;
+    for (final child in _children) {
+      if (child.childId == activity.childId) return child.section.label;
+    }
+    return 'Unassigned section';
+  }
+
   void _applyFilterAndSort() {
     setState(() {
       final q = _searchQuery.toLowerCase();
@@ -108,6 +132,7 @@ class _ActivityManagementPageState extends State<ActivityManagementPage> {
         final title = activity.activityTitle.toLowerCase();
         final instructions = activity.instructions.toLowerCase();
         final childId = activity.childId.toLowerCase();
+        final section = _sectionForActivity(activity).toLowerCase();
 
         final isOverdue =
             DateTime.tryParse(activity.dueDate)?.isBefore(DateTime.now()) ??
@@ -119,12 +144,16 @@ class _ActivityManagementPageState extends State<ActivityManagementPage> {
         final matchesSearch =
             title.contains(q) ||
             instructions.contains(q) ||
-            childId.contains(q);
+            childId.contains(q) ||
+            section.contains(q);
         final matchesStatus =
             _selectedStatusFilter == 'All' ||
             currentStatus.toLowerCase() == _selectedStatusFilter.toLowerCase();
+        final matchesSection =
+            _selectedSectionFilter == 'All Sections' ||
+            _sectionForActivity(activity) == _selectedSectionFilter;
 
-        return matchesSearch && matchesStatus;
+        return matchesSearch && matchesStatus && matchesSection;
       }).toList();
 
       _filteredActivities.sort((a, b) {
@@ -150,7 +179,9 @@ class _ActivityManagementPageState extends State<ActivityManagementPage> {
     final titleController = TextEditingController();
     final instructionsController = TextEditingController();
     final maxScoreController = TextEditingController(text: '20');
-    ChildModel? selectedChild = _children.isNotEmpty ? _children.first : null;
+    String selectedSection = ChildSection.values.first.label;
+    const allChildrenInSection = '__all_children_in_section__';
+    String selectedRecipientId = allChildrenInSection;
     String selectedDomain = 'Gross Motor';
     DateTime selectedDate = DateTime.now().add(const Duration(days: 7));
     bool isSubmitting = false;
@@ -158,226 +189,422 @@ class _ActivityManagementPageState extends State<ActivityManagementPage> {
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Create Home Activity'),
-          content: SingleChildScrollView(
-            child: Form(
-              key: formKey,
-              autovalidateMode: AutovalidateMode.onUserInteraction,
+        builder: (context, setDialogState) {
+          final mediaQuery = MediaQuery.of(context);
+          final availableHeight =
+              (mediaQuery.size.height - mediaQuery.viewInsets.bottom - 32)
+                  .clamp(240.0, 620.0)
+                  .toDouble();
+          return Dialog(
+            clipBehavior: Clip.antiAlias,
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 24,
+              vertical: 16,
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 560,
+                maxHeight: availableHeight,
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  DropdownButtonFormField<ChildModel>(
-                    initialValue: selectedChild,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Assign to Child',
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(24, 22, 24, 14),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Create Home Activity',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
-                    items: _children
-                        .map(
-                          (c) => DropdownMenuItem(
-                            value: c,
-                            child: Text(
-                              "${c.firstName} ${c.lastName} (${c.childId})",
+                  ),
+                  const Divider(height: 1),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: const EdgeInsets.fromLTRB(24, 18, 24, 28),
+                      child: Form(
+                        key: formKey,
+                        autovalidateMode: AutovalidateMode.onUserInteraction,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            DropdownButtonFormField<String>(
+                              initialValue: selectedSection,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Assign to Section',
+                                prefixIcon: Icon(Icons.groups_rounded),
+                              ),
+                              items: ChildSection.values
+                                  .map(
+                                    (section) => DropdownMenuItem(
+                                      value: section.label,
+                                      child: Text(
+                                        '${section.label} (${section.ageRange})',
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (val) => setDialogState(() {
+                                selectedSection = val!;
+                                selectedRecipientId = allChildrenInSection;
+                              }),
                             ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (val) =>
-                        setDialogState(() => selectedChild = val),
-                    validator: (val) =>
-                        val == null ? 'Please select a child' : null,
-                  ),
-                  const SizedBox(height: 14),
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedDomain,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Developmental Domain',
-                      prefixIcon: Icon(Icons.psychology_outlined),
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'Gross Motor',
-                        child: Text('Gross Motor'),
+                            const SizedBox(height: 8),
+                            Builder(
+                              builder: (context) {
+                                final sectionChildren = _children
+                                    .where(
+                                      (child) =>
+                                          child.isActive &&
+                                          child.section.label ==
+                                              selectedSection,
+                                    )
+                                    .toList();
+                                ChildModel? selectedChild;
+                                for (final child in sectionChildren) {
+                                  if (child.childId == selectedRecipientId) {
+                                    selectedChild = child;
+                                    break;
+                                  }
+                                }
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    DropdownButtonFormField<String>(
+                                      key: ValueKey(
+                                        '$selectedSection-$selectedRecipientId',
+                                      ),
+                                      initialValue: selectedChild == null
+                                          ? allChildrenInSection
+                                          : selectedRecipientId,
+                                      isExpanded: true,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Assign to',
+                                        prefixIcon: Icon(
+                                          Icons.child_care_rounded,
+                                        ),
+                                      ),
+                                      items: [
+                                        const DropdownMenuItem(
+                                          value: allChildrenInSection,
+                                          child: Text(
+                                            'All children in this section',
+                                          ),
+                                        ),
+                                        ...sectionChildren.map(
+                                          (child) => DropdownMenuItem(
+                                            value: child.childId,
+                                            child: Text(
+                                              '${child.firstName} ${child.lastName} (${child.childId})',
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                      onChanged: (value) => setDialogState(
+                                        () => selectedRecipientId =
+                                            value ?? allChildrenInSection,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      selectedChild == null
+                                          ? '${sectionChildren.length} linked child${sectionChildren.length == 1 ? '' : 'ren'} will receive this activity.'
+                                          : '${selectedChild.firstName} ${selectedChild.lastName} will receive this activity.',
+                                      style: const TextStyle(
+                                        color: Color(0xFF54769B),
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 14),
+                            DropdownButtonFormField<String>(
+                              initialValue: selectedDomain,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Developmental Domain',
+                                prefixIcon: Icon(Icons.psychology_outlined),
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'Gross Motor',
+                                  child: Text('Gross Motor'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'Fine Motor',
+                                  child: Text('Fine Motor'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'Self-Help',
+                                  child: Text('Self-Help'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'Language',
+                                  child: Text('Language'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'Cognitive',
+                                  child: Text('Cognitive'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'Social-Emotional',
+                                  child: Text('Social-Emotional'),
+                                ),
+                              ],
+                              onChanged: (value) => setDialogState(
+                                () => selectedDomain = value ?? selectedDomain,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            TextFormField(
+                              controller: titleController,
+                              decoration: const InputDecoration(
+                                labelText: 'Activity Title',
+                              ),
+                              validator: (v) => Validators.validateRequired(
+                                v,
+                                'Activity Title',
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            TextFormField(
+                              controller: instructionsController,
+                              decoration: const InputDecoration(
+                                labelText: 'Instructions',
+                              ),
+                              maxLines: 3,
+                              scrollPadding: const EdgeInsets.only(bottom: 140),
+                              validator: (v) => Validators.validateRequired(
+                                v,
+                                'Instructions',
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            TextFormField(
+                              controller: maxScoreController,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                              ],
+                              decoration: InputDecoration(
+                                labelText: 'Max Score (e.g. 20)',
+                                helperText: mediaQuery.viewInsets.bottom > 0
+                                    ? null
+                                    : 'Maximum points possible for this activity',
+                              ),
+                              validator: (v) {
+                                final req = Validators.validateRequired(
+                                  v,
+                                  'Max Score',
+                                );
+                                if (req != null) return req;
+                                final score = int.tryParse(v!.trim());
+                                if (score == null ||
+                                    score <= 0 ||
+                                    score > 100) {
+                                  return 'Score must be a number between 1 and 100';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                            const ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(
+                                Icons.verified_user_outlined,
+                                color: Colors.orange,
+                              ),
+                              title: Text('Photo or video proof is required'),
+                              subtitle: Text(
+                                'Parents must upload proof through Supabase before submitting the activity.',
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            ListTile(
+                              title: Text(
+                                'Due date: ${DateFormat('MMM d, yyyy').format(selectedDate)}',
+                              ),
+                              trailing: const Icon(Icons.calendar_today),
+                              onTap: () async {
+                                final picked = await showDatePicker(
+                                  context: context,
+                                  initialDate: selectedDate,
+                                  firstDate: DateTime.now(),
+                                  lastDate: DateTime.now().add(
+                                    const Duration(days: 365),
+                                  ),
+                                );
+                                if (picked != null) {
+                                  setDialogState(
+                                    () => selectedDate = DateTime(
+                                      picked.year,
+                                      picked.month,
+                                      picked.day,
+                                      selectedDate.hour,
+                                      selectedDate.minute,
+                                      selectedDate.second,
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                            ListTile(
+                              title: Text(
+                                'Due time: ${DateFormat('HH:mm:ss').format(selectedDate)}',
+                              ),
+                              subtitle: const Text(
+                                'Hours, minutes, and seconds are configurable',
+                              ),
+                              trailing: const Icon(Icons.schedule),
+                              onTap: () async {
+                                final picked = await _showTimeWithSecondsPicker(
+                                  selectedDate,
+                                );
+                                if (picked != null) {
+                                  setDialogState(
+                                    () => selectedDate = DateTime(
+                                      selectedDate.year,
+                                      selectedDate.month,
+                                      selectedDate.day,
+                                      picked.hour,
+                                      picked.minute,
+                                      picked.second,
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                          ],
+                        ),
                       ),
-                      DropdownMenuItem(
-                        value: 'Fine Motor',
-                        child: Text('Fine Motor'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Self-Help',
-                        child: Text('Self-Help'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Language',
-                        child: Text('Language'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Cognitive',
-                        child: Text('Cognitive'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Social-Emotional',
-                        child: Text('Social-Emotional'),
-                      ),
-                    ],
-                    onChanged: (value) => setDialogState(
-                      () => selectedDomain = value ?? selectedDomain,
                     ),
                   ),
-                  const SizedBox(height: 14),
-                  TextFormField(
-                    controller: titleController,
-                    decoration: const InputDecoration(
-                      labelText: 'Activity Title',
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Cancel'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () async {
+                            if (isSubmitting) return;
+                            if (formKey.currentState!.validate()) {
+                              final sectionChildren = _children
+                                  .where(
+                                    (child) =>
+                                        child.isActive &&
+                                        child.section.label == selectedSection,
+                                  )
+                                  .toList();
+                              final targetChildren =
+                                  selectedRecipientId == allChildrenInSection
+                                  ? sectionChildren
+                                  : sectionChildren
+                                        .where(
+                                          (child) =>
+                                              child.childId ==
+                                              selectedRecipientId,
+                                        )
+                                        .toList();
+                              if (targetChildren.isEmpty) {
+                                ScaffoldMessenger.of(this.context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'There are no active linked children in $selectedSection.',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
+                              setDialogState(() => isSubmitting = true);
+                              final now = DateFormat('yyyy-MM-dd HH:mm:ss')
+                                  .format(DateTime.now());
+                              final maxScore =
+                                  int.tryParse(
+                                    maxScoreController.text.trim(),
+                                  ) ??
+                                  20;
+
+                              try {
+                                await Future.wait(
+                                  targetChildren.map(
+                                    (child) => _repository.createActivity(
+                                      ActivityModel(
+                                        childId: child.childId,
+                                        activityTitle: titleController.text
+                                            .trim(),
+                                        developmentalDomain: selectedDomain,
+                                        instructions: instructionsController
+                                            .text
+                                            .trim(),
+                                        dueDate: DateFormat(
+                                          'yyyy-MM-dd HH:mm:ss',
+                                        ).format(selectedDate),
+                                        assignedBy:
+                                            _currentUser?.name ?? 'Teacher',
+                                        assignedTeacherUid: _currentUser?.uid,
+                                        parentUid: child.parentUid,
+                                        section: selectedSection,
+                                        createdDate: now,
+                                        status: 'Assigned',
+                                        updatedAt: now,
+                                        isSynced: false,
+                                        maxScore: maxScore,
+                                        evidenceRequired: true,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                                if (!mounted || !context.mounted) return;
+                                Navigator.pop(context);
+                                _loadData();
+                              } catch (error) {
+                                setDialogState(() => isSubmitting = false);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(this.context)
+                                      .showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Unable to assign activity: $error',
+                                          ),
+                                        ),
+                                      );
+                                }
+                              }
+                            }
+                          },
+                          child: isSubmitting
+                              ? const SizedBox(
+                                  height: 18,
+                                  width: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text('Assign'),
+                        ),
+                      ],
                     ),
-                    validator: (v) =>
-                        Validators.validateRequired(v, 'Activity Title'),
-                  ),
-                  const SizedBox(height: 14),
-                  TextFormField(
-                    controller: instructionsController,
-                    decoration: const InputDecoration(
-                      labelText: 'Instructions',
-                    ),
-                    maxLines: 3,
-                    validator: (v) =>
-                        Validators.validateRequired(v, 'Instructions'),
-                  ),
-                  const SizedBox(height: 14),
-                  TextFormField(
-                    controller: maxScoreController,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: const InputDecoration(
-                      labelText: 'Max Score (e.g. 20)',
-                      helperText: 'Maximum points possible for this activity',
-                    ),
-                    validator: (v) {
-                      final req = Validators.validateRequired(v, 'Max Score');
-                      if (req != null) return req;
-                      final score = int.tryParse(v!.trim());
-                      if (score == null || score <= 0 || score > 100) {
-                        return 'Score must be a number between 1 and 100';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  ListTile(
-                    title: Text(
-                      'Due date: ${DateFormat('MMM d, yyyy').format(selectedDate)}',
-                    ),
-                    trailing: const Icon(Icons.calendar_today),
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: selectedDate,
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 365)),
-                      );
-                      if (picked != null) {
-                        setDialogState(
-                          () => selectedDate = DateTime(
-                            picked.year,
-                            picked.month,
-                            picked.day,
-                            selectedDate.hour,
-                            selectedDate.minute,
-                            selectedDate.second,
-                          ),
-                        );
-                      }
-                    },
-                  ),
-                  ListTile(
-                    title: Text(
-                      'Due time: ${DateFormat('HH:mm:ss').format(selectedDate)}',
-                    ),
-                    subtitle: const Text(
-                      'Hours, minutes, and seconds are configurable',
-                    ),
-                    trailing: const Icon(Icons.schedule),
-                    onTap: () async {
-                      final picked = await _showTimeWithSecondsPicker(
-                        selectedDate,
-                      );
-                      if (picked != null) {
-                        setDialogState(
-                          () => selectedDate = DateTime(
-                            selectedDate.year,
-                            selectedDate.month,
-                            selectedDate.day,
-                            picked.hour,
-                            picked.minute,
-                            picked.second,
-                          ),
-                        );
-                      }
-                    },
                   ),
                 ],
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                if (isSubmitting) return;
-                if (formKey.currentState!.validate()) {
-                  if (selectedChild == null) return;
-                  setDialogState(() => isSubmitting = true);
-                  final now = DateFormat('yyyy-MM-dd HH:mm:ss')
-                      .format(DateTime.now());
-                  final maxScore =
-                      int.tryParse(maxScoreController.text.trim()) ?? 20;
-
-                  final activity = ActivityModel(
-                    childId: selectedChild!.childId,
-                    activityTitle: titleController.text.trim(),
-                    developmentalDomain: selectedDomain,
-                    instructions: instructionsController.text.trim(),
-                    dueDate: DateFormat('yyyy-MM-dd HH:mm:ss')
-                        .format(selectedDate),
-                    assignedBy: _currentUser?.name ?? 'Teacher',
-                    createdDate: now,
-                    status: 'Assigned',
-                    updatedAt: now,
-                    isSynced: false,
-                    maxScore: maxScore,
-                  );
-                  try {
-                    await _repository.createActivity(activity);
-                    if (!mounted) return;
-                    Navigator.pop(context);
-                    _loadData();
-                  } catch (error) {
-                    setDialogState(() => isSubmitting = false);
-                    if (mounted) {
-                      ScaffoldMessenger.of(this.context).showSnackBar(
-                        SnackBar(
-                          content: Text('Unable to assign activity: $error'),
-                        ),
-                      );
-                    }
-                  }
-                }
-              },
-              child: isSubmitting
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Assign'),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -394,6 +621,7 @@ class _ActivityManagementPageState extends State<ActivityManagementPage> {
     final isPhone = MediaQuery.sizeOf(context).width < 600;
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         automaticallyImplyLeading: false,
         title: const Text('Home Activities'),
@@ -401,13 +629,8 @@ class _ActivityManagementPageState extends State<ActivityManagementPage> {
           if (isTeacher)
             IconButton(
               icon: const Icon(Icons.rate_review),
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ActivityReviewPage(),
-                ),
-              ),
-              tooltip: 'Review Submissions',
+              onPressed: _openSubmissionReviews,
+              tooltip: 'View completed submissions',
             ),
         ],
       ),
@@ -423,6 +646,18 @@ class _ActivityManagementPageState extends State<ActivityManagementPage> {
         child: Column(
           children: [
             if (isTeacher) _buildHero(isPhone),
+            if (isTeacher)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.tonalIcon(
+                    onPressed: _openSubmissionReviews,
+                    icon: const Icon(Icons.rate_review_outlined),
+                    label: const Text('Review Parent Submissions'),
+                  ),
+                ),
+              ),
             if (!isTeacher && _children.length > 1)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -508,6 +743,15 @@ class _ActivityManagementPageState extends State<ActivityManagementPage> {
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
                                     color: Colors.blue,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Section: ${_sectionForActivity(activity)}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.teal,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                                 const SizedBox(height: 4),
@@ -806,6 +1050,42 @@ class _ActivityManagementPageState extends State<ActivityManagementPage> {
                   },
                 ),
               ),
+              SizedBox(
+                width: fieldWidth,
+                child: DropdownButtonFormField<String>(
+                  initialValue: _selectedSectionFilter,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Section',
+                    prefixIcon: Icon(Icons.groups_rounded),
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 11,
+                    ),
+                  ),
+                  items: [
+                    const DropdownMenuItem(
+                      value: 'All Sections',
+                      child: Text('All Sections'),
+                    ),
+                    ...ChildSection.values.map(
+                      (section) => DropdownMenuItem(
+                        value: section.label,
+                        child: Text(
+                          section.label,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _selectedSectionFilter = value);
+                    _applyFilterAndSort();
+                  },
+                ),
+              ),
             ],
           ),
         );
@@ -941,6 +1221,18 @@ class _ActivityManagementPageState extends State<ActivityManagementPage> {
                   fontWeight: FontWeight.bold,
                   color: Colors.blue,
                 ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.verified_user_outlined,
+                    size: 18,
+                    color: Colors.orange,
+                  ),
+                  const SizedBox(width: 6),
+                  const Text('Photo or video proof is required'),
+                ],
               ),
               const SizedBox(height: 8),
               Text(activity.instructions),

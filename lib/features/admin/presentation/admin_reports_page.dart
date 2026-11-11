@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/database/database_helper.dart';
+import '../../../core/utils/csv_downloader.dart';
 import '../../../shared/widgets/brand_widgets.dart';
 import '../../../shared/models/child_model.dart';
 import '../data/repositories/audit_repository.dart';
@@ -26,9 +27,14 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
   List<EvaluationReportItem> _evaluationItems = [];
   List<ReferralReportItem> _referralItems = [];
   List<ChildProgressReportItem> _progressItems = [];
+  List<AttendanceReportItem> _allAttendanceItems = [];
+  List<EvaluationReportItem> _allEvaluationItems = [];
+  List<ReferralReportItem> _allReferralItems = [];
+  List<ChildProgressReportItem> _allProgressItems = [];
 
   List<ChildModel> _allChildren = [];
   ChildModel? _selectedFilterChild;
+  String _selectedSectionFilter = 'All Sections';
   String _searchQuery = '';
   bool _isLoading = true;
   String? _loadError;
@@ -72,7 +78,27 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       if (!mounted) return;
       _allChildren = initialData[0] as List<ChildModel>;
       _stats = initialData[1] as DashboardStats;
-      await _applyFilters();
+      final reports = await Future.wait([
+        _loadOrFallback(
+          _repository.getAttendanceReport,
+          <AttendanceReportItem>[],
+        ),
+        _loadOrFallback(
+          _repository.getEvaluationReport,
+          <EvaluationReportItem>[],
+        ),
+        _loadOrFallback(_repository.getReferralReport, <ReferralReportItem>[]),
+        _loadOrFallback(
+          _repository.getChildProgressReport,
+          <ChildProgressReportItem>[],
+        ),
+      ]);
+      if (!mounted) return;
+      _allAttendanceItems = reports[0] as List<AttendanceReportItem>;
+      _allEvaluationItems = reports[1] as List<EvaluationReportItem>;
+      _allReferralItems = reports[2] as List<ReferralReportItem>;
+      _allProgressItems = reports[3] as List<ChildProgressReportItem>;
+      _applyFilters();
       if (mounted) setState(() => _isLoading = false);
     } catch (_) {
       if (mounted) {
@@ -85,31 +111,20 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     }
   }
 
-  Future<void> _applyFilters() async {
-    final reports = await Future.wait([
-      _loadOrFallback(
-        _repository.getAttendanceReport,
-        <AttendanceReportItem>[],
-      ),
-      _loadOrFallback(
-        _repository.getEvaluationReport,
-        <EvaluationReportItem>[],
-      ),
-      _loadOrFallback(_repository.getReferralReport, <ReferralReportItem>[]),
-      _loadOrFallback(
-        _repository.getChildProgressReport,
-        <ChildProgressReportItem>[],
-      ),
-    ]);
-    final attendance = reports[0] as List<AttendanceReportItem>;
-    final evaluations = reports[1] as List<EvaluationReportItem>;
-    final referrals = reports[2] as List<ReferralReportItem>;
-    final progress = reports[3] as List<ChildProgressReportItem>;
-
+  void _applyFilters() {
     final q = _searchQuery.toLowerCase();
+    final sectionChildIds = _selectedSectionFilter == 'All Sections'
+        ? null
+        : _allChildren
+              .where((child) => child.section.label == _selectedSectionFilter)
+              .map((child) => child.childId)
+              .toSet();
+
+    bool matchesSelectedSection(String childId) =>
+        sectionChildIds == null || sectionChildIds.contains(childId);
 
     setState(() {
-      _attendanceItems = attendance.where((item) {
+      _attendanceItems = _allAttendanceItems.where((item) {
         final matchesChild =
             _selectedFilterChild == null ||
             item.childId == _selectedFilterChild!.childId;
@@ -117,10 +132,12 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
             q.isEmpty ||
             item.childName.toLowerCase().contains(q) ||
             item.childId.toLowerCase().contains(q);
-        return matchesChild && matchesQuery;
+        return matchesChild &&
+            matchesQuery &&
+            matchesSelectedSection(item.childId);
       }).toList();
 
-      _evaluationItems = evaluations.where((item) {
+      _evaluationItems = _allEvaluationItems.where((item) {
         final matchesChild =
             _selectedFilterChild == null ||
             item.childId == _selectedFilterChild!.childId;
@@ -128,10 +145,12 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
             q.isEmpty ||
             item.childName.toLowerCase().contains(q) ||
             item.domain.toLowerCase().contains(q);
-        return matchesChild && matchesQuery;
+        return matchesChild &&
+            matchesQuery &&
+            matchesSelectedSection(item.childId);
       }).toList();
 
-      _referralItems = referrals.where((item) {
+      _referralItems = _allReferralItems.where((item) {
         final matchesChild =
             _selectedFilterChild == null ||
             item.childId == _selectedFilterChild!.childId;
@@ -140,10 +159,12 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
             item.childName.toLowerCase().contains(q) ||
             item.concern.toLowerCase().contains(q) ||
             item.status.toLowerCase().contains(q);
-        return matchesChild && matchesQuery;
+        return matchesChild &&
+            matchesQuery &&
+            matchesSelectedSection(item.childId);
       }).toList();
 
-      _progressItems = progress.where((item) {
+      _progressItems = _allProgressItems.where((item) {
         final matchesChild =
             _selectedFilterChild == null ||
             item.childId == _selectedFilterChild!.childId;
@@ -151,7 +172,9 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
             q.isEmpty ||
             item.childName.toLowerCase().contains(q) ||
             item.domain.toLowerCase().contains(q);
-        return matchesChild && matchesQuery;
+        return matchesChild &&
+            matchesQuery &&
+            matchesSelectedSection(item.childId);
       }).toList();
 
       _progressPage = 0;
@@ -169,14 +192,194 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     }
   }
 
-  void _exportReport(String type) async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Preparing $type Report for export...')),
-    );
-    await AuditRepository().logAction(
-      action: 'Report Generated',
-      targetRecord: '$type Report',
-    );
+  Future<void> _exportReport(String type) async {
+    final child = _selectedFilterChild;
+    if (child == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select one child first. CSV exports are per child.'),
+        ),
+      );
+      return;
+    }
+
+    final rows = _csvRowsFor(type, child.childId);
+    if (rows.length == 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No $type records found for ${child.firstName}.'),
+        ),
+      );
+      return;
+    }
+
+    final contents = rows.map(_csvLine).join('\r\n');
+    final childFileName =
+        '${child.firstName}_${child.lastName}_${child.childId}'.replaceAll(
+          RegExp(r'[^A-Za-z0-9_-]'),
+          '_',
+        );
+    final fileName = '${type.toLowerCase()}_$childFileName.csv';
+
+    try {
+      await downloadCsv(fileName: fileName, contents: contents);
+      try {
+        await AuditRepository().logAction(
+          action: 'Report Exported',
+          targetRecord: '$type Report: ${child.childId}',
+        );
+      } catch (_) {
+        // A successful download remains valid if audit logging is temporarily
+        // unavailable.
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$type CSV downloaded for ${child.firstName}.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('CSV download could not be started.')),
+      );
+    }
+  }
+
+  List<List<String>> _csvRowsFor(String type, String childId) {
+    switch (type) {
+      case 'Progress':
+        final progressItems = _allProgressItems
+            .where((item) => item.childId == childId)
+            .toList();
+        final summaryChunks = _summaryChunks(
+          progressItems
+              .map((item) => item.triangulatedSummary)
+              .firstWhere(
+                (summary) => summary?.trim().isNotEmpty ?? false,
+                orElse: () => null,
+              ),
+        );
+        final rowCount = progressItems.length > summaryChunks.length
+            ? progressItems.length
+            : summaryChunks.length;
+        return [
+          [
+            'Child ID',
+            'Child Name',
+            'Domain',
+            'Previous Score',
+            'Current Score',
+            'Max Score',
+            'Development Status',
+            'Triangulated Summary (continued by row)',
+          ],
+          ...List.generate(rowCount, (index) {
+            final item = index < progressItems.length
+                ? progressItems[index]
+                : null;
+            return [
+              item?.childId ?? '',
+              item?.childName ?? '',
+              item?.domain ?? '',
+              item?.previousScore?.toString() ?? '',
+              item?.currentScore.toString() ?? '',
+              item?.maxScore.toString() ?? '',
+              item?.developmentStatus ?? '',
+              index < summaryChunks.length ? summaryChunks[index] : '',
+            ];
+          }),
+        ];
+      case 'Attendance':
+        return [
+          ['Child ID', 'Child Name', 'Present', 'Absent', 'Attendance Rate'],
+          ..._allAttendanceItems
+              .where((item) => item.childId == childId)
+              .map(
+                (item) => [
+                  item.childId,
+                  item.childName,
+                  item.present.toString(),
+                  item.absent.toString(),
+                  '${item.attendanceRate.toStringAsFixed(1)}%',
+                ],
+              ),
+        ];
+      case 'Evaluation':
+        return [
+          ['Child ID', 'Child Name', 'Domain', 'Score', 'Date', 'Remarks'],
+          ..._allEvaluationItems
+              .where((item) => item.childId == childId)
+              .map(
+                (item) => [
+                  item.childId,
+                  item.childName,
+                  item.domain,
+                  item.score.toString(),
+                  item.date,
+                  item.remarks,
+                ],
+              ),
+        ];
+      case 'Referral':
+        return [
+          [
+            'Child ID',
+            'Child Name',
+            'Concern',
+            'Referral Date',
+            'Follow-Up Date',
+            'Status',
+          ],
+          ..._allReferralItems
+              .where((item) => item.childId == childId)
+              .map(
+                (item) => [
+                  item.childId,
+                  item.childName,
+                  item.concern,
+                  item.referralDate,
+                  item.followUpDate,
+                  item.status,
+                ],
+              ),
+        ];
+      default:
+        return const [];
+    }
+  }
+
+  String _csvLine(List<String> values) =>
+      values.map((value) => '"${value.replaceAll('"', '""')}"').join(',');
+
+  List<String> _summaryChunks(String? summary) {
+    final normalized = summary?.replaceAll(RegExp(r'\s+'), ' ').trim() ?? '';
+    if (normalized.isEmpty) return const [];
+
+    // Keep each spreadsheet cell readable while retaining every word.
+    const maximumCharactersPerRow = 80;
+    final chunks = <String>[];
+    var current = '';
+
+    for (var word in normalized.split(' ')) {
+      while (word.length > maximumCharactersPerRow) {
+        if (current.isNotEmpty) {
+          chunks.add(current);
+          current = '';
+        }
+        chunks.add(word.substring(0, maximumCharactersPerRow));
+        word = word.substring(maximumCharactersPerRow);
+      }
+
+      final candidate = current.isEmpty ? word : '$current $word';
+      if (candidate.length > maximumCharactersPerRow && current.isNotEmpty) {
+        chunks.add(current);
+        current = word;
+      } else {
+        current = candidate;
+      }
+    }
+
+    if (current.isNotEmpty) chunks.add(current);
+    return chunks;
   }
 
   @override
@@ -209,6 +412,10 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
                 Tab(text: 'Evaluations', icon: Icon(Icons.assignment)),
                 Tab(text: 'Referrals', icon: Icon(Icons.assignment_late)),
               ],
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+              child: _buildFilterPanel(),
             ),
             Expanded(
               child: _isLoading
@@ -381,6 +588,9 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     ),
   );
 
+  // Retained for the existing overview route, which can be enabled separately
+  // from the four report tabs without changing its report layout.
+  // ignore: unused_element
   Widget _buildOverviewTab() {
     final paginatedProgress = _progressItems
         .skip(0)
@@ -437,7 +647,10 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     return _buildReportTabWrapper(
       title: 'Longitudinal Progress',
       exportType: 'Progress',
-      content: ChildProgressReportTable(items: paginatedItems),
+      content: ChildProgressReportTable(
+        items: paginatedItems,
+        showScrollbars: true,
+      ),
       currentPage: _progressPage,
       totalPages: totalPages,
       totalItems: totalItems,
@@ -457,7 +670,10 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     return _buildReportTabWrapper(
       title: 'Attendance Analysis',
       exportType: 'Attendance',
-      content: AttendanceReportTable(items: paginatedItems),
+      content: AttendanceReportTable(
+        items: paginatedItems,
+        showScrollbars: true,
+      ),
       currentPage: _attendancePage,
       totalPages: totalPages,
       totalItems: totalItems,
@@ -476,7 +692,10 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     return _buildReportTabWrapper(
       title: 'Evaluation Data',
       exportType: 'Evaluation',
-      content: EvaluationReportTable(items: paginatedItems),
+      content: EvaluationReportTable(
+        items: paginatedItems,
+        showScrollbars: true,
+      ),
       currentPage: _evaluationPage,
       totalPages: totalPages,
       totalItems: totalItems,
@@ -495,7 +714,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     return _buildReportTabWrapper(
       title: 'Referral Monitoring',
       exportType: 'Referral',
-      content: ReferralReportTable(items: paginatedItems),
+      content: ReferralReportTable(items: paginatedItems, showScrollbars: true),
       currentPage: _referralPage,
       totalPages: totalPages,
       totalItems: totalItems,
@@ -513,65 +732,79 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     bool alwaysShowPagination = false,
     required ValueChanged<int> onPageChanged,
   }) {
+    final isCompact = MediaQuery.sizeOf(context).width < 600;
+    final canExport = _selectedFilterChild != null;
+    final header = Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+          ),
+        ),
+        const SizedBox(width: 12),
+        if (MediaQuery.sizeOf(context).width < 520)
+          IconButton(
+            tooltip: 'Export CSV',
+            onPressed: canExport ? () => _exportReport(exportType) : null,
+            icon: const Icon(Icons.download_rounded),
+          )
+        else
+          OutlinedButton.icon(
+            onPressed: canExport ? () => _exportReport(exportType) : null,
+            icon: const Icon(Icons.download_rounded),
+            label: const Text('Export CSV'),
+          ),
+      ],
+    );
+    final reportCard = LayoutBuilder(
+      builder: (context, constraints) => FractionallySizedBox(
+        widthFactor: constraints.maxWidth >= 900 ? .82 : 1,
+        heightFactor: 1,
+        child: Card(
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              Expanded(child: content),
+              _buildPaginationBar(
+                currentPage: currentPage,
+                totalPages: totalPages,
+                totalItems: totalItems,
+                onPageChanged: onPageChanged,
+                alwaysShow: alwaysShowPagination,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // The hero and filters use most of a phone's height.  Let this area
+    // scroll instead of forcing the report card into the remaining space.
+    if (isCompact) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            header,
+            const SizedBox(height: 12),
+            SizedBox(height: 360, child: reportCard),
+          ],
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              if (MediaQuery.sizeOf(context).width < 520)
-                IconButton(
-                  tooltip: 'Export CSV',
-                  onPressed: () => _exportReport(exportType),
-                  icon: const Icon(Icons.download_rounded),
-                )
-              else
-                OutlinedButton.icon(
-                  onPressed: () => _exportReport(exportType),
-                  icon: const Icon(Icons.download_rounded),
-                  label: const Text('Export CSV'),
-                ),
-            ],
-          ),
+          header,
           const SizedBox(height: 24),
-          Expanded(
-            child: Center(
-              child: LayoutBuilder(
-                builder: (context, constraints) => FractionallySizedBox(
-                  widthFactor: constraints.maxWidth >= 900 ? .82 : 1,
-                  heightFactor: 1,
-                  child: Card(
-                    clipBehavior: Clip.antiAlias,
-                    child: Column(
-                      children: [
-                        Expanded(child: content),
-                        _buildPaginationBar(
-                          currentPage: currentPage,
-                          totalPages: totalPages,
-                          totalItems: totalItems,
-                          onPageChanged: onPageChanged,
-                          alwaysShow: alwaysShowPagination,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
+          Expanded(child: Center(child: reportCard)),
         ],
       ),
     );
@@ -590,6 +823,14 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
         padding: const EdgeInsets.all(20),
         child: LayoutBuilder(
           builder: (context, constraints) {
+            final selectableChildren = _selectedSectionFilter == 'All Sections'
+                ? _allChildren
+                : _allChildren
+                      .where(
+                        (child) =>
+                            child.section.label == _selectedSectionFilter,
+                      )
+                      .toList();
             final search = SearchBar(
               controller: _searchController,
               hintText: 'Search report data by child name, ID, or domain...',
@@ -601,6 +842,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
             );
             final filter = DropdownButtonFormField<ChildModel?>(
               initialValue: _selectedFilterChild,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Filter child',
                 prefixIcon: Icon(Icons.filter_alt_outlined),
@@ -612,7 +854,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
                   value: null,
                   child: Text('All children'),
                 ),
-                ..._allChildren.map(
+                ...selectableChildren.map(
                   (c) => DropdownMenuItem(
                     value: c,
                     child: Text("${c.firstName} ${c.lastName} (${c.childId})"),
@@ -624,17 +866,59 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
                 _applyFilters();
               },
             );
+            final sectionFilter = DropdownButtonFormField<String>(
+              initialValue: _selectedSectionFilter,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Section category',
+                prefixIcon: Icon(Icons.groups_rounded),
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: [
+                const DropdownMenuItem(
+                  value: 'All Sections',
+                  child: Text('All sections'),
+                ),
+                ...ChildSection.values.map(
+                  (section) => DropdownMenuItem(
+                    value: section.label,
+                    child: Text('${section.label} (${section.ageRange})'),
+                  ),
+                ),
+              ],
+              onChanged: (val) {
+                final section = val ?? 'All Sections';
+                setState(() {
+                  _selectedSectionFilter = section;
+                  final selectedChild = _selectedFilterChild;
+                  if (selectedChild != null &&
+                      section != 'All Sections' &&
+                      selectedChild.section.label != section) {
+                    _selectedFilterChild = null;
+                  }
+                });
+                _applyFilters();
+              },
+            );
             final reset = IconButton(
               tooltip: 'Reset filters',
               onPressed: () {
                 _searchController.clear();
                 _searchQuery = '';
-                setState(() => _selectedFilterChild = null);
+                setState(() {
+                  _selectedFilterChild = null;
+                  _selectedSectionFilter = 'All Sections';
+                });
                 _applyFilters();
               },
               icon: const Icon(Icons.clear_all),
             );
-            if (constraints.maxWidth < 760) {
+            // Keep the controls from competing for horizontal space.  The
+            // dropdowns have long section/child labels, so stack them before
+            // the row becomes cramped instead of allowing a RenderFlex
+            // overflow.
+            if (constraints.maxWidth < 1040) {
               return Column(
                 children: [
                   search,
@@ -642,9 +926,14 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
                   Row(
                     children: [
                       Expanded(child: filter),
+                      const SizedBox(width: 10),
                       reset,
                     ],
                   ),
+                  const SizedBox(height: 10),
+                  sectionFilter,
+                  const SizedBox(height: 8),
+                  _buildPerChildExportHint(),
                 ],
               );
             }
@@ -652,7 +941,16 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
               children: [
                 Expanded(child: search),
                 const SizedBox(width: 16),
-                SizedBox(width: 280, child: filter),
+                SizedBox(width: 270, child: sectionFilter),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 280,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [filter, _buildPerChildExportHint()],
+                  ),
+                ),
                 reset,
               ],
             );
@@ -661,6 +959,16 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       ),
     );
   }
+
+  Widget _buildPerChildExportHint() => Text(
+    _selectedFilterChild == null
+        ? 'Select a child to enable per-child CSV export.'
+        : 'CSV exports include only the selected child.',
+    style: TextStyle(
+      fontSize: 12,
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    ),
+  );
 
   Widget _buildStatsCards() {
     return GridView.count(

@@ -23,22 +23,6 @@ class ActivityDetailsPage extends StatefulWidget {
 }
 
 class _ActivityDetailsPageState extends State<ActivityDetailsPage> {
-  bool _isSaving = false;
-
-  Future<void> _markCompleted() async {
-    setState(() => _isSaving = true);
-    await widget.controller.complete(
-      activity: widget.activity,
-      parentUid: widget.parentUid,
-      childId: widget.childId,
-    );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Activity marked as completed on this device.')),
-    );
-    Navigator.pop(context, true);
-  }
-
   Future<void> _openPlayer() async {
     final completed = await Navigator.push<bool>(
       context,
@@ -163,9 +147,9 @@ class _ActivityDetailsPageState extends State<ActivityDetailsPage> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.favorite_outline),
+                        Icon(Icons.play_circle_outline_rounded),
                         SizedBox(width: 12),
-                        Expanded(child: Text('Follow your child’s pace. Participation is optional, and there is no grade, approval, evidence, or submission.', style: TextStyle(height: 1.35))),
+                        Expanded(child: Text('This guided visual activity has three steps. Finish the final step to save it as completed for this child.', style: TextStyle(height: 1.35))),
                       ],
                     ),
                   ),
@@ -174,22 +158,11 @@ class _ActivityDetailsPageState extends State<ActivityDetailsPage> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
-                    onPressed: _isSaving ? null : _openPlayer,
+                    onPressed: _openPlayer,
                     icon: Icon(isCompleted ? Icons.replay : Icons.play_circle_outline),
-                    label: Text(isCompleted ? 'Play again' : 'Play visual activity'),
+                    label: Text(isCompleted ? 'Play visual activity again' : 'Start visual activity'),
                   ),
                 ),
-                if (!isCompleted) ...[
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _isSaving ? null : _markCompleted,
-                      icon: const Icon(Icons.check),
-                      label: const Text('Mark completed after practising offline'),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),

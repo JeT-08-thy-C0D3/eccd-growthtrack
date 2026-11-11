@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+
 import '../../../core/database/database_helper.dart';
 import '../../../shared/models/child_model.dart';
+import '../../auth/data/auth_repository_impl.dart';
 import '../data/triangulation_repository_impl.dart';
 import '../domain/triangulation_model.dart';
 import 'triangulation_history_page.dart';
@@ -17,6 +19,7 @@ class _TriangulationPageState extends State<TriangulationPage> {
   final _repository = TriangulationRepositoryImpl();
   List<ChildModel> _children = [];
   ChildModel? _selectedChild;
+  String _selectedSectionFilter = 'All Sections';
   bool _isLoading = true;
   bool _isGenerating = false;
 
@@ -31,7 +34,13 @@ class _TriangulationPageState extends State<TriangulationPage> {
   }
 
   Future<void> _loadChildren() async {
-    final data = await DatabaseHelper.instance.getAllChildren();
+    final teacher = await AuthRepositoryImpl().getCurrentUser();
+    final data = teacher == null
+        ? <ChildModel>[]
+        : teacher.role.name == 'teacher'
+        ? await DatabaseHelper.instance.readChildrenByTeacher(teacher.uid)
+        : await DatabaseHelper.instance.getAllChildren();
+    if (!mounted) return;
     setState(() {
       _children = data;
       _isLoading = false;
@@ -42,10 +51,36 @@ class _TriangulationPageState extends State<TriangulationPage> {
     });
   }
 
+  List<ChildModel> get _sectionChildren =>
+      _selectedSectionFilter == 'All Sections'
+      ? _children
+      : _children
+            .where((child) => child.section.label == _selectedSectionFilter)
+            .toList();
+
+  Future<void> _onSectionChanged(String? section) async {
+    final selectedSection = section ?? 'All Sections';
+    final children = selectedSection == 'All Sections'
+        ? _children
+        : _children
+              .where((child) => child.section.label == selectedSection)
+              .toList();
+    setState(() {
+      _selectedSectionFilter = selectedSection;
+      _selectedChild = children.contains(_selectedChild)
+          ? _selectedChild
+          : (children.isEmpty ? null : children.first);
+      if (_selectedChild == null) _inputs = null;
+    });
+    if (_selectedChild != null) await _loadInputs();
+  }
+
   Future<void> _loadInputs() async {
     if (_selectedChild == null) return;
     setState(() => _isLoading = true);
-    final data = await _repository.fetchTriangulationInputs(_selectedChild!.childId);
+    final data = await _repository.fetchTriangulationInputs(
+      _selectedChild!.childId,
+    );
     setState(() {
       _inputs = data;
       _isLoading = false;
@@ -97,12 +132,13 @@ class _TriangulationPageState extends State<TriangulationPage> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => TriangulationHistoryPage(child: _selectedChild!),
+                    builder: (context) =>
+                        TriangulationHistoryPage(child: _selectedChild!),
                   ),
                 );
               }
             },
-          )
+          ),
         ],
       ),
       body: _isLoading
@@ -112,28 +148,92 @@ class _TriangulationPageState extends State<TriangulationPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: _selectedSectionFilter,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Filter by Section',
+                      prefixIcon: Icon(Icons.groups_rounded),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                        value: 'All Sections',
+                        child: Text('All sections'),
+                      ),
+                      ...ChildSection.values.map(
+                        (section) => DropdownMenuItem(
+                          value: section.label,
+                          child: Text(
+                            '${section.label} (${section.ageRange})',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: _onSectionChanged,
+                  ),
+                  const SizedBox(height: 14),
                   DropdownButtonFormField<ChildModel>(
                     initialValue: _selectedChild,
-                    decoration: const InputDecoration(labelText: 'Select Child for Analysis', border: OutlineInputBorder()),
-                    items: _children.map((c) => DropdownMenuItem(value: c, child: Text("${c.firstName} ${c.lastName}"))).toList(),
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Select Child for Analysis',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _sectionChildren
+                        .map(
+                          (c) => DropdownMenuItem(
+                            value: c,
+                            child: Text(
+                              "${c.firstName} ${c.lastName}",
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
                     onChanged: (val) {
                       setState(() => _selectedChild = val);
                       _loadInputs();
                     },
                   ),
                   const SizedBox(height: 24),
-                  _buildInputCard('Teacher Assessment', _inputs?['teacher_summary'], Icons.school, Colors.blue),
-                  _buildInputCard('Parent Feedback', _inputs?['parent_summary'], Icons.family_restroom, Colors.orange),
-                  _buildInputCard('Historical Record', _inputs?['history_summary'], Icons.history, Colors.green),
+                  _buildInputCard(
+                    'Teacher Assessment',
+                    _inputs?['teacher_summary'],
+                    Icons.school,
+                    Colors.blue,
+                  ),
+                  _buildInputCard(
+                    'Parent Feedback',
+                    _inputs?['parent_summary'],
+                    Icons.family_restroom,
+                    Colors.orange,
+                  ),
+                  _buildInputCard(
+                    'Historical Record',
+                    _inputs?['history_summary'],
+                    Icons.history,
+                    Colors.green,
+                  ),
                   const SizedBox(height: 32),
-                  const Text('Intelligent Analysis', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Intelligent Analysis',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     initialValue: _status,
-                    decoration: const InputDecoration(labelText: 'Development Status', border: OutlineInputBorder()),
-                    items: ['On Track', 'Needs Monitoring', 'Needs Intervention']
-                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                        .toList(),
+                    decoration: const InputDecoration(
+                      labelText: 'Development Status',
+                      border: OutlineInputBorder(),
+                    ),
+                    items:
+                        ['On Track', 'Needs Monitoring', 'Needs Intervention']
+                            .map(
+                              (s) => DropdownMenuItem(value: s, child: Text(s)),
+                            )
+                            .toList(),
                     onChanged: (val) => setState(() => _status = val!),
                   ),
                   const SizedBox(height: 16),
@@ -163,12 +263,20 @@ class _TriangulationPageState extends State<TriangulationPage> {
     );
   }
 
-  Widget _buildInputCard(String title, String? summary, IconData icon, Color color) {
+  Widget _buildInputCard(
+    String title,
+    String? summary,
+    IconData icon,
+    Color color,
+  ) {
     return Card(
       elevation: 0,
       color: color.withValues(alpha: 0.05),
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(side: BorderSide(color: color.withValues(alpha: 0.2)), borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: color.withValues(alpha: 0.2)),
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -178,11 +286,17 @@ class _TriangulationPageState extends State<TriangulationPage> {
               children: [
                 Icon(icon, color: color, size: 20),
                 const SizedBox(width: 8),
-                Text(title, style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+                Text(
+                  title,
+                  style: TextStyle(fontWeight: FontWeight.bold, color: color),
+                ),
               ],
             ),
             const SizedBox(height: 8),
-            Text(summary ?? 'Loading...', style: const TextStyle(fontSize: 13, color: Colors.black87)),
+            Text(
+              summary ?? 'Loading...',
+              style: const TextStyle(fontSize: 13, color: Colors.black87),
+            ),
           ],
         ),
       ),

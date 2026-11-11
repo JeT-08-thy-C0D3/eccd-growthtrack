@@ -255,10 +255,12 @@ class _ParentClarificationPageState extends State<ParentClarificationPage> {
                                     icon: Icons.chat_bubble_outline_rounded,
                                     alignLabelWithHint: true,
                                   ),
-                                  validator: (v) => Validators.validateRequired(
-                                    v,
-                                    'Question / Clarification',
-                                  ),
+                                  validator: (v) =>
+                                      Validators.validateAppropriateText(
+                                        v,
+                                        'Question / Clarification',
+                                        required: true,
+                                      ),
                                 ),
                                 const SizedBox(height: 20),
                                 SizedBox(

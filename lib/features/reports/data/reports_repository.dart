@@ -40,7 +40,7 @@ class ReportsRepositoryImpl implements ReportsRepository {
             .get(),
         _firestore.collection('evaluations').get(),
         _firestore
-            .collection('attendance')
+            .collection('attendance_events')
             .where('attendance_date', isEqualTo: today)
             .get(),
         _firestore.collection('users').get(),
@@ -82,7 +82,9 @@ class ReportsRepositoryImpl implements ReportsRepository {
     if (kIsWeb) {
       final queries = await Future.wait([
         _firestore.collection('children').get(),
-        _firestore.collection('attendance').get(),
+        // AttendanceRepository syncs to attendance_events. Reading the old
+        // `attendance` collection here left web reports empty.
+        _firestore.collection('attendance_events').get(),
       ]);
       final children = queries[0];
       final attendance = queries[1];
@@ -90,7 +92,7 @@ class ReportsRepositoryImpl implements ReportsRepository {
       List<AttendanceReportItem> items = [];
       for (var doc in children.docs) {
         final data = doc.data();
-        final cid = data['child_id'];
+        final cid = (data['child_id'] ?? doc.id).toString();
         final childAttendance = attendance.docs.where(
           (d) => d.data()['child_id'] == cid,
         );
@@ -105,7 +107,7 @@ class ReportsRepositoryImpl implements ReportsRepository {
         items.add(
           AttendanceReportItem(
             childId: cid,
-            childName: "${data['first_name']} ${data['last_name']}",
+            childName: _childName(data),
             present: present,
             absent: absent,
             attendanceRate: total > 0 ? (present / total) * 100 : 0.0,
@@ -129,19 +131,19 @@ class ReportsRepositoryImpl implements ReportsRepository {
       final children = queries[0];
       final evaluations = queries[1];
 
-      List<EvaluationReportItem> result = [];
+      final childrenById = _childrenById(children.docs);
+      final result = <EvaluationReportItem>[];
       for (var doc in evaluations.docs) {
         final data = doc.data();
-        final childDoc = children.docs.firstWhere(
-          (c) => c.data()['child_id'] == data['child_id'],
-        );
-        final childData = childDoc.data();
+        final childId = data['child_id']?.toString() ?? '';
+        final childData = childrenById[childId];
+        if (childId.isEmpty || childData == null) continue;
         result.add(
           EvaluationReportItem(
-            childId: data['child_id'],
-            childName: "${childData['first_name']} ${childData['last_name']}",
-            domain: data['domain'],
-            score: data['score'] ?? 0,
+            childId: childId,
+            childName: _childName(childData),
+            domain: data['domain']?.toString() ?? 'Unspecified domain',
+            score: (data['score'] as num?)?.toInt() ?? 0,
             date: data['evaluation_date'] ?? '',
             remarks: data['remarks'] ?? '',
           ),
@@ -164,17 +166,17 @@ class ReportsRepositoryImpl implements ReportsRepository {
       final children = queries[0];
       final referrals = queries[1];
 
-      List<ReferralReportItem> result = [];
+      final childrenById = _childrenById(children.docs);
+      final result = <ReferralReportItem>[];
       for (var doc in referrals.docs) {
         final data = doc.data();
-        final childDoc = children.docs.firstWhere(
-          (c) => c.data()['child_id'] == data['child_id'],
-        );
-        final childData = childDoc.data();
+        final childId = data['child_id']?.toString() ?? '';
+        final childData = childrenById[childId];
+        if (childId.isEmpty || childData == null) continue;
         result.add(
           ReferralReportItem(
-            childId: data['child_id'],
-            childName: "${childData['first_name']} ${childData['last_name']}",
+            childId: childId,
+            childName: _childName(childData),
             concern: data['concern'] ?? '',
             referralDate: data['referral_date'] ?? '',
             followUpDate: data['follow_up_date'] ?? '',
@@ -192,11 +194,109 @@ class ReportsRepositoryImpl implements ReportsRepository {
   @override
   Future<List<ChildProgressReportItem>> getChildProgressReport() async {
     if (kIsWeb) {
-      return [];
+      final queries = await Future.wait([
+        _firestore.collection('children').get(),
+        _firestore.collection('evaluations').get(),
+        _firestore.collection('triangulations').get(),
+      ]);
+      final children = queries[0];
+      final evaluations = queries[1];
+      final triangulations = queries[2];
+      final childrenById = _childrenById(children.docs);
+
+      final latestTriangulationByChild = <String, Map<String, dynamic>>{};
+      for (final document in triangulations.docs) {
+        final record = document.data();
+        final childId = record['child_id']?.toString() ?? '';
+        if (childId.isEmpty) continue;
+        final existing = latestTriangulationByChild[childId];
+        if (existing == null ||
+            _recordDate(
+              record,
+              'generated_date',
+            ).isAfter(_recordDate(existing, 'generated_date'))) {
+          latestTriangulationByChild[childId] = record;
+        }
+      }
+
+      final evaluationsByChildDomain = <String, List<Map<String, dynamic>>>{};
+      for (final document in evaluations.docs) {
+        final record = document.data();
+        final childId = record['child_id']?.toString() ?? '';
+        final domain = record['domain']?.toString().trim() ?? '';
+        if (childId.isEmpty ||
+            domain.isEmpty ||
+            !childrenById.containsKey(childId)) {
+          continue;
+        }
+        evaluationsByChildDomain
+            .putIfAbsent(
+              '$childId\u0000$domain',
+              () => <Map<String, dynamic>>[],
+            )
+            .add(record);
+      }
+
+      final items = <ChildProgressReportItem>[];
+      for (final entry in evaluationsByChildDomain.entries) {
+        final records = entry.value
+          ..sort(
+            (a, b) => _recordDate(
+              a,
+              'evaluation_date',
+            ).compareTo(_recordDate(b, 'evaluation_date')),
+          );
+        final latest = records.last;
+        final splitKey = entry.key.split('\u0000');
+        final childId = splitKey.first;
+        final triangulation = latestTriangulationByChild[childId];
+        items.add(
+          ChildProgressReportItem(
+            childId: childId,
+            childName: _childName(childrenById[childId]!),
+            domain: splitKey.last,
+            previousScore: records.length > 1
+                ? (records[records.length - 2]['score'] as num?)?.toInt()
+                : null,
+            currentScore: (latest['score'] as num?)?.toInt() ?? 0,
+            maxScore: 4,
+            developmentStatus: triangulation?['development_status']?.toString(),
+            triangulatedSummary: triangulation?['triangulated_summary']
+                ?.toString(),
+          ),
+        );
+      }
+      items.sort((a, b) {
+        final childComparison = a.childName.compareTo(b.childName);
+        return childComparison == 0
+            ? a.domain.compareTo(b.domain)
+            : childComparison;
+      });
+      return items;
     } else {
       final data = await _dbHelper.getChildProgressReport();
       return data.map((e) => ChildProgressReportItem.fromMap(e)).toList();
     }
+  }
+
+  Map<String, Map<String, dynamic>> _childrenById(
+    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> children,
+  ) {
+    return {
+      for (final child in children)
+        (child.data()['child_id'] ?? child.id).toString(): child.data(),
+    };
+  }
+
+  String _childName(Map<String, dynamic> data) {
+    return '${data['first_name'] ?? ''} ${data['last_name'] ?? ''}'.trim();
+  }
+
+  DateTime _recordDate(Map<String, dynamic> record, String field) {
+    final value = record[field];
+    if (value is Timestamp) return value.toDate();
+    return DateTime.tryParse(value?.toString().replaceFirst(' ', 'T') ?? '') ??
+        DateTime.fromMillisecondsSinceEpoch(0);
   }
 
   @override

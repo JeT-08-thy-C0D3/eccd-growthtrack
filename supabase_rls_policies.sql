@@ -281,3 +281,82 @@ CREATE POLICY notifications_insert_disabled ON notifications
 -- 6. Monitor for policy violations
 -- 7. Use pgBouncer for connection pooling
 -- 8. Set up automated backups
+
+-- ============================================================================
+-- PRIVATE FILE STORAGE (required for activity proof uploads)
+-- ============================================================================
+-- Run this block once in the Supabase SQL Editor. The Flutter app uses one
+-- private bucket with fixed path prefixes for child photos, activity proof,
+-- referrals, and generated reports.
+
+INSERT INTO storage.buckets (
+  id,
+  name,
+  public,
+  file_size_limit,
+  allowed_mime_types
+)
+VALUES (
+  'eccd-files',
+  'eccd-files',
+  false,
+  41943040,
+  ARRAY[
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'video/mp4',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ]
+)
+ON CONFLICT (id) DO UPDATE SET
+  public = EXCLUDED.public,
+  file_size_limit = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;
+
+-- Firebase UIDs are not UUIDs, so do not call auth.uid() in these policies.
+-- Instead, require a verified Firebase JWT subject. Files remain private; the
+-- app receives a short-lived signed URL only after Firestore has already
+-- checked that the user can access the related record.
+DROP POLICY IF EXISTS eccd_files_read_authenticated ON storage.objects;
+DROP POLICY IF EXISTS eccd_files_insert_authenticated ON storage.objects;
+DROP POLICY IF EXISTS eccd_files_update_authenticated ON storage.objects;
+DROP POLICY IF EXISTS eccd_files_read_verified ON storage.objects;
+DROP POLICY IF EXISTS eccd_files_insert_verified ON storage.objects;
+DROP POLICY IF EXISTS eccd_files_update_verified ON storage.objects;
+DROP POLICY IF EXISTS eccd_files_read_firebase ON storage.objects;
+DROP POLICY IF EXISTS eccd_files_insert_firebase ON storage.objects;
+DROP POLICY IF EXISTS eccd_files_update_firebase ON storage.objects;
+
+CREATE POLICY eccd_files_read_firebase
+ON storage.objects FOR SELECT TO public
+USING (
+  bucket_id = 'eccd-files' AND
+  COALESCE(auth.jwt() ->> 'sub', '') <> ''
+);
+
+CREATE POLICY eccd_files_insert_firebase
+ON storage.objects FOR INSERT TO public
+WITH CHECK (
+  bucket_id = 'eccd-files' AND
+  COALESCE(auth.jwt() ->> 'sub', '') <> '' AND
+  (storage.foldername(name))[1] IN (
+    'child-profile-photos',
+    'home-activity-evidence',
+    'referral-attachments',
+    'pdf-reports'
+  )
+);
+
+CREATE POLICY eccd_files_update_firebase
+ON storage.objects FOR UPDATE TO public
+USING (
+  bucket_id = 'eccd-files' AND
+  COALESCE(auth.jwt() ->> 'sub', '') <> ''
+)
+WITH CHECK (
+  bucket_id = 'eccd-files' AND
+  COALESCE(auth.jwt() ->> 'sub', '') <> ''
+);

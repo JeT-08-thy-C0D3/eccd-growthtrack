@@ -273,11 +273,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
               child: _buildUserHero(),
             ),
             _buildSearchAndFilterBar(),
-            _buildResponsiveList(
-              users,
-              paginatedUsers,
-              false,
-            ),
+            _buildResponsiveList(users, paginatedUsers, false),
             _buildPaginationControls(totalItems, totalPages),
             const SizedBox(height: 24),
           ],

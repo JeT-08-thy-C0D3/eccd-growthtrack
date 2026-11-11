@@ -3,7 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 class SupabaseConfig {
   static const String url = 'https://jevshtdblsxikquujhek.supabase.co';
-  static const String anonKey = 'sb_publishable_86e7nO1WxEbU1lIsbL6I1g_IctSVGzy';
+  static const String anonKey =
+      'sb_publishable_86e7nO1WxEbU1lIsbL6I1g_IctSVGzy';
 
   // One private bucket. Categories are object-path prefixes inside it.
   static const String filesBucket = 'eccd-files';
@@ -19,7 +20,9 @@ class SupabaseConfig {
 
   static Future<void> initialize() async {
     if (anonKey.contains('service_role')) {
-      throw StateError('A Supabase service-role key must never be used in the Flutter app.');
+      throw StateError(
+        'A Supabase service-role key must never be used in the Flutter app.',
+      );
     }
     await Supabase.initialize(
       url: url,
@@ -28,7 +31,9 @@ class SupabaseConfig {
       // Firebase project is registered in Supabase Dashboard. This preserves
       // Firebase as the only user/session provider in the app.
       accessToken: () async {
-        return FirebaseAuth.instance.currentUser?.getIdToken();
+        // Force a refreshed Firebase token so newly-added custom claims are
+        // included when Supabase evaluates its storage RLS policies.
+        return FirebaseAuth.instance.currentUser?.getIdToken(true);
       },
     );
   }

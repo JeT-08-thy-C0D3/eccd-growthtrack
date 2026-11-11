@@ -29,13 +29,9 @@ class UserModel {
     this.fcmToken,
   });
 
-  /// The original system administrator account must never be edited,
-  /// deactivated, or deleted from user management.
-  bool get isProtectedAdmin {
-    final normalizedEmail = email.trim().toLowerCase();
-    return role == UserRole.admin &&
-        normalizedEmail == 'delimahenry90@gmail.com';
-  }
+  /// Administrator accounts are system accounts and must never be edited,
+  /// deactivated, or archived from user management.
+  bool get isProtectedAdmin => role == UserRole.admin;
 
   Map<String, dynamic> toMap() {
     return {

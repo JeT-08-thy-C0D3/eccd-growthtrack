@@ -1,4 +1,6 @@
 import 'package:intl/intl.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import '../../../core/database/database_helper.dart';
 import '../../../core/utils/audit_logger.dart';
 import '../domain/evaluation_model.dart';
@@ -21,18 +23,28 @@ class EvaluationRepositoryImpl implements EvaluationRepository {
   @override
   Future<int> addEvaluation(EvaluationModel evaluation) async {
     final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
-    final newEval = evaluation.copyWith(
-      updatedAt: now,
-      isSynced: await _connectivity.isOnline,
-    );
+    // Browser connectivity reports are not reliable enough to decide whether
+    // Firestore can accept a write. A web evaluation has no SQLite fallback,
+    // so always attempt its authoritative cloud save.
+    final canSync = kIsWeb || await _connectivity.isOnline;
+    final newEval = evaluation.copyWith(updatedAt: now, isSynced: canSync);
 
-    // 1. Save Locally
-    final id = await _local.saveRecord('evaluations', newEval.toMap());
-    
+    // 1. Save locally first on mobile. Web has no SQLite database, so it
+    // writes an authoritative, unique Firestore evaluation document instead
+    // of silently reusing the local placeholder ID 0.
+    final id = kIsWeb
+        ? DateTime.now().microsecondsSinceEpoch
+        : await _local.saveRecord('evaluations', newEval.toMap());
+
     // 2. Sync to Cloud if online
-    if (await _connectivity.isOnline) {
+    if (canSync) {
       try {
-        await _remote.uploadRecord('evaluations', id.toString(), newEval.toMap());
+        await _remote.uploadRecord(
+          'evaluations',
+          id.toString(),
+          newEval.toMap(),
+          isCreate: true,
+        );
         await _local.markAsSynced('evaluations', id);
       } catch (e) {
         print("Cloud Sync Failed: $e");
@@ -43,9 +55,10 @@ class EvaluationRepositoryImpl implements EvaluationRepository {
     await AuditLogger.log(
       action: 'Add Evaluation',
       module: 'Evaluation',
-      description: 'Added evaluation for domain: ${evaluation.domain} with score: ${evaluation.score}.',
+      description:
+          'Added evaluation for domain: ${evaluation.domain} with score: ${evaluation.score}.',
     );
-    
+
     return id;
   }
 

@@ -8,15 +8,17 @@ class RoleWebNavItem {
     required this.icon,
     required this.onTap,
     this.selected = false,
+    this.isDestructive = false,
   });
 
   final String label;
   final IconData icon;
   final VoidCallback onTap;
   final bool selected;
+  final bool isDestructive;
 }
 
-/// Shared desktop navigation for the teacher and parent workspaces.
+/// Shared desktop navigation for the role-based workspaces.
 class RoleWebSidebar extends StatelessWidget {
   const RoleWebSidebar({
     super.key,
@@ -24,12 +26,44 @@ class RoleWebSidebar extends StatelessWidget {
     required this.subtitle,
     required this.items,
     this.showIdentityLogo = true,
+    this.bottomItem,
   });
 
   final String title;
   final String subtitle;
   final List<RoleWebNavItem> items;
   final bool showIdentityLogo;
+  final RoleWebNavItem? bottomItem;
+
+  Widget _navigationItem(BuildContext context, RoleWebNavItem item) {
+    final colors = Theme.of(context).colorScheme;
+    final foregroundColor = item.isDestructive
+        ? colors.error
+        : item.selected
+        ? BrandColors.navy
+        : colors.onSurfaceVariant;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+        leading: Icon(item.icon, color: foregroundColor),
+        title: Text(
+          item.label,
+          style: TextStyle(
+            color: item.isDestructive ? colors.error : null,
+            fontWeight: item.selected ? FontWeight.w800 : FontWeight.w500,
+          ),
+        ),
+        selected: item.selected,
+        selectedTileColor: item.isDestructive
+            ? colors.error.withValues(alpha: .08)
+            : BrandColors.sky.withValues(alpha: .12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        onTap: item.selected ? null : item.onTap,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -118,43 +152,12 @@ class RoleWebSidebar extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 14),
                 children: items
-                    .map(
-                      (item) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 3),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                          ),
-                          leading: Icon(
-                            item.icon,
-                            color: item.selected
-                                ? BrandColors.navy
-                                : colors.onSurfaceVariant,
-                          ),
-                          title: Text(
-                            item.label,
-                            style: TextStyle(
-                              fontWeight: item.selected
-                                  ? FontWeight.w800
-                                  : FontWeight.w500,
-                            ),
-                          ),
-                          selected: item.selected,
-                          selectedTileColor: BrandColors.sky.withValues(
-                            alpha: .12,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          onTap: item.selected ? null : item.onTap,
-                        ),
-                      ),
-                    )
+                    .map((item) => _navigationItem(context, item))
                     .toList(),
               ),
             ),
             const Padding(
-              padding: EdgeInsets.fromLTRB(24, 8, 24, 20),
+              padding: EdgeInsets.fromLTRB(24, 8, 24, 8),
               child: Row(
                 children: [
                   Icon(
@@ -170,6 +173,11 @@ class RoleWebSidebar extends StatelessWidget {
                 ],
               ),
             ),
+            if (bottomItem != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 20),
+                child: _navigationItem(context, bottomItem!),
+              ),
           ],
         ),
       ),

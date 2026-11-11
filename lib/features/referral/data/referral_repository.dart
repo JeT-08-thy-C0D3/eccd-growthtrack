@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
 
 import '../../../core/database/database_helper.dart';
+import '../../../core/utils/validators.dart';
 import '../../../core/utils/audit_logger.dart';
 import '../../admin/data/repositories/audit_repository.dart';
 import '../domain/referral_model.dart';
@@ -33,11 +34,39 @@ class ReferralRepositoryImpl implements ReferralRepository {
 
   @override
   Future<int> addReferral(ReferralModel referral) async {
+    _ensureAppropriateContent(referral);
     final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
     final newReferral = referral.copyWith(
       updatedAt: now,
       isSynced: await _connectivity.isOnline,
     );
+
+    // Web has no SQLite auto-increment table.  Referral rules require the
+    // creator's UID, so save a teacher-owned document directly instead of
+    // producing local ID 0 records that cannot be listed by the teacher.
+    if (kIsWeb) {
+      final teacherUid = FirebaseAuth.instance.currentUser?.uid;
+      if (teacherUid == null || teacherUid.isEmpty) {
+        throw StateError(
+          'Your teacher session has expired. Please sign in again.',
+        );
+      }
+      final id = DateTime.now().microsecondsSinceEpoch.remainder(2147483647);
+      await _firestore.collection('referrals').doc(id.toString()).set({
+        ...newReferral.toMap(),
+        'id': id,
+        'is_synced': 1,
+        'referrerId': teacherUid,
+        'server_created_at': FieldValue.serverTimestamp(),
+        'server_updated_at': FieldValue.serverTimestamp(),
+      });
+      await AuditLogger.log(
+        action: 'Create Referral',
+        module: 'Referral',
+        description: 'Created referral for concern: ${referral.concern}.',
+      );
+      return id;
+    }
 
     // 1. Save Locally
     final id = await _local.saveRecord('referrals', newReferral.toMap());
@@ -78,15 +107,22 @@ class ReferralRepositoryImpl implements ReferralRepository {
   Future<List<Map<String, dynamic>>> getAllReferrals() async {
     if (kIsWeb) {
       final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null || uid.isEmpty) return [];
+      final profile = await _firestore.collection('users').doc(uid).get();
+      final isAdmin = profile.data()?['role'] == 'admin';
       final queries = await Future.wait([
-        _firestore
-            .collection('referrals')
-            .where('referrerId', isEqualTo: uid)
-            .get(),
-        _firestore
-            .collection('children')
-            .where('teacher_uid', isEqualTo: uid)
-            .get(),
+        isAdmin
+            ? _firestore.collection('referrals').get()
+            : _firestore
+                  .collection('referrals')
+                  .where('referrerId', isEqualTo: uid)
+                  .get(),
+        isAdmin
+            ? _firestore.collection('children').get()
+            : _firestore
+                  .collection('children')
+                  .where('teacher_uid', isEqualTo: uid)
+                  .get(),
       ]);
       final referrals = queries[0];
       final children = queries[1];
@@ -112,6 +148,7 @@ class ReferralRepositoryImpl implements ReferralRepository {
 
   @override
   Future<int> updateReferral(ReferralModel referral) async {
+    _ensureAppropriateContent(referral);
     if (kIsWeb) {
       if (referral.id == null) return 0;
       await _firestore
@@ -187,5 +224,24 @@ class ReferralRepositoryImpl implements ReferralRepository {
       docCollection: 'referrals',
       urlFieldName: 'attachment_url',
     );
+  }
+
+  void _ensureAppropriateContent(ReferralModel referral) {
+    final descriptionError = Validators.validateAppropriateText(
+      referral.description,
+      'Referral description',
+      required: true,
+    );
+    final notesError = Validators.validateAppropriateText(
+      referral.followUpNotes,
+      'Follow-up notes',
+    );
+    final guidanceError = Validators.validateAppropriateText(
+      referral.adminGuidance,
+      'Admin guidance',
+    );
+    if (descriptionError != null) throw StateError(descriptionError);
+    if (notesError != null) throw StateError(notesError);
+    if (guidanceError != null) throw StateError(guidanceError);
   }
 }

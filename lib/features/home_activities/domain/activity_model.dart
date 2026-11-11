@@ -11,6 +11,10 @@ class ActivityModel {
   final String updatedAt;
   final bool isSynced;
   final int maxScore;
+  final bool evidenceRequired;
+  final String? assignedTeacherUid;
+  final String? parentUid;
+  final String? section;
 
   ActivityModel({
     this.id,
@@ -25,6 +29,10 @@ class ActivityModel {
     required this.updatedAt,
     this.isSynced = false,
     this.maxScore = 20,
+    this.evidenceRequired = true,
+    this.assignedTeacherUid,
+    this.parentUid,
+    this.section,
   });
 
   Map<String, dynamic> toMap() {
@@ -41,6 +49,10 @@ class ActivityModel {
       'updated_at': updatedAt,
       'is_synced': isSynced ? 1 : 0,
       'max_score': maxScore,
+      'evidence_required': evidenceRequired ? 1 : 0,
+      'assigned_teacher_uid': assignedTeacherUid,
+      'parent_uid': parentUid,
+      'section': section,
     };
   }
 
@@ -58,6 +70,13 @@ class ActivityModel {
       updatedAt: map['updated_at'] ?? DateTime.now().toIso8601String(),
       isSynced: (map['is_synced'] ?? 0) == 1,
       maxScore: map['max_score'] as int? ?? 20,
+      evidenceRequired:
+          map['evidence_required'] == null ||
+          map['evidence_required'] == true ||
+          map['evidence_required'] == 1,
+      assignedTeacherUid: map['assigned_teacher_uid'] as String?,
+      parentUid: map['parent_uid'] as String?,
+      section: map['section'] as String?,
     );
   }
 
@@ -74,6 +93,10 @@ class ActivityModel {
     String? updatedAt,
     bool? isSynced,
     int? maxScore,
+    bool? evidenceRequired,
+    String? assignedTeacherUid,
+    String? parentUid,
+    String? section,
   }) {
     return ActivityModel(
       id: id ?? this.id,
@@ -88,6 +111,10 @@ class ActivityModel {
       updatedAt: updatedAt ?? this.updatedAt,
       isSynced: isSynced ?? this.isSynced,
       maxScore: maxScore ?? this.maxScore,
+      evidenceRequired: evidenceRequired ?? this.evidenceRequired,
+      assignedTeacherUid: assignedTeacherUid ?? this.assignedTeacherUid,
+      parentUid: parentUid ?? this.parentUid,
+      section: section ?? this.section,
     );
   }
 }

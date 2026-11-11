@@ -51,6 +51,20 @@ service cloud.firestore {
       return isParent() &&
              get(/databases/$(database)/documents/children/$(childId)).data.parent_uid == request.auth.uid;
     }
+
+    // One-time compatibility path for child records created by older builds
+    // that saved the teacher's name but omitted teacher_uid. Only the teacher
+    // whose profile name matches the legacy record may claim it.
+    function canClaimLegacyTeacherChild() {
+      return isTeacher() &&
+             (!('teacher_uid' in resource.data) ||
+              resource.data.teacher_uid == null ||
+              resource.data.teacher_uid == '') &&
+             resource.data.teacher_name ==
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.name &&
+             request.resource.data.teacher_uid == request.auth.uid &&
+             request.resource.data.parent_uid == resource.data.parent_uid;
+    }
     
     function userOwnsDocument() {
       return request.auth.uid == resource.data.uid;
@@ -62,19 +76,28 @@ service cloud.firestore {
     
     match /users/{userId} {
       // Read: Users can read their own profile; admins read all
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow read: if isAuthenticated() &&
+                    (request.auth.uid == userId ||
+                     isAdmin() ||
+                     (isTeacher() && resource.data.role == 'parent'));
       
-      // Bootstrap the original admin profile, then allow that admin to create
-      // Teacher and Parent profiles. Passwords must never be in Firestore.
+      // Bootstrap the original admin profile. Teachers may create a parent
+      // profile only while registering a child. Passwords stay out of Firestore.
       allow create: if isInitialAdminProfile(userId) ||
                        (isAdmin() &&
                         request.resource.data.role in ['teacher', 'parent'] &&
+                        !('password' in request.resource.data)) ||
+                       (isTeacher() &&
+                        request.resource.data.role == 'parent' &&
                         !('password' in request.resource.data));
       
-      // Update: User can update own profile (except role/status); admin can update all
-      allow update: if (request.auth.uid == userId && 
-                        !('role' in request.writeFields) && 
-                        !('status' in request.writeFields)) || isAdmin();
+      // Administrator profiles are immutable. Other users may update their
+      // own profile (except role/status), while admins may manage non-admin
+      // accounts only.
+      allow update: if resource.data.role != 'admin' &&
+                    ((request.auth.uid == userId &&
+                      !('role' in request.writeFields) &&
+                      !('status' in request.writeFields)) || isAdmin());
       
       // Delete: Never from client (only backend deactivates users)
       allow delete: if false;
@@ -98,19 +121,28 @@ service cloud.firestore {
                       (isTeacher() && resource.data.teacher_uid == request.auth.uid) ||
                       (isParent() && resource.data.parent_uid == request.auth.uid);
       
-      // Create: Admin only
-      allow create: if isAdmin();
+      // A teacher may register a child only into their own classroom. Admins
+      // retain full control over registrations and assignments.
+      allow create: if isAdmin() ||
+                       (isTeacher() &&
+                        request.resource.data.teacher_uid == request.auth.uid);
       
-      // A teacher or parent may edit only a linked child. Neither may move a
-      // child to another teacher/parent; assignment changes are admin-only.
+      // The assigned teacher may correct or change the linked parent while
+      // retaining ownership of the classroom record. A parent may only edit
+      // the child without changing either link.
       allow update: if isAdmin() ||
-                       ((isAssignedTeacherForChild(childId) ||
-                         isLinkedParentForChild(childId)) &&
+                       canClaimLegacyTeacherChild() ||
+                       (isAssignedTeacherForChild(childId) &&
+                        request.resource.data.teacher_uid == resource.data.teacher_uid) ||
+                       (isLinkedParentForChild(childId) &&
                         request.resource.data.teacher_uid == resource.data.teacher_uid &&
                         request.resource.data.parent_uid == resource.data.parent_uid);
       
-      // Delete: Never (soft-delete via audit)
-      allow delete: if false;
+      // Only a just-created, unverified RFID registration may be discarded.
+      // Verified child profiles remain protected from client deletion.
+      allow delete: if isAdmin() ||
+                       (isAssignedTeacherForChild(childId) &&
+                        resource.data.rfid_verified == false);
       
       // Subcollection: Child assignments
       match /assignments/{assignmentId} {
@@ -118,7 +150,165 @@ service cloud.firestore {
         allow write: if isAdmin();
       }
     }
+
+    // Authoritative UID registry. It prevents a card from being linked to two
+    // child profiles across devices; raw UIDs are never readable by parents.
+    match /rfid_cards/{uid} {
+      allow read: if isAdmin() || isTeacher();
+      allow create: if (isAdmin() || isTeacher()) &&
+                       request.resource.data.uid == uid &&
+                       request.resource.data.verified == true &&
+                       (isAdmin() ||
+                        get(/databases/$(database)/documents/children/$(request.resource.data.child_id)).data.teacher_uid == request.auth.uid);
+      allow update: if false;
+      allow delete: if isAdmin() ||
+                       (isTeacher() &&
+                        get(/databases/$(database)/documents/children/$(resource.data.child_id)).data.teacher_uid == request.auth.uid);
+    }
+
+    // ============================================================================
+    // HOME ACTIVITIES AND SUBMISSIONS
+    // ============================================================================
+
+    match /activities/{activityId} {
+      // Activities are visible only to the teacher who assigned them, the
+      // linked parent, and administrators.
+      allow read: if isAdmin() ||
+                      (isTeacher() &&
+                       resource.data.assigned_teacher_uid == request.auth.uid) ||
+                      (isParent() && resource.data.parent_uid == request.auth.uid);
+
+      // A teacher can only assign an activity to a child in their own class.
+      allow create: if isTeacher() &&
+                       request.resource.data.assigned_teacher_uid == request.auth.uid &&
+                       get(/databases/$(database)/documents/children/$(request.resource.data.child_id)).data.teacher_uid == request.auth.uid &&
+                       request.resource.data.parent_uid ==
+                         get(/databases/$(database)/documents/children/$(request.resource.data.child_id)).data.parent_uid;
+
+      allow update: if isAdmin() ||
+                       (isTeacher() &&
+                        resource.data.assigned_teacher_uid == request.auth.uid &&
+                        request.resource.data.assigned_teacher_uid == resource.data.assigned_teacher_uid &&
+                        request.resource.data.parent_uid == resource.data.parent_uid) ||
+                       // A linked parent may only mark their own activity as
+                       // completed after submitting proof; assignment details
+                       // cannot be changed from the parent account.
+                       (isParent() &&
+                        resource.data.parent_uid == request.auth.uid &&
+                        request.resource.data.parent_uid == resource.data.parent_uid &&
+                        request.resource.data.status == 'Completed' &&
+                        request.resource.data.diff(resource.data).affectedKeys()
+                          .hasOnly(['status', 'updated_at', 'server_updated_at', 'is_synced']));
+      allow delete: if false;
+    }
+
+    match /activity_submissions/{submissionId} {
+      // Parents submit proof only for a child linked to their account; the
+      // assigned teacher can then view and grade it.  The teacher/parent
+      // links are resolved from the child record so submissions cannot be
+      // exposed to another classroom.
+      allow read: if isAdmin() ||
+                      (isTeacher() &&
+                       (resource.data.teacher_uid == request.auth.uid ||
+                        get(/databases/$(database)/documents/children/$(resource.data.child_id)).data.teacher_uid == request.auth.uid)) ||
+                      (isParent() &&
+                       (resource.data.parent_uid == request.auth.uid ||
+                        get(/databases/$(database)/documents/children/$(resource.data.child_id)).data.parent_uid == request.auth.uid));
+
+      allow create: if isParent() &&
+                       request.resource.data.parent_uid == request.auth.uid &&
+                       get(/databases/$(database)/documents/children/$(request.resource.data.child_id)).data.parent_uid == request.auth.uid &&
+                       get(/databases/$(database)/documents/activities/$(request.resource.data.activity_id)).data.parent_uid == request.auth.uid;
+
+      // A parent may finish their own pending submission/upload.  The child
+      // and activity identity must remain fixed.  The assigned teacher or an
+      // admin is allowed to record the review and grade.
+      allow update: if isAdmin() ||
+                       (isTeacher() &&
+                        (resource.data.teacher_uid == request.auth.uid ||
+                         get(/databases/$(database)/documents/children/$(resource.data.child_id)).data.teacher_uid == request.auth.uid)) ||
+                       (isParent() &&
+                        (resource.data.parent_uid == request.auth.uid ||
+                         get(/databases/$(database)/documents/children/$(resource.data.child_id)).data.parent_uid == request.auth.uid) &&
+                        request.resource.data.child_id == resource.data.child_id &&
+                        request.resource.data.activity_id == resource.data.activity_id);
+      allow delete: if false;
+    }
     
+    // ============================================================================
+    // TEACHER ECCD EVALUATIONS
+    // ============================================================================
+
+    // A compact, child-scoped evaluation record used by the teacher workspace
+    // and the triangulation screen. The child relationship is authoritative;
+    // callers cannot read another classroom's assessments by guessing an ID.
+    match /evaluations/{evaluationId} {
+      allow read: if isAdmin() ||
+                      (isTeacher() &&
+                       get(/databases/$(database)/documents/children/$(resource.data.child_id)).data.teacher_uid == request.auth.uid) ||
+                      (isParent() &&
+                       get(/databases/$(database)/documents/children/$(resource.data.child_id)).data.parent_uid == request.auth.uid);
+
+      allow create: if isTeacher() &&
+                       get(/databases/$(database)/documents/children/$(request.resource.data.child_id)).data.teacher_uid == request.auth.uid &&
+                       request.resource.data.score is int &&
+                       request.resource.data.score >= 0 &&
+                       request.resource.data.score <= 4 &&
+                       request.resource.data.server_created_at == request.time &&
+                       request.resource.data.server_updated_at == request.time;
+
+      allow update: if isTeacher() &&
+                       get(/databases/$(database)/documents/children/$(resource.data.child_id)).data.teacher_uid == request.auth.uid &&
+                       request.resource.data.child_id == resource.data.child_id &&
+                       request.resource.data.server_created_at == resource.data.server_created_at &&
+                       request.resource.data.server_updated_at == request.time;
+
+      allow delete: if false;
+    }
+
+    // ============================================================================
+    // TRIANGULATION AND AI DEVELOPMENT SUMMARIES
+    // ============================================================================
+
+    match /triangulations/{triangulationId} {
+      allow read: if isAdmin() ||
+                      (isTeacher() &&
+                       get(/databases/$(database)/documents/children/$(resource.data.child_id)).data.teacher_uid == request.auth.uid);
+
+      allow create: if isTeacher() &&
+                       get(/databases/$(database)/documents/children/$(request.resource.data.child_id)).data.teacher_uid == request.auth.uid &&
+                       request.resource.data.server_created_at == request.time &&
+                       request.resource.data.server_updated_at == request.time;
+
+      allow update: if isTeacher() &&
+                       get(/databases/$(database)/documents/children/$(resource.data.child_id)).data.teacher_uid == request.auth.uid &&
+                       request.resource.data.child_id == resource.data.child_id &&
+                       request.resource.data.server_created_at == resource.data.server_created_at &&
+                       request.resource.data.server_updated_at == request.time;
+      allow delete: if false;
+    }
+
+    match /development_summaries/{summaryId} {
+      allow read: if isAdmin() ||
+                      (isTeacher() &&
+                       get(/databases/$(database)/documents/children/$(resource.data.child_id)).data.teacher_uid == request.auth.uid) ||
+                      (isParent() &&
+                       resource.data.approval_status == 'Approved' &&
+                       get(/databases/$(database)/documents/children/$(resource.data.child_id)).data.parent_uid == request.auth.uid);
+
+      allow create: if isTeacher() &&
+                       get(/databases/$(database)/documents/children/$(request.resource.data.child_id)).data.teacher_uid == request.auth.uid &&
+                       request.resource.data.server_created_at == request.time &&
+                       request.resource.data.server_updated_at == request.time;
+
+      allow update: if isTeacher() &&
+                       get(/databases/$(database)/documents/children/$(resource.data.child_id)).data.teacher_uid == request.auth.uid &&
+                       request.resource.data.child_id == resource.data.child_id &&
+                       request.resource.data.server_created_at == resource.data.server_created_at &&
+                       request.resource.data.server_updated_at == request.time;
+      allow delete: if false;
+    }
+
     // ============================================================================
     // EVALUATION SESSIONS & OBSERVATIONS (CORE FUNCTIONALITY)
     // ============================================================================
@@ -194,9 +384,14 @@ service cloud.firestore {
     // ============================================================================
     
     match /attendance_events/{eventId} {
-      // Read: Teachers (center), Admins
-      allow read: if isAdmin() || 
-                      (isTeacher() && resource.data.centerId == getUserCenterId());
+      // Assigned teachers and the linked parent may read a child's own
+      // attendance. The parent dashboard queries by child_id only, so the
+      // relationship is checked against the authoritative child record.
+      allow read: if isAdmin() ||
+                      (isTeacher() &&
+                       get(/databases/$(database)/documents/children/$(resource.data.child_id)).data.teacher_uid == request.auth.uid) ||
+                      (isParent() &&
+                       get(/databases/$(database)/documents/children/$(resource.data.child_id)).data.parent_uid == request.auth.uid);
       
       // Create: Teachers (RFID device or manual)
       allow create: if isTeacher();

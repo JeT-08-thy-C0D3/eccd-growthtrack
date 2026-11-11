@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import '../../../core/database/database_helper.dart';
+
 import '../../../shared/models/child_model.dart';
-import '../../../shared/models/assessment_model.dart';
 import '../../../shared/widgets/confirmation_dialog.dart';
+import '../data/evaluation_repository.dart';
+import '../domain/evaluation_model.dart';
 
 class EccdAssessmentForm extends StatefulWidget {
   final ChildModel child;
@@ -13,6 +14,7 @@ class EccdAssessmentForm extends StatefulWidget {
 }
 
 class _EccdAssessmentFormState extends State<EccdAssessmentForm> {
+  final EvaluationRepository _evaluationRepository = EvaluationRepositoryImpl();
   final Map<String, List<String>> _domains = {
     'Gross Motor': [
       'Climbs stairs with alternating feet',
@@ -78,7 +80,8 @@ class _EccdAssessmentFormState extends State<EccdAssessmentForm> {
       final confirmSave = await ConfirmationDialog.show(
         context: context,
         title: 'Zero Items Selected',
-        message: 'No developmental indicators were selected for ${widget.child.firstName}. Do you still wish to submit an evaluation with 0 scores?',
+        message:
+            'No developmental indicators were selected for ${widget.child.firstName}. Do you still wish to submit an evaluation with 0 scores?',
         confirmLabel: 'Submit Anyway',
         confirmColor: Colors.orange,
         icon: Icons.warning_amber_rounded,
@@ -96,15 +99,19 @@ class _EccdAssessmentFormState extends State<EccdAssessmentForm> {
           if (value) score++;
         });
 
-        final assessment = AssessmentModel(
-          childId: widget.child.id!,
-          date: dateStr,
+        final assessment = EvaluationModel(
+          childId: widget.child.childId,
           domain: domain,
           score: score,
           remarks: 'Assessment completed for $domain ($score/4)',
+          evaluationDate: dateStr,
+          updatedAt: DateTime.now().toIso8601String(),
         );
 
-        await DatabaseHelper.instance.createAssessment(assessment);
+        // Reuse the active evaluation repository so all six checklist
+        // domains follow the same local-first and Firestore-sync path as the
+        // teacher evaluation screen, including on Flutter Web.
+        await _evaluationRepository.addEvaluation(assessment);
       }
 
       setState(() => _isSaving = false);
@@ -118,7 +125,10 @@ class _EccdAssessmentFormState extends State<EccdAssessmentForm> {
       setState(() => _isSaving = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save assessment: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Failed to save assessment: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -127,7 +137,11 @@ class _EccdAssessmentFormState extends State<EccdAssessmentForm> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Evaluation: ${widget.child.firstName} ${widget.child.lastName}')),
+      appBar: AppBar(
+        title: Text(
+          'Evaluation: ${widget.child.firstName} ${widget.child.lastName}',
+        ),
+      ),
       body: _isSaving
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -135,14 +149,21 @@ class _EccdAssessmentFormState extends State<EccdAssessmentForm> {
               children: [
                 const Text(
                   'Developmental Checklist',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.blue),
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 const Text('Check the items the child can perform.'),
                 const Divider(),
                 ..._domains.keys.map((domain) {
                   return ExpansionTile(
-                    title: Text(domain, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    title: Text(
+                      domain,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     children: [
                       ...List.generate(_domains[domain]!.length, (index) {
                         return CheckboxListTile(
@@ -166,7 +187,10 @@ class _EccdAssessmentFormState extends State<EccdAssessmentForm> {
                     backgroundColor: Colors.blue,
                     foregroundColor: Colors.white,
                   ),
-                  child: const Text('Submit Evaluation', style: TextStyle(fontSize: 18)),
+                  child: const Text(
+                    'Submit Evaluation',
+                    style: TextStyle(fontSize: 18),
+                  ),
                 ),
                 const SizedBox(height: 40),
               ],

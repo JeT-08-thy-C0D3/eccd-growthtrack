@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
+
 import '../datasources/storage_data_source.dart';
 import '../datasources/local_data_source.dart';
 import '../datasources/remote_data_source.dart';
@@ -19,10 +21,10 @@ class FileUploadRepository {
     LocalDataSource? localDataSource,
     RemoteDataSource? remoteDataSource,
     ConnectivityService? connectivityService,
-  })  : _storageDataSource = storageDataSource ?? StorageDataSource(),
-        _localDataSource = localDataSource ?? LocalDataSource(),
-        _remoteDataSource = remoteDataSource ?? RemoteDataSource(),
-        _connectivityService = connectivityService ?? ConnectivityService();
+  }) : _storageDataSource = storageDataSource ?? StorageDataSource(),
+       _localDataSource = localDataSource ?? LocalDataSource(),
+       _remoteDataSource = remoteDataSource ?? RemoteDataSource(),
+       _connectivityService = connectivityService ?? ConnectivityService();
 
   Future<String?> uploadFile({
     required String bucket,
@@ -32,18 +34,29 @@ class FileUploadRepository {
     String? docCollection,
     String? urlFieldName,
   }) async {
-    final fileId = '${category}_${entityId}_${DateTime.now().millisecondsSinceEpoch}';
-    final storagePath = '$category/$entityId/${fileId}_${filePath.split('/').last}';
+    final fileId =
+        '${category}_${entityId}_${DateTime.now().millisecondsSinceEpoch}';
+    final storagePath =
+        '$category/$entityId/${fileId}_${filePath.split('/').last}';
     final isOnline = await _connectivityService.isOnline;
 
     if (isOnline || kIsWeb) {
       try {
         final file = File(filePath);
-        final signedUrl = await _storageDataSource.uploadFile(bucket, storagePath, file);
+        final signedUrl = await _storageDataSource.uploadFile(
+          bucket,
+          storagePath,
+          file,
+        );
 
         // Save URL in Firestore if collection and field name provided
         if (docCollection != null && urlFieldName != null) {
-          await _remoteDataSource.updateDocumentFileUrl(docCollection, entityId, urlFieldName, signedUrl);
+          await _remoteDataSource.updateDocumentFileUrl(
+            docCollection,
+            entityId,
+            urlFieldName,
+            signedUrl,
+          );
         }
 
         // Cache metadata in SQLite
@@ -84,7 +97,8 @@ class FileUploadRepository {
     String? docCollection,
     String? urlFieldName,
   }) async {
-    final fileId = '${category}_${entityId}_${DateTime.now().millisecondsSinceEpoch}';
+    final fileId =
+        '${category}_${entityId}_${DateTime.now().millisecondsSinceEpoch}';
     final storagePath = '$category/$entityId/${fileId}_$fileName';
 
     try {
@@ -96,7 +110,12 @@ class FileUploadRepository {
       );
 
       if (docCollection != null && urlFieldName != null) {
-        await _remoteDataSource.updateDocumentFileUrl(docCollection, entityId, urlFieldName, signedUrl);
+        await _remoteDataSource.updateDocumentFileUrl(
+          docCollection,
+          entityId,
+          urlFieldName,
+          signedUrl,
+        );
       }
 
       final uploadModel = FileUploadModel(
@@ -111,13 +130,45 @@ class FileUploadRepository {
       await _localDataSource.saveFileUpload(uploadModel);
 
       return signedUrl;
-    } catch (e) {
-      print("FileUploadRepository uploadBytes error: $e");
-      return null;
+    } catch (_) {
+      // Evidence submission needs to show the parent the real storage error.
+      // Returning null hid actionable configuration failures such as a missing
+      // private bucket and produced only a generic retry message.
+      rethrow;
     }
   }
 
-  Future<void> _queueOfflineFile(String fileId, String entityId, String category, String filePath) async {
+  /// Supabase signed URLs expire by design. Keep only the URL in older
+  /// records, then recover its object path and mint a fresh URL when a parent
+  /// or teacher presses View.
+  Future<String> refreshSignedUrl({
+    required String bucket,
+    required String signedUrl,
+  }) async {
+    final uri = Uri.tryParse(signedUrl);
+    final segments = uri?.pathSegments ?? const <String>[];
+    final signIndex = segments.indexOf('sign');
+    if (signIndex < 0 || segments.length <= signIndex + 2) {
+      throw StateError('The submitted proof link is invalid.');
+    }
+    if (segments[signIndex + 1] != bucket) {
+      throw StateError(
+        'The submitted proof belongs to an unknown storage bucket.',
+      );
+    }
+    final storagePath = segments.skip(signIndex + 2).join('/');
+    if (storagePath.isEmpty) {
+      throw StateError('The submitted proof storage path is missing.');
+    }
+    return _storageDataSource.createSignedUrl(bucket, storagePath);
+  }
+
+  Future<void> _queueOfflineFile(
+    String fileId,
+    String entityId,
+    String category,
+    String filePath,
+  ) async {
     final uploadModel = FileUploadModel(
       fileId: fileId,
       entityId: entityId,
@@ -141,7 +192,8 @@ class FileUploadRepository {
         final file = File(record.localPath);
         if (!file.existsSync()) continue;
 
-        final storagePath = '${record.category}/${record.entityId}/${record.fileId}_${record.localPath.split('/').last}';
+        final storagePath =
+            '${record.category}/${record.entityId}/${record.fileId}_${record.localPath.split('/').last}';
         final signedUrl = await _storageDataSource.uploadFile(
           SupabaseConfig.filesBucket,
           storagePath,

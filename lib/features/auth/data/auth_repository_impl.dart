@@ -57,7 +57,13 @@ class AuthRepositoryImpl implements AuthRepository {
         }
 
         if (doc.exists) {
-          final user = UserModel.fromMap(doc.data()!);
+          final user = UserModel.fromMap({
+            ...doc.data()!,
+            // The Firestore document is keyed by the Firebase Auth UID.
+            // Legacy profile payloads can contain a stale `uid` value, which
+            // breaks child-parent links saved with the real account ID.
+            'uid': credential.user!.uid,
+          });
 
           // Firebase Auth can still have a valid credential while an admin has
           // deactivated the profile in Firestore. Always check the latest
@@ -208,7 +214,13 @@ class AuthRepositoryImpl implements AuthRepository {
             .doc(firebaseUser.uid)
             .get(const GetOptions(source: Source.server));
         if (doc.exists) {
-          final user = UserModel.fromMap(doc.data()!);
+          final user = UserModel.fromMap({
+            ...doc.data()!,
+            // Always use the currently authenticated UID for ownership
+            // queries. Profile data is editable/imported and is not a safe
+            // source for a relationship key.
+            'uid': firebaseUser.uid,
+          });
           if (user.status.trim().toLowerCase() != 'active') {
             await _firebaseAuth.signOut();
             final prefs = await SharedPreferences.getInstance();

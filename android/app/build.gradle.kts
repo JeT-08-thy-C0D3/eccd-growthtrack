@@ -9,7 +9,8 @@ plugins {
 
 android {
     namespace = "com.eccd.eccd_growthtrack"
-    compileSdk = flutter.compileSdkVersion
+    // file_picker's lifecycle dependency requires Android API 36.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

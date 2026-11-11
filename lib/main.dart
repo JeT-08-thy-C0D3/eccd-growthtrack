@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:eccd_growthtrack/firebase_options.dart';
 import 'package:eccd_growthtrack/app.dart';
 import 'package:eccd_growthtrack/core/config/supabase_config.dart';
+import 'package:eccd_growthtrack/core/services/app_check_service.dart';
 import 'package:eccd_growthtrack/features/auth/data/auth_repository_impl.dart';
 import 'package:eccd_growthtrack/core/sync/sync_service_web.dart'
     if (dart.library.io) 'package:eccd_growthtrack/core/sync/sync_service.dart';
@@ -12,6 +13,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await AppCheckService().initialize();
 
   // Initialize Supabase Storage Client
   await SupabaseConfig.initialize();

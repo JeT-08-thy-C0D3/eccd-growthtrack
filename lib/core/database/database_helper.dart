@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -33,7 +34,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 8,
+      version: 16,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -77,6 +78,80 @@ class DatabaseHelper {
         )
       ''');
     }
+    if (oldVersion < 9) {
+      await db.execute(
+        "ALTER TABLE children ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
+      );
+    }
+    if (oldVersion < 10) {
+      await db.execute(
+        'ALTER TABLE activities ADD COLUMN evidence_required INTEGER NOT NULL DEFAULT 1',
+      );
+    }
+    if (oldVersion < 11) {
+      await db.execute('UPDATE activities SET evidence_required = 1');
+    }
+    if (oldVersion < 12) {
+      await db.execute(
+        'ALTER TABLE activities ADD COLUMN assigned_teacher_uid TEXT',
+      );
+      await db.execute('ALTER TABLE activities ADD COLUMN parent_uid TEXT');
+      await db.execute('ALTER TABLE activities ADD COLUMN section TEXT');
+    }
+    if (oldVersion < 13) {
+      await db.execute(
+        'ALTER TABLE activity_submissions ADD COLUMN evidence_file_name TEXT',
+      );
+    }
+    if (oldVersion < 14) {
+      await db.execute(
+        'ALTER TABLE activity_submissions ADD COLUMN teacher_uid TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE activity_submissions ADD COLUMN parent_uid TEXT',
+      );
+    }
+    if (oldVersion < 15) {
+      // Nullable RFID fields keep every existing child valid until a card is
+      // explicitly verified. Attendance fields preserve old rows unchanged.
+      await db.execute('ALTER TABLE children ADD COLUMN rfid_uid TEXT');
+      await db.execute(
+        'ALTER TABLE children ADD COLUMN rfid_verified INTEGER NOT NULL DEFAULT 0',
+      );
+      await db.execute('ALTER TABLE children ADD COLUMN rfid_linked_at TEXT');
+      await db.execute(
+        'ALTER TABLE attendance ADD COLUMN attendance_event_id TEXT',
+      );
+      await db.execute(
+        "ALTER TABLE attendance ADD COLUMN attendance_method TEXT NOT NULL DEFAULT 'manual'",
+      );
+      await db.execute(
+        'ALTER TABLE attendance ADD COLUMN event_timestamp_utc TEXT',
+      );
+      await db.execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_children_rfid_uid ON children(rfid_uid) WHERE rfid_uid IS NOT NULL',
+      );
+      await db.execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_event_id ON attendance(attendance_event_id) WHERE attendance_event_id IS NOT NULL',
+      );
+      // Legacy databases may already contain manual duplicate Present rows.
+      // Keep those historical records readable; new saves still use the
+      // repository check and stable event id if this compatibility index cannot
+      // be installed.
+      try {
+        await db.execute(
+          "CREATE UNIQUE INDEX IF NOT EXISTS idx_present_per_child_day ON attendance(child_id, attendance_date) WHERE status = 'Present'",
+        );
+      } on DatabaseException {
+        // Do not make a migration destructive merely to add a new safeguard.
+      }
+    }
+    if (oldVersion < 16) {
+      await db.execute('ALTER TABLE referrals ADD COLUMN admin_guidance TEXT');
+      await db.execute(
+        'ALTER TABLE referrals ADD COLUMN admin_guidance_updated_at TEXT',
+      );
+    }
   }
 
   Future _createDB(Database db, int version) async {
@@ -118,8 +193,12 @@ class DatabaseHelper {
         teacher_name $textType,
         parent_uid $textNullable,
         teacher_uid $textNullable,
+        status $textType DEFAULT 'active',
         updated_at $textType,
-        is_synced $integerType
+        is_synced $integerType,
+        rfid_uid $textNullable,
+        rfid_verified INTEGER NOT NULL DEFAULT 0,
+        rfid_linked_at $textNullable
       )
     ''');
 
@@ -132,9 +211,18 @@ class DatabaseHelper {
         status $textType,
         updated_at $textType,
         is_synced $integerType,
+        attendance_event_id $textNullable UNIQUE,
+        attendance_method $textType DEFAULT 'manual',
+        event_timestamp_utc $textNullable,
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
       )
     ''');
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_children_rfid_uid ON children(rfid_uid) WHERE rfid_uid IS NOT NULL',
+    );
+    await db.execute(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_present_per_child_day ON attendance(child_id, attendance_date) WHERE status = 'Present'",
+    );
 
     await db.execute('''
       CREATE TABLE evaluations (
@@ -216,6 +304,10 @@ class DatabaseHelper {
         updated_at $textType,
         is_synced $integerType,
         max_score INTEGER DEFAULT 20,
+        evidence_required INTEGER NOT NULL DEFAULT 1,
+        assigned_teacher_uid $textNullable,
+        parent_uid $textNullable,
+        section $textNullable,
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
       )
     ''');
@@ -235,6 +327,9 @@ class DatabaseHelper {
         storage_placeholder $textNullable,
         evidence_url $textNullable,
         evidence_media_type $textNullable,
+        evidence_file_name $textNullable,
+        teacher_uid $textNullable,
+        parent_uid $textNullable,
         score INTEGER,
         FOREIGN KEY (activity_id) REFERENCES activities (id) ON DELETE CASCADE,
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
@@ -251,6 +346,8 @@ class DatabaseHelper {
         follow_up_date $textType,
         status $textType,
         follow_up_notes $textType,
+        admin_guidance $textNullable,
+        admin_guidance_updated_at $textNullable,
         updated_at $textType,
         is_synced $integerType,
         FOREIGN KEY (child_id) REFERENCES children (child_id) ON DELETE CASCADE
@@ -673,23 +770,42 @@ class DatabaseHelper {
     return id;
   }
 
-  Future<List<ChildModel>> getAllChildren() async {
-    if (kIsWeb) return _fetchChildrenFromCloud();
+  Future<List<ChildModel>> getAllChildren({
+    bool includeInactive = false,
+  }) async {
+    if (kIsWeb) {
+      return _fetchChildrenFromCloud(includeInactive: includeInactive);
+    }
 
     final db = await instance.database;
-    final result = await db.query('children', orderBy: 'last_name ASC');
+    final result = await db.query(
+      'children',
+      where: includeInactive ? null : 'status = ?',
+      whereArgs: includeInactive ? null : ['active'],
+      orderBy: 'last_name ASC',
+    );
     if (result.isNotEmpty) {
       return result.map((json) => ChildModel.fromMap(json)).toList();
     }
 
-    return _fetchChildrenFromCloud(cacheDatabase: db);
+    return _fetchChildrenFromCloud(
+      cacheDatabase: db,
+      includeInactive: includeInactive,
+    );
   }
 
   Future<List<ChildModel>> readChildrenByParent(
     String parentUid, {
     bool allowCloudFallback = true,
+    bool includeInactive = false,
   }) async {
-    if (kIsWeb) return _fetchChildrenForUser(parentUid, isParent: true);
+    if (kIsWeb) {
+      return _fetchChildrenForUser(
+        parentUid,
+        isParent: true,
+        includeInactive: includeInactive,
+      );
+    }
 
     final db = await instance.database;
     final userMaps = await db.query(
@@ -698,26 +814,40 @@ class DatabaseHelper {
       whereArgs: [parentUid],
     );
     final userName = userMaps.isEmpty ? null : userMaps.first['name'] as String;
+    final ownerWhere = userName == null
+        ? 'parent_uid = ?'
+        : 'parent_uid = ? OR (parent_uid IS NULL AND parent_name = ?)';
+    final ownerArgs = userName == null ? [parentUid] : [parentUid, userName];
     final result = await db.query(
       'children',
-      where: userName == null
-          ? 'parent_uid = ?'
-          : 'parent_uid = ? OR (parent_uid IS NULL AND parent_name = ?)',
-      whereArgs: userName == null ? [parentUid] : [parentUid, userName],
+      where: includeInactive ? ownerWhere : 'status = ? AND ($ownerWhere)',
+      whereArgs: includeInactive ? ownerArgs : ['active', ...ownerArgs],
     );
     if (result.isNotEmpty) {
       return result.map((json) => ChildModel.fromMap(json)).toList();
     }
     if (!allowCloudFallback) return [];
 
-    return _fetchChildrenForUser(parentUid, isParent: true, cacheDatabase: db);
+    return _fetchChildrenForUser(
+      parentUid,
+      isParent: true,
+      cacheDatabase: db,
+      includeInactive: includeInactive,
+    );
   }
 
   Future<List<ChildModel>> readChildrenByTeacher(
     String teacherUid, {
     bool allowCloudFallback = true,
+    bool includeInactive = false,
   }) async {
-    if (kIsWeb) return _fetchChildrenForUser(teacherUid, isParent: false);
+    if (kIsWeb) {
+      return _fetchChildrenForUser(
+        teacherUid,
+        isParent: false,
+        includeInactive: includeInactive,
+      );
+    }
 
     final db = await instance.database;
     final userMaps = await db.query(
@@ -728,12 +858,16 @@ class DatabaseHelper {
     final teacherName = userMaps.isEmpty
         ? null
         : userMaps.first['name'] as String;
+    final ownerWhere = teacherName == null
+        ? 'teacher_uid = ?'
+        : 'teacher_uid = ? OR (teacher_uid IS NULL AND teacher_name = ?)';
+    final ownerArgs = teacherName == null
+        ? [teacherUid]
+        : [teacherUid, teacherName];
     final result = await db.query(
       'children',
-      where: teacherName == null
-          ? 'teacher_uid = ?'
-          : 'teacher_uid = ? OR (teacher_uid IS NULL AND teacher_name = ?)',
-      whereArgs: teacherName == null ? [teacherUid] : [teacherUid, teacherName],
+      where: includeInactive ? ownerWhere : 'status = ? AND ($ownerWhere)',
+      whereArgs: includeInactive ? ownerArgs : ['active', ...ownerArgs],
     );
     if (result.isNotEmpty) {
       return result.map((json) => ChildModel.fromMap(json)).toList();
@@ -744,11 +878,37 @@ class DatabaseHelper {
       teacherUid,
       isParent: false,
       cacheDatabase: db,
+      includeInactive: includeInactive,
+    );
+  }
+
+  /// Repairs legacy locally-cached child links created before teacher_uid was
+  /// persisted. The name match is intentionally limited to the logged-in
+  /// teacher, then the record is marked unsynced so normal sync can publish
+  /// the corrected assignment.
+  Future<int> repairLegacyTeacherAssignments({
+    required String teacherUid,
+    required String teacherName,
+  }) async {
+    if (kIsWeb || teacherUid.trim().isEmpty || teacherName.trim().isEmpty) {
+      return 0;
+    }
+    final db = await instance.database;
+    return db.update(
+      'children',
+      {
+        'teacher_uid': teacherUid,
+        'updated_at': DateTime.now().toIso8601String(),
+        'is_synced': 0,
+      },
+      where: "(teacher_uid IS NULL OR TRIM(teacher_uid) = '') AND LOWER(TRIM(teacher_name)) = ?",
+      whereArgs: [teacherName.trim().toLowerCase()],
     );
   }
 
   Future<List<ChildModel>> _fetchChildrenFromCloud({
     Database? cacheDatabase,
+    bool includeInactive = false,
   }) async {
     try {
       final snapshot = await FirebaseFirestore.instance
@@ -763,7 +923,9 @@ class DatabaseHelper {
           )
           .toList();
       if (cacheDatabase != null) await _cacheChildren(cacheDatabase, children);
-      return children;
+      return includeInactive
+          ? children
+          : children.where((child) => child.isActive).toList();
     } catch (_) {
       return [];
     }
@@ -773,26 +935,32 @@ class DatabaseHelper {
     String uid, {
     required bool isParent,
     Database? cacheDatabase,
+    bool includeInactive = false,
   }) async {
-    final children = await _fetchChildrenFromCloud(
-      cacheDatabase: cacheDatabase,
-    );
-    if (children.isEmpty) return [];
-
-    String? userName;
     try {
-      final profile = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
+      // Do not read the whole children collection here. Firestore correctly
+      // rejects that query for teachers/parents because they may only read
+      // their linked records.
+      final assignmentField = isParent ? 'parent_uid' : 'teacher_uid';
+      final snapshot = await FirebaseFirestore.instance
+          .collection('children')
+          .where(assignmentField, isEqualTo: uid)
           .get(const GetOptions(source: Source.server));
-      userName = profile.data()?['name'] as String?;
-    } catch (_) {}
-
-    return children.where((child) {
-      final childUid = isParent ? child.parentUid : child.teacherUid;
-      final childName = isParent ? child.parentName : child.teacherName;
-      return childUid == uid || (childUid == null && userName == childName);
-    }).toList();
+      final children = snapshot.docs
+          .map(
+            (doc) => ChildModel.fromMap({
+              ...doc.data(),
+              'child_id': doc.data()['child_id'] ?? doc.id,
+            }),
+          )
+          .toList();
+      if (cacheDatabase != null) await _cacheChildren(cacheDatabase, children);
+      return includeInactive
+          ? children
+          : children.where((child) => child.isActive).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   Future<void> _cacheChildren(Database db, List<ChildModel> children) async {
@@ -829,6 +997,33 @@ class DatabaseHelper {
       whereArgs: [childId],
       orderBy: 'attendance_date DESC',
     );
+  }
+
+  Future<Map<String, dynamic>?> getPresentAttendanceForSchoolDay(
+    String childId,
+    String schoolDate,
+  ) async {
+    if (kIsWeb) return null;
+    final db = await instance.database;
+    final rows = await db.query(
+      'attendance',
+      where: 'child_id = ? AND attendance_date = ? AND status = ?',
+      whereArgs: [childId, schoolDate, 'Present'],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future<Map<String, dynamic>?> getAttendanceByEventId(String eventId) async {
+    if (kIsWeb) return null;
+    final db = await instance.database;
+    final rows = await db.query(
+      'attendance',
+      where: 'attendance_event_id = ?',
+      whereArgs: [eventId],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first;
   }
 
   Future<List<Map<String, dynamic>>> getAttendanceSummaryByDate(
@@ -918,6 +1113,7 @@ class DatabaseHelper {
     String title,
     String instructions, {
     int maxScore = 20,
+    bool evidenceRequired = true,
   }) async {
     if (kIsWeb) return 0;
     final db = await instance.database;
@@ -946,13 +1142,16 @@ class DatabaseHelper {
       'updated_at': now,
       'is_synced': 0,
       'max_score': maxScore,
+      'evidence_required': evidenceRequired ? 1 : 0,
     });
   }
 
   Future<List<Map<String, dynamic>>> getActivitiesByChild(
     String childId,
   ) async {
-    if (kIsWeb) return [];
+    if (kIsWeb) {
+      return _fetchWebActivities(childId: childId);
+    }
     final db = await instance.database;
     return await db.query(
       'activities',
@@ -963,9 +1162,56 @@ class DatabaseHelper {
   }
 
   Future<List<Map<String, dynamic>>> getAllActivities() async {
-    if (kIsWeb) return [];
+    if (kIsWeb) {
+      return _fetchWebActivities();
+    }
     final db = await instance.database;
     return await db.query('activities', orderBy: 'due_date DESC');
+  }
+
+  /// Web activity queries include the logged-in user's owner field. Firestore
+  /// rules can therefore prove that a teacher/parent can only receive records
+  /// intended for them instead of rejecting a broad collection read.
+  Future<List<Map<String, dynamic>>> _fetchWebActivities({
+    String? childId,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return [];
+
+    final profile = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get(const GetOptions(source: Source.server));
+    final role = (profile.data()?['role'] as String? ?? '').toLowerCase();
+    Query<Map<String, dynamic>> query = FirebaseFirestore.instance.collection(
+      'activities',
+    );
+    if (childId != null) {
+      query = query.where('child_id', isEqualTo: childId);
+    }
+    if (role == 'teacher') {
+      query = query.where('assigned_teacher_uid', isEqualTo: user.uid);
+    } else if (role == 'parent') {
+      query = query.where('parent_uid', isEqualTo: user.uid);
+    } else if (role != 'admin') {
+      return [];
+    }
+
+    final snapshot = await query.get(const GetOptions(source: Source.server));
+    final activities = snapshot.docs
+        .map(
+          (doc) => <String, dynamic>{
+            ...doc.data(),
+            'id': doc.data()['id'] ?? int.tryParse(doc.id),
+          },
+        )
+        .toList();
+    activities.sort(
+      (a, b) => (b['due_date']?.toString() ?? '').compareTo(
+        a['due_date']?.toString() ?? '',
+      ),
+    );
+    return activities;
   }
 
   Future<int> updateActivityStatus(int id, String status) async {
@@ -1004,6 +1250,7 @@ class DatabaseHelper {
     int submissionId, {
     required String evidenceUrl,
     required String evidenceMediaType,
+    String? evidenceFileName,
   }) async {
     if (kIsWeb) return 0;
     final db = await instance.database;
@@ -1012,6 +1259,7 @@ class DatabaseHelper {
       {
         'evidence_url': evidenceUrl,
         'evidence_media_type': evidenceMediaType,
+        'evidence_file_name': evidenceFileName,
         'updated_at': DateTime.now().toIso8601String(),
       },
       where: 'id = ?',
@@ -1023,7 +1271,8 @@ class DatabaseHelper {
     if (kIsWeb) return [];
     final db = await instance.database;
     return await db.rawQuery('''
-      SELECT s.*, a.activity_title, a.max_score, c.first_name, c.last_name
+      SELECT s.*, a.activity_title, a.max_score, c.first_name, c.last_name,
+             c.parent_name
       FROM activity_submissions s
       JOIN activities a ON s.activity_id = a.id
       JOIN children c ON s.child_id = c.child_id

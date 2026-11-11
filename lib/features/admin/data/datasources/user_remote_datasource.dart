@@ -8,7 +8,11 @@ import '../../../../shared/models/user_model.dart';
 class UserRemoteDataSource {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  Future<String> createAuthAccount(String email, String password) async {
+  Future<String> createAuthAccount(
+    String email,
+    String password, {
+    required String displayName,
+  }) async {
     // Create a secondary app to avoid signing out the current admin
     FirebaseApp secondaryApp = await Firebase.initializeApp(
       name: 'SecondaryApp',
@@ -21,6 +25,8 @@ class UserRemoteDataSource {
         email: email,
         password: password,
       );
+
+      await res.user!.updateDisplayName(displayName);
 
       String uid = res.user!.uid;
       await secondaryApp.delete();
